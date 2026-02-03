@@ -24,6 +24,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private int startingMoves = 30;
     [SerializeField] private int scorePerTile = 10;
     [SerializeField] private float swapPulseScale = 0.9f;
+    [SerializeField] private float swapPulseDuration = 0.12f;
     [SerializeField] private int shuffleSafety = 50;
 
     private Sprite[] sprites;
@@ -211,6 +212,8 @@ public class GameManager : MonoBehaviour
         else
         {
             SwapTypes(a, b);
+            if (!HasAvailableMoves())
+                ShuffleBoard();
         }
 
         if (moves <= 0 && !gameOver)
@@ -467,12 +470,20 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator AnimateSwapPulse(TileView a, TileView b)
     {
-        if (swapPulseScale <= 0f)
+        if (swapPulseScale <= 0f || swapPulseDuration <= 0f)
             yield break;
 
-        a.SetScale(swapPulseScale);
-        b.SetScale(swapPulseScale);
-        yield return null;
+        float elapsed = 0f;
+        while (elapsed < swapPulseDuration)
+        {
+            float t = elapsed / swapPulseDuration;
+            float eased = t < 0.5f ? t * 2f : (1f - t) * 2f;
+            float scale = Mathf.Lerp(1f, swapPulseScale, eased);
+            a.SetScale(scale);
+            b.SetScale(scale);
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
         a.SetScale(1f);
         b.SetScale(1f);
     }

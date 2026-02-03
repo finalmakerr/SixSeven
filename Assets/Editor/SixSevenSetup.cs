@@ -5,6 +5,9 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem.UI;
+#endif
 
 public static class SixSevenSetup
 {
@@ -261,7 +264,13 @@ public static class SixSevenSetup
     {
         if (Object.FindObjectOfType<EventSystem>() != null)
             return;
+#if ENABLE_INPUT_SYSTEM
+        GameObject es = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+#else
+        // If this falls back to StandaloneInputModule, set Project Settings > Player > Active Input Handling
+        // to "Input System Package (New)" (or "Both") so InputSystemUIInputModule is available.
         GameObject es = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+#endif
     }
 
     private static GameObject CreateText(Transform parent, string name, string text, int fontSize, TextAnchor alignment, Font font)
