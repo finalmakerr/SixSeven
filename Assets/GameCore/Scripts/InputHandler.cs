@@ -23,6 +23,7 @@ namespace GameCore
         {
             if (mainCamera == null || board == null)
             {
+                selectedPiece = null;
                 return;
             }
 
@@ -37,6 +38,7 @@ namespace GameCore
                 var delta = endPosition - startPosition;
                 if (delta.magnitude >= swipeThreshold)
                 {
+                    // Only attempt a swap once the pointer has moved far enough.
                     var direction = GetDirection(delta);
                     board.TrySwap(selectedPiece, direction);
                 }
