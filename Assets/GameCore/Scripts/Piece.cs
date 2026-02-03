@@ -32,7 +32,10 @@ namespace GameCore
         public void SetColor(int colorIndex, Sprite sprite)
         {
             ColorIndex = colorIndex;
-            spriteRenderer.sprite = sprite;
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.sprite = sprite;
+            }
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)
