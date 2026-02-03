@@ -13,204 +13,204 @@ MonoBehaviour:
   m_Name: LevelDatabase
   m_EditorClassIdentifier:
   levels:
-  - moves: 19
-    targetScore: 460
+  - moves: 30
+    targetScore: 300
+    gridSize: {x: 6, y: 6}
+  - moves: 30
+    targetScore: 335
+    gridSize: {x: 6, y: 6}
+  - moves: 30
+    targetScore: 370
+    gridSize: {x: 6, y: 6}
+  - moves: 29
+    targetScore: 405
+    gridSize: {x: 6, y: 6}
+  - moves: 29
+    targetScore: 440
+    gridSize: {x: 6, y: 6}
+  - moves: 29
+    targetScore: 475
+    gridSize: {x: 6, y: 6}
+  - moves: 28
+    targetScore: 510
+    gridSize: {x: 6, y: 6}
+  - moves: 28
+    targetScore: 545
+    gridSize: {x: 6, y: 6}
+  - moves: 28
+    targetScore: 580
+    gridSize: {x: 6, y: 6}
+  - moves: 27
+    targetScore: 615
+    gridSize: {x: 6, y: 6}
+  - moves: 28
+    targetScore: 650
     gridSize: {x: 7, y: 7}
-  - moves: 20
-    targetScore: 620
-    gridSize: {x: 8, y: 8}
-  - moves: 22
-    targetScore: 780
-    gridSize: {x: 9, y: 9}
-  - moves: 23
-    targetScore: 640
+  - moves: 28
+    targetScore: 685
     gridSize: {x: 7, y: 7}
-  - moves: 19
-    targetScore: 800
-    gridSize: {x: 8, y: 8}
-  - moves: 21
-    targetScore: 960
-    gridSize: {x: 9, y: 9}
-  - moves: 22
-    targetScore: 820
+  - moves: 28
+    targetScore: 720
     gridSize: {x: 7, y: 7}
-  - moves: 23
-    targetScore: 980
-    gridSize: {x: 8, y: 8}
-  - moves: 25
-    targetScore: 1140
-    gridSize: {x: 9, y: 9}
-  - moves: 21
-    targetScore: 1000
+  - moves: 28
+    targetScore: 755
     gridSize: {x: 7, y: 7}
-  - moves: 22
-    targetScore: 1160
-    gridSize: {x: 8, y: 8}
-  - moves: 24
-    targetScore: 1320
-    gridSize: {x: 9, y: 9}
-  - moves: 25
-    targetScore: 1180
+  - moves: 27
+    targetScore: 790
+    gridSize: {x: 7, y: 7}
+  - moves: 27
+    targetScore: 825
+    gridSize: {x: 7, y: 7}
+  - moves: 27
+    targetScore: 860
+    gridSize: {x: 7, y: 7}
+  - moves: 27
+    targetScore: 895
     gridSize: {x: 7, y: 7}
   - moves: 26
-    targetScore: 1340
-    gridSize: {x: 8, y: 8}
-  - moves: 23
-    targetScore: 1500
-    gridSize: {x: 9, y: 9}
-  - moves: 24
-    targetScore: 1360
+    targetScore: 930
     gridSize: {x: 7, y: 7}
+  - moves: 26
+    targetScore: 965
+    gridSize: {x: 7, y: 7}
+  - moves: 26
+    targetScore: 1000
+    gridSize: {x: 8, y: 8}
+  - moves: 26
+    targetScore: 1050
+    gridSize: {x: 8, y: 8}
+  - moves: 26
+    targetScore: 1100
+    gridSize: {x: 8, y: 8}
+  - moves: 26
+    targetScore: 1150
+    gridSize: {x: 8, y: 8}
+  - moves: 26
+    targetScore: 1200
+    gridSize: {x: 8, y: 8}
   - moves: 25
-    targetScore: 1520
+    targetScore: 1250
     gridSize: {x: 8, y: 8}
-  - moves: 27
-    targetScore: 1680
-    gridSize: {x: 9, y: 9}
-  - moves: 28
-    targetScore: 1540
-    gridSize: {x: 7, y: 7}
+  - moves: 25
+    targetScore: 1300
+    gridSize: {x: 8, y: 8}
+  - moves: 25
+    targetScore: 1350
+    gridSize: {x: 8, y: 8}
+  - moves: 25
+    targetScore: 1400
+    gridSize: {x: 8, y: 8}
+  - moves: 25
+    targetScore: 1450
+    gridSize: {x: 8, y: 8}
+  - moves: 24
+    targetScore: 1500
+    gridSize: {x: 8, y: 8}
+  - moves: 24
+    targetScore: 1550
+    gridSize: {x: 8, y: 8}
+  - moves: 24
+    targetScore: 1600
+    gridSize: {x: 8, y: 8}
+  - moves: 24
+    targetScore: 1650
+    gridSize: {x: 8, y: 8}
   - moves: 24
     targetScore: 1700
     gridSize: {x: 8, y: 8}
-  - moves: 26
-    targetScore: 1860
-    gridSize: {x: 9, y: 9}
-  - moves: 27
-    targetScore: 1720
-    gridSize: {x: 7, y: 7}
-  - moves: 28
-    targetScore: 1880
+  - moves: 23
+    targetScore: 1750
     gridSize: {x: 8, y: 8}
-  - moves: 30
-    targetScore: 2040
-    gridSize: {x: 9, y: 9}
-  - moves: 26
+  - moves: 23
+    targetScore: 1800
+    gridSize: {x: 8, y: 8}
+  - moves: 23
+    targetScore: 1850
+    gridSize: {x: 8, y: 8}
+  - moves: 23
     targetScore: 1900
-    gridSize: {x: 7, y: 7}
-  - moves: 27
-    targetScore: 2060
     gridSize: {x: 8, y: 8}
-  - moves: 29
-    targetScore: 2220
+  - moves: 23
+    targetScore: 1950
+    gridSize: {x: 8, y: 8}
+  - moves: 22
+    targetScore: 2000
+    gridSize: {x: 8, y: 8}
+  - moves: 22
+    targetScore: 2050
+    gridSize: {x: 8, y: 8}
+  - moves: 22
+    targetScore: 2100
+    gridSize: {x: 8, y: 8}
+  - moves: 22
+    targetScore: 2150
+    gridSize: {x: 8, y: 8}
+  - moves: 22
+    targetScore: 2200
+    gridSize: {x: 8, y: 8}
+  - moves: 21
+    targetScore: 2300
     gridSize: {x: 9, y: 9}
-  - moves: 30
-    targetScore: 2080
-    gridSize: {x: 7, y: 7}
-  - moves: 31
-    targetScore: 2240
-    gridSize: {x: 8, y: 8}
-  - moves: 28
-    targetScore: 2400
+  - moves: 21
+    targetScore: 2370
     gridSize: {x: 9, y: 9}
-  - moves: 29
-    targetScore: 2260
-    gridSize: {x: 7, y: 7}
-  - moves: 30
-    targetScore: 2420
-    gridSize: {x: 8, y: 8}
-  - moves: 32
+  - moves: 21
+    targetScore: 2440
+    gridSize: {x: 9, y: 9}
+  - moves: 21
+    targetScore: 2510
+    gridSize: {x: 9, y: 9}
+  - moves: 21
     targetScore: 2580
     gridSize: {x: 9, y: 9}
-  - moves: 33
-    targetScore: 2440
-    gridSize: {x: 7, y: 7}
-  - moves: 29
-    targetScore: 2600
-    gridSize: {x: 8, y: 8}
-  - moves: 31
-    targetScore: 2760
+  - moves: 20
+    targetScore: 2650
     gridSize: {x: 9, y: 9}
-  - moves: 32
-    targetScore: 2620
-    gridSize: {x: 7, y: 7}
-  - moves: 33
-    targetScore: 2780
-    gridSize: {x: 8, y: 8}
-  - moves: 35
-    targetScore: 2940
+  - moves: 20
+    targetScore: 2720
     gridSize: {x: 9, y: 9}
-  - moves: 31
-    targetScore: 2800
-    gridSize: {x: 7, y: 7}
-  - moves: 32
-    targetScore: 2960
-    gridSize: {x: 8, y: 8}
-  - moves: 34
-    targetScore: 3120
+  - moves: 20
+    targetScore: 2790
     gridSize: {x: 9, y: 9}
-  - moves: 35
-    targetScore: 2980
-    gridSize: {x: 7, y: 7}
-  - moves: 36
+  - moves: 20
+    targetScore: 2860
+    gridSize: {x: 9, y: 9}
+  - moves: 20
+    targetScore: 2930
+    gridSize: {x: 9, y: 9}
+  - moves: 19
+    targetScore: 3000
+    gridSize: {x: 9, y: 9}
+  - moves: 19
+    targetScore: 3070
+    gridSize: {x: 9, y: 9}
+  - moves: 19
     targetScore: 3140
-    gridSize: {x: 8, y: 8}
-  - moves: 33
-    targetScore: 3300
-    gridSize: {x: 9, y: 9}
-  - moves: 34
-    targetScore: 3160
-    gridSize: {x: 7, y: 7}
-  - moves: 35
-    targetScore: 3320
-    gridSize: {x: 8, y: 8}
-  - moves: 37
-    targetScore: 3480
-    gridSize: {x: 9, y: 9}
-  - moves: 38
-    targetScore: 3340
-    gridSize: {x: 7, y: 7}
-  - moves: 34
-    targetScore: 3500
-    gridSize: {x: 8, y: 8}
-  - moves: 36
-    targetScore: 3660
-    gridSize: {x: 9, y: 9}
-  - moves: 37
-    targetScore: 3520
-    gridSize: {x: 7, y: 7}
-  - moves: 38
-    targetScore: 3680
-    gridSize: {x: 8, y: 8}
-  - moves: 40
-    targetScore: 3840
-    gridSize: {x: 9, y: 9}
-  - moves: 36
+    gridSize: {x: 10, y: 10}
+  - moves: 19
+    targetScore: 3210
+    gridSize: {x: 10, y: 10}
+  - moves: 19
+    targetScore: 3280
+    gridSize: {x: 10, y: 10}
+  - moves: 16
+    targetScore: 3350
+    gridSize: {x: 10, y: 10}
+  - moves: 16
+    targetScore: 3420
+    gridSize: {x: 10, y: 10}
+  - moves: 16
+    targetScore: 3490
+    gridSize: {x: 10, y: 10}
+  - moves: 15
+    targetScore: 3560
+    gridSize: {x: 10, y: 10}
+  - moves: 15
+    targetScore: 3630
+    gridSize: {x: 10, y: 10}
+  - moves: 15
     targetScore: 3700
-    gridSize: {x: 7, y: 7}
-  - moves: 37
-    targetScore: 3860
-    gridSize: {x: 8, y: 8}
-  - moves: 39
-    targetScore: 4020
-    gridSize: {x: 9, y: 9}
-  - moves: 40
-    targetScore: 3880
-    gridSize: {x: 7, y: 7}
-  - moves: 41
-    targetScore: 4040
-    gridSize: {x: 8, y: 8}
-  - moves: 38
-    targetScore: 4200
-    gridSize: {x: 9, y: 9}
-  - moves: 39
-    targetScore: 4060
-    gridSize: {x: 7, y: 7}
-  - moves: 40
-    targetScore: 4220
-    gridSize: {x: 8, y: 8}
-  - moves: 42
-    targetScore: 4380
-    gridSize: {x: 9, y: 9}
-  - moves: 43
-    targetScore: 4240
-    gridSize: {x: 7, y: 7}
-  - moves: 39
-    targetScore: 4400
-    gridSize: {x: 8, y: 8}
-  - moves: 41
-    targetScore: 4560
-    gridSize: {x: 9, y: 9}
-  - moves: 42
-    targetScore: 4420
-    gridSize: {x: 7, y: 7}
+    gridSize: {x: 10, y: 10}
+  - moves: 14
+    targetScore: 3770
+    gridSize: {x: 10, y: 10}
