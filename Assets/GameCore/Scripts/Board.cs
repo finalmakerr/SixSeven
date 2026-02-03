@@ -12,15 +12,24 @@ namespace GameCore
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
         [SerializeField] private float refillDelay = 0.1f;
+        [SerializeField] private float swapDuration = 0.12f;
+        [SerializeField] private float invalidSwapDuration = 0.1f;
+        [SerializeField] private float fallDuration = 0.1f;
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
+
+        [Header("Audio")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip swapClip;
+        [SerializeField] private AudioClip matchClearClip;
+        [SerializeField] private AudioClip cascadeFallClip;
+        [SerializeField] private AudioClip specialActivationClip;
 
         private Piece[,] pieces;
         private Sprite[] sprites;
         private bool isBusy;
         private bool hasInitialized;
-
         private readonly List<Piece> matchBuffer = new List<Piece>();
 
         private void Awake()
@@ -137,6 +146,7 @@ namespace GameCore
 
             if (!IsSwapValid(first, second))
             {
+                StartCoroutine(InvalidSwapRoutine(first, second));
                 return false;
             }
 
@@ -165,14 +175,16 @@ namespace GameCore
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
-            SwapPieces(first, second);
+            SwapPieces(first, second, swapDuration);
+            PlayClip(swapClip);
 
-            yield return new WaitForSeconds(0.05f);
+            yield return new WaitForSeconds(swapDuration);
 
             var matches = FindMatches();
             if (matches.Count == 0)
             {
-                SwapPieces(first, second);
+                SwapPieces(first, second, invalidSwapDuration);
+                yield return new WaitForSeconds(invalidSwapDuration);
                 isBusy = false;
                 yield break;
             }
@@ -181,7 +193,23 @@ namespace GameCore
             isBusy = false;
         }
 
-        private void SwapPieces(Piece first, Piece second)
+        private IEnumerator InvalidSwapRoutine(Piece first, Piece second)
+        {
+            if (isBusy)
+            {
+                yield break;
+            }
+
+            isBusy = true;
+            SwapPieces(first, second, invalidSwapDuration);
+            PlayClip(swapClip);
+            yield return new WaitForSeconds(invalidSwapDuration);
+            SwapPieces(first, second, invalidSwapDuration);
+            yield return new WaitForSeconds(invalidSwapDuration);
+            isBusy = false;
+        }
+
+        private void SwapPieces(Piece first, Piece second, float duration)
         {
             pieces[first.X, first.Y] = second;
             pieces[second.X, second.Y] = first;
@@ -189,8 +217,11 @@ namespace GameCore
             var firstX = first.X;
             var firstY = first.Y;
 
-            first.SetPosition(second.X, second.Y, GridToWorld(second.X, second.Y));
-            second.SetPosition(firstX, firstY, GridToWorld(firstX, firstY));
+            first.UpdateGridPosition(second.X, second.Y);
+            second.UpdateGridPosition(firstX, firstY);
+
+            first.MoveTo(GridToWorld(second.X, second.Y), duration);
+            second.MoveTo(GridToWorld(firstX, firstY), duration);
         }
 
         private void SwapPiecesInGrid(Piece first, Piece second)
@@ -201,8 +232,8 @@ namespace GameCore
             var firstX = first.X;
             var firstY = first.Y;
 
-            first.SetPosition(second.X, second.Y, first.transform.position);
-            second.SetPosition(firstX, firstY, second.transform.position);
+            first.UpdateGridPosition(second.X, second.Y);
+            second.UpdateGridPosition(firstX, firstY);
         }
 
         private bool HasMatchAt(int x, int y)
@@ -324,8 +355,10 @@ namespace GameCore
             while (matches.Count > 0)
             {
                 ClearMatches(matches);
+                PlayClip(matchClearClip);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
+                PlayClip(cascadeFallClip);
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
@@ -366,7 +399,8 @@ namespace GameCore
                         var piece = pieces[x, y];
                         pieces[x, y] = null;
                         pieces[x, nextEmptyY] = piece;
-                        piece.SetPosition(x, nextEmptyY, GridToWorld(x, nextEmptyY));
+                        piece.UpdateGridPosition(x, nextEmptyY);
+                        piece.MoveTo(GridToWorld(x, nextEmptyY), fallDuration);
                         nextEmptyY++;
                     }
                 }
@@ -381,7 +415,10 @@ namespace GameCore
                 {
                     if (pieces[x, y] == null)
                     {
-                        CreatePiece(x, y, GetRandomColorIndex());
+                        var newPiece = CreatePiece(x, y, GetRandomColorIndex());
+                        var spawnPosition = GridToWorld(x, height + 1);
+                        newPiece.transform.position = spawnPosition;
+                        newPiece.MoveTo(GridToWorld(x, y), fallDuration);
                     }
                 }
             }
@@ -424,6 +461,26 @@ namespace GameCore
             }
 
             return spriteList.ToArray();
+        }
+
+        public void TriggerSpecialActivation(Piece piece)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            PlayClip(specialActivationClip);
+        }
+
+        private void PlayClip(AudioClip clip)
+        {
+            if (audioSource == null || clip == null)
+            {
+                return;
+            }
+
+            audioSource.PlayOneShot(clip);
         }
     }
 }
