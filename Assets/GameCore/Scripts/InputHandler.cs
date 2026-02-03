@@ -27,6 +27,13 @@ namespace GameCore
                 return;
             }
 
+            // STAGE 0: Disable input while the board is resolving swaps/cascades.
+            if (board.IsBusy)
+            {
+                selectedPiece = null;
+                return;
+            }
+
             if (Input.GetMouseButtonDown(0))
             {
                 startPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
