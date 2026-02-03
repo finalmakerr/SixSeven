@@ -135,8 +135,31 @@ namespace GameCore
                 return false;
             }
 
+            if (!IsSwapValid(first, second))
+            {
+                return false;
+            }
+
             StartCoroutine(SwapRoutine(first, second));
             return true;
+        }
+
+        public bool IsSwapValid(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (Mathf.Abs(first.X - second.X) + Mathf.Abs(first.Y - second.Y) != 1)
+            {
+                return false;
+            }
+
+            SwapPiecesInGrid(first, second);
+            var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
+            SwapPiecesInGrid(first, second);
+            return hasMatch;
         }
 
         private IEnumerator SwapRoutine(Piece first, Piece second)
@@ -150,12 +173,6 @@ namespace GameCore
             if (matches.Count == 0)
             {
                 SwapPieces(first, second);
-                isBusy = false;
-                yield break;
-            }
-
-            if (GameManager.Instance != null && !GameManager.Instance.TryUseMove())
-            {
                 isBusy = false;
                 yield break;
             }
@@ -174,6 +191,63 @@ namespace GameCore
 
             first.SetPosition(second.X, second.Y, GridToWorld(second.X, second.Y));
             second.SetPosition(firstX, firstY, GridToWorld(firstX, firstY));
+        }
+
+        private void SwapPiecesInGrid(Piece first, Piece second)
+        {
+            pieces[first.X, first.Y] = second;
+            pieces[second.X, second.Y] = first;
+
+            var firstX = first.X;
+            var firstY = first.Y;
+
+            first.SetPosition(second.X, second.Y, first.transform.position);
+            second.SetPosition(firstX, firstY, second.transform.position);
+        }
+
+        private bool HasMatchAt(int x, int y)
+        {
+            var piece = pieces[x, y];
+            if (piece == null)
+            {
+                return false;
+            }
+
+            var colorIndex = piece.ColorIndex;
+            var horizontal = 1;
+            var vertical = 1;
+
+            horizontal += CountDirectionMatches(x, y, 1, 0, colorIndex);
+            horizontal += CountDirectionMatches(x, y, -1, 0, colorIndex);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            vertical += CountDirectionMatches(x, y, 0, 1, colorIndex);
+            vertical += CountDirectionMatches(x, y, 0, -1, colorIndex);
+            return vertical >= 3;
+        }
+
+        private int CountDirectionMatches(int startX, int startY, int stepX, int stepY, int colorIndex)
+        {
+            var count = 0;
+            var x = startX + stepX;
+            var y = startY + stepY;
+            while (IsInBounds(x, y))
+            {
+                var candidate = pieces[x, y];
+                if (candidate == null || candidate.ColorIndex != colorIndex)
+                {
+                    break;
+                }
+
+                count++;
+                x += stepX;
+                y += stepY;
+            }
+
+            return count;
         }
 
         private List<Piece> FindMatches()
@@ -261,11 +335,6 @@ namespace GameCore
 
         private void ClearMatches(List<Piece> matches)
         {
-            if (GameManager.Instance != null)
-            {
-                GameManager.Instance.AddScore(matches.Count);
-            }
-
             foreach (var piece in matches)
             {
                 if (piece == null)
