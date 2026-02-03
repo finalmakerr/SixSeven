@@ -19,6 +19,7 @@ namespace GameCore
         private Piece[,] pieces;
         private Sprite[] sprites;
         private bool isBusy;
+        private bool hasInitialized;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
 
@@ -29,9 +30,58 @@ namespace GameCore
 
         private void Start()
         {
+            if (!hasInitialized)
+            {
+                InitializeBoard(width, height);
+            }
+        }
+
+        public void InitializeBoard(int newWidth, int newHeight)
+        {
+            width = Mathf.Max(3, newWidth);
+            height = Mathf.Max(3, newHeight);
+            hasInitialized = true;
+            ResetBoardState();
+        }
+
+        private void ResetBoardState()
+        {
+            StopAllCoroutines();
+            isBusy = false;
+            ClearExistingPieces();
             pieces = new Piece[width, height];
             CreateBoard();
             StartCoroutine(ClearMatchesRoutine());
+        }
+
+        private void ClearExistingPieces()
+        {
+            if (pieces == null)
+            {
+                foreach (Transform child in transform)
+                {
+                    Destroy(child.gameObject);
+                }
+
+                return;
+            }
+
+            for (var x = 0; x < pieces.GetLength(0); x++)
+            {
+                for (var y = 0; y < pieces.GetLength(1); y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece != null)
+                    {
+                        Destroy(piece.gameObject);
+                    }
+                }
+            }
+
+            foreach (Transform child in transform)
+            {
+                Destroy(child.gameObject);
+            }
         }
 
         private void CreateBoard()
