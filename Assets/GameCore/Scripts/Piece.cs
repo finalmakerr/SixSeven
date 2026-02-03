@@ -8,9 +8,19 @@ namespace GameCore
     {
         [SerializeField] private float size = 0.9f;
 
+        public enum SpecialType
+        {
+            None,
+            Bomb,
+            StrongBomb,
+            MegaBomb,
+            UltimateBomb
+        }
+
         public int X { get; private set; }
         public int Y { get; private set; }
         public int ColorIndex { get; private set; }
+        public SpecialType Special { get; private set; }
 
         private SpriteRenderer spriteRenderer;
 
@@ -25,6 +35,7 @@ namespace GameCore
         {
             X = x;
             Y = y;
+            Special = SpecialType.None;
             SetColor(colorIndex, sprite);
             name = $"Piece_{x}_{y}";
         }
@@ -33,6 +44,11 @@ namespace GameCore
         {
             ColorIndex = colorIndex;
             spriteRenderer.sprite = sprite;
+        }
+
+        public void SetSpecialType(SpecialType specialType)
+        {
+            Special = specialType;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)
