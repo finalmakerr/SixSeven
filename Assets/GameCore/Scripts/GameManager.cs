@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -5,6 +6,9 @@ namespace GameCore
 {
     public class GameManager : MonoBehaviour
     {
+        public event Action OnWin;
+        public event Action OnLose;
+
         [Header("Game Settings")]
         [SerializeField] private int startingMoves = 30;
         [SerializeField] private int scorePerPiece = 10;
@@ -28,6 +32,8 @@ namespace GameCore
         public int CurrentLevelIndex { get; private set; }
         public bool HasMetTarget { get; private set; }
 
+        private bool hasEnded;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -49,6 +55,13 @@ namespace GameCore
             {
                 levelDatabase = Resources.Load<LevelDatabase>("LevelDatabase");
             }
+
+            RegisterBoardEvents();
+        }
+
+        private void OnDisable()
+        {
+            UnregisterBoardEvents();
         }
 
         private void Start()
@@ -61,6 +74,7 @@ namespace GameCore
             Score = 0;
             MovesRemaining = startingMoves;
             HasMetTarget = false;
+            hasEnded = false;
             UpdateUI();
         }
 
@@ -89,6 +103,11 @@ namespace GameCore
                 HasMetTarget = true;
             }
             UpdateUI();
+
+            if (HasMetTarget && !hasEnded)
+            {
+                TriggerWin();
+            }
         }
 
         public bool TryUseMove()
@@ -103,6 +122,72 @@ namespace GameCore
             return true;
         }
 
+        private void RegisterBoardEvents()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            board.MatchesCleared += HandleMatchesCleared;
+            board.ValidSwap += HandleValidSwap;
+        }
+
+        private void UnregisterBoardEvents()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            board.MatchesCleared -= HandleMatchesCleared;
+            board.ValidSwap -= HandleValidSwap;
+        }
+
+        private void HandleMatchesCleared(int clearedCount)
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            AddScore(clearedCount);
+        }
+
+        private void HandleValidSwap()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            TryUseMove();
+            if (MovesRemaining <= 0 && !HasMetTarget)
+            {
+                TriggerLose();
+            }
+        }
+
+        private void TriggerWin()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            hasEnded = true;
+            OnWin?.Invoke();
+        }
+
+        private void TriggerLose()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            hasEnded = true;
+            OnLose?.Invoke();
         public void TriggerInstantWin()
         {
             HasMetTarget = true;

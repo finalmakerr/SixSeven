@@ -7,6 +7,8 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        public event Action<int> MatchesCleared;
+        public event Action ValidSwap;
         public event Action OnBoardCleared;
 
         [Header("Board Settings")]
@@ -166,6 +168,7 @@ namespace GameCore
                 return false;
             }
 
+            ValidSwap?.Invoke();
             StartCoroutine(SwapRoutine(first, second));
             return true;
         }
@@ -429,6 +432,7 @@ namespace GameCore
 
         private void ClearMatches(List<Piece> matches, HashSet<Piece> protectedPieces)
         {
+            var clearedCount = 0;
             foreach (var piece in matches)
             {
                 if (piece == null)
@@ -436,6 +440,7 @@ namespace GameCore
                     continue;
                 }
 
+                clearedCount++;
                 if (piece.Special != Piece.SpecialType.None)
                 {
                     continue;
@@ -448,6 +453,11 @@ namespace GameCore
 
                 pieces[piece.X, piece.Y] = null;
                 Destroy(piece.gameObject);
+            }
+
+            if (clearedCount > 0)
+            {
+                MatchesCleared?.Invoke(clearedCount);
             }
         }
 
