@@ -1,6 +1,7 @@
 {
   "name": "SixSeven.EditModeTests",
   "references": [
+    "Assembly-CSharp",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner"
   ],
