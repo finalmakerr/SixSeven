@@ -45,7 +45,10 @@ namespace GameCore
         public void SetColor(int colorIndex, Sprite sprite)
         {
             ColorIndex = colorIndex;
-            spriteRenderer.sprite = sprite;
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.sprite = sprite;
+            }
         }
 
         public void SetSpecialType(SpecialType specialType)
