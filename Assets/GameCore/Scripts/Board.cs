@@ -18,15 +18,19 @@ namespace GameCore
         [SerializeField] private int colorCount = 5;
         [SerializeField] private float refillDelay = 0.1f;
         [SerializeField] private float swapDuration = 0.12f;
-        [SerializeField] private float invalidSwapDuration = 0.1f;
         [SerializeField] private float fallDuration = 0.1f;
+        // STAGE 1
+        [SerializeField] private float invalidShakeDuration = 0.06f;
+        [SerializeField] private float invalidShakeMagnitude = 0.05f;
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
 
         [Header("Audio")]
         [SerializeField] private AudioSource audioSource;
+        // STAGE 1
         [SerializeField] private AudioClip swapClip;
+        [SerializeField] private AudioClip invalidSwapClip;
         [SerializeField] private AudioClip matchClearClip;
         [SerializeField] private AudioClip cascadeFallClip;
         [SerializeField] private AudioClip specialActivationClip;
@@ -230,6 +234,8 @@ namespace GameCore
             }
 
             ValidSwap?.Invoke();
+            // STAGE 1
+            StartCoroutine(SwapRoutine(first, second, _ => { }));
             // STAGE 0: Atomic swap gate + pipeline entry.
             isBusy = true;
             StartCoroutine(SwapAndResolveRoutine(first, second));
@@ -259,6 +265,8 @@ namespace GameCore
             return hasMatch;
         }
 
+        // STAGE 1
+        private IEnumerator SwapRoutine(Piece first, Piece second, Action<bool> onComplete)
         // STAGE 0: Swap -> Detect -> Resolve -> Refill -> Detect cascades -> Unlock input.
         private IEnumerator SwapAndResolveRoutine(Piece first, Piece second)
         {
@@ -274,6 +282,7 @@ namespace GameCore
                 SignalBoardCleared();
                 SignalLevelWin();
                 isBusy = false;
+                onComplete?.Invoke(true);
                 LogState("Unlock");
                 yield break;
             }
@@ -281,20 +290,38 @@ namespace GameCore
             var matchGroups = FindMatchGroups();
             if (matchGroups.Count == 0)
             {
-                SwapPieces(first, second, invalidSwapDuration);
-                yield return new WaitForSeconds(invalidSwapDuration);
+                // STAGE 1
+                SwapPieces(first, second, swapDuration);
+                PlayClip(invalidSwapClip);
+                yield return new WaitForSeconds(swapDuration);
+                yield return StartCoroutine(MicroShakePieces(first, second));
                 isBusy = false;
+                onComplete?.Invoke(false);
                 LogState("Unlock");
                 yield break;
             }
 
             yield return StartCoroutine(ResolveBoardRoutine());
             isBusy = false;
+            onComplete?.Invoke(true);
             LogState("Unlock");
         }
 
         private IEnumerator InvalidSwapRoutine(Piece first, Piece second)
         {
+            if (isBusy)
+            {
+                yield break;
+            }
+
+            isBusy = true;
+            // STAGE 1
+            SwapPieces(first, second, swapDuration);
+            PlayClip(invalidSwapClip);
+            yield return new WaitForSeconds(swapDuration);
+            SwapPieces(first, second, swapDuration);
+            yield return new WaitForSeconds(swapDuration);
+            yield return StartCoroutine(MicroShakePieces(first, second));
             LogState("InvalidSwap");
             SwapPieces(first, second, invalidSwapDuration);
             PlayClip(swapClip);
@@ -303,6 +330,22 @@ namespace GameCore
             yield return new WaitForSeconds(invalidSwapDuration);
             isBusy = false;
             LogState("Unlock");
+        }
+
+        // STAGE 1
+        private IEnumerator MicroShakePieces(Piece first, Piece second)
+        {
+            if (first != null)
+            {
+                first.MicroShake(invalidShakeDuration, invalidShakeMagnitude);
+            }
+
+            if (second != null)
+            {
+                second.MicroShake(invalidShakeDuration, invalidShakeMagnitude);
+            }
+
+            yield return new WaitForSeconds(invalidShakeDuration);
         }
 
         private void SwapPieces(Piece first, Piece second, float duration)
