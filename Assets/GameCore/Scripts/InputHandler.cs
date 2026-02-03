@@ -6,10 +6,13 @@ namespace GameCore
     {
         [SerializeField] private Camera mainCamera;
         [SerializeField] private Board board;
-        [SerializeField] private float swipeThreshold = 0.2f;
+        // STAGE 4: Swipe threshold in screen pixels.
+        [SerializeField] private float swipeThresholdPixels = 25f;
 
         private Piece selectedPiece;
-        private Vector2 startPosition;
+        private Piece pressedPiece;
+        private Vector2 startScreenPosition;
+        private Vector2 startWorldPosition;
 
         private void Awake()
         {
@@ -36,21 +39,13 @@ namespace GameCore
 
             if (Input.GetMouseButtonDown(0))
             {
-                startPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-                selectedPiece = GetPieceAtPosition(startPosition);
+                startScreenPosition = Input.mousePosition;
+                startWorldPosition = mainCamera.ScreenToWorldPoint(startScreenPosition);
+                pressedPiece = GetPieceAtPosition(startWorldPosition);
             }
-            else if (Input.GetMouseButtonUp(0) && selectedPiece != null)
+            else if (Input.GetMouseButtonUp(0))
             {
-                var endPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-                var delta = endPosition - startPosition;
-                if (delta.magnitude >= swipeThreshold)
-                {
-                    // Only attempt a swap once the pointer has moved far enough.
-                    var direction = GetDirection(delta);
-                    board.TrySwap(selectedPiece, direction);
-                }
-
-                selectedPiece = null;
+                HandlePointerRelease();
             }
         }
 
@@ -67,12 +62,92 @@ namespace GameCore
 
         private Vector2Int GetDirection(Vector2 delta)
         {
+            // STAGE 4: Only allow 4-direction swaps.
             if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
             {
                 return delta.x > 0 ? Vector2Int.right : Vector2Int.left;
             }
 
             return delta.y > 0 ? Vector2Int.up : Vector2Int.down;
+        }
+
+        // STAGE 4: Tap-select and swipe handling.
+        private void HandlePointerRelease()
+        {
+            if (mainCamera == null || board == null)
+            {
+                selectedPiece = null;
+                pressedPiece = null;
+                return;
+            }
+
+            var endScreenPosition = (Vector2)Input.mousePosition;
+            var endWorldPosition = mainCamera.ScreenToWorldPoint(endScreenPosition);
+            var deltaScreen = endScreenPosition - startScreenPosition;
+
+            if (pressedPiece != null && deltaScreen.magnitude >= swipeThresholdPixels)
+            {
+                // STAGE 4: Swipe on tile to swap.
+                var direction = GetDirection(deltaScreen);
+                if (board.TrySwap(pressedPiece, direction))
+                {
+                    TriggerHaptic();
+                }
+
+                selectedPiece = null;
+                pressedPiece = null;
+                return;
+            }
+
+            // STAGE 4: Tap tile A then adjacent tile B to swap.
+            var tappedPiece = GetPieceAtPosition(endWorldPosition);
+            if (tappedPiece == null)
+            {
+                selectedPiece = null;
+                pressedPiece = null;
+                return;
+            }
+
+            if (selectedPiece == null)
+            {
+                selectedPiece = tappedPiece;
+            }
+            else if (tappedPiece == selectedPiece)
+            {
+                selectedPiece = null;
+            }
+            else if (AreAdjacent(selectedPiece, tappedPiece))
+            {
+                var direction = new Vector2Int(tappedPiece.X - selectedPiece.X, tappedPiece.Y - selectedPiece.Y);
+                if (board.TrySwap(selectedPiece, direction))
+                {
+                    TriggerHaptic();
+                }
+
+                selectedPiece = null;
+            }
+            else
+            {
+                selectedPiece = tappedPiece;
+            }
+
+            pressedPiece = null;
+        }
+
+        // STAGE 4: Optional haptic hook.
+        private void TriggerHaptic()
+        {
+        }
+
+        // STAGE 4: Adjacency check for tap-to-swap.
+        private bool AreAdjacent(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            return Mathf.Abs(first.X - second.X) + Mathf.Abs(first.Y - second.Y) == 1;
         }
     }
 }
