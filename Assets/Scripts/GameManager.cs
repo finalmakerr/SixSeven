@@ -23,6 +23,8 @@ public class GameManager : MonoBehaviour
     [Header("Rules")]
     [SerializeField] private int startingMoves = 30;
     [SerializeField] private int scorePerTile = 10;
+    [SerializeField] private float swapPulseScale = 0.9f;
+    [SerializeField] private int shuffleSafety = 50;
 
     private Sprite[] sprites;
     private TileView[,] tiles;
@@ -40,7 +42,7 @@ public class GameManager : MonoBehaviour
             mainMenuButton.onClick.AddListener(GoToMainMenu);
     }
 
-    private void Start()
+    private IEnumerator Start()
     {
         sprites = Resources.LoadAll<Sprite>("Tiles");
         if (sprites == null || sprites.Length == 0)
@@ -55,7 +57,10 @@ public class GameManager : MonoBehaviour
 
         BuildGrid();
         if (HasAnyMatch())
-            ResolveAllMatches();
+            yield return ResolveMatchesCoroutine();
+
+        if (!HasAvailableMoves())
+            ShuffleBoard();
     }
 
     private void BuildGrid()
@@ -156,6 +161,18 @@ public class GameManager : MonoBehaviour
         StartCoroutine(HandleSwap(selected, tile));
     }
 
+    public void OnTileDragged(TileView tile, Vector2 direction)
+    {
+        if (isBusy || gameOver || tile == null)
+            return;
+
+        TileView neighbor = GetNeighbor(tile, direction);
+        if (neighbor == null)
+            return;
+
+        StartCoroutine(HandleSwap(tile, neighbor));
+    }
+
     private void Select(TileView tile)
     {
         selected = tile;
@@ -184,6 +201,7 @@ public class GameManager : MonoBehaviour
         moves--;
         UpdateUI();
 
+        yield return AnimateSwapPulse(a, b);
         SwapTypes(a, b);
 
         if (HasAnyMatch())
@@ -243,12 +261,15 @@ public class GameManager : MonoBehaviour
         {
             int cleared = ClearMatches();
             if (cleared == 0)
-                yield break;
+                break;
 
             DropAndFill();
             UpdateUI();
             yield return null;
         }
+
+        if (!HasAvailableMoves())
+            ShuffleBoard();
     }
 
     private int ClearMatches()
@@ -367,6 +388,104 @@ public class GameManager : MonoBehaviour
         }
 
         return matches;
+    }
+
+    private bool HasAvailableMoves()
+    {
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                TileView tile = tiles[x, y];
+                if (tile == null || tile.Type < 0)
+                    continue;
+
+                if (x + 1 < width && WouldSwapCreateMatch(tile, tiles[x + 1, y]))
+                    return true;
+                if (y + 1 < height && WouldSwapCreateMatch(tile, tiles[x, y + 1]))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool WouldSwapCreateMatch(TileView a, TileView b)
+    {
+        if (a == null || b == null)
+            return false;
+
+        SwapTypes(a, b);
+        bool hasMatch = HasMatchAt(a.X, a.Y) || HasMatchAt(b.X, b.Y);
+        SwapTypes(a, b);
+        return hasMatch;
+    }
+
+    private bool HasMatchAt(int x, int y)
+    {
+        int type = tiles[x, y].Type;
+        if (type < 0)
+            return false;
+
+        int count = 1;
+        for (int i = x - 1; i >= 0 && tiles[i, y].Type == type; i--)
+            count++;
+        for (int i = x + 1; i < width && tiles[i, y].Type == type; i++)
+            count++;
+        if (count >= 3)
+            return true;
+
+        count = 1;
+        for (int i = y - 1; i >= 0 && tiles[x, i].Type == type; i--)
+            count++;
+        for (int i = y + 1; i < height && tiles[x, i].Type == type; i++)
+            count++;
+        return count >= 3;
+    }
+
+    private void ShuffleBoard()
+    {
+        if (sprites == null || sprites.Length == 0)
+            return;
+
+        Deselect();
+
+        int attempts = 0;
+        do
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int type = GetRandomTypeAvoidingMatch(x, y);
+                    SetTileType(tiles[x, y], type);
+                }
+            }
+            attempts++;
+        } while (!HasAvailableMoves() && attempts < shuffleSafety);
+    }
+
+    private IEnumerator AnimateSwapPulse(TileView a, TileView b)
+    {
+        if (swapPulseScale <= 0f)
+            yield break;
+
+        a.SetScale(swapPulseScale);
+        b.SetScale(swapPulseScale);
+        yield return null;
+        a.SetScale(1f);
+        b.SetScale(1f);
+    }
+
+    private TileView GetNeighbor(TileView tile, Vector2 direction)
+    {
+        int targetX = tile.X + Mathf.RoundToInt(direction.x);
+        int targetY = tile.Y + Mathf.RoundToInt(direction.y);
+
+        if (targetX < 0 || targetX >= width || targetY < 0 || targetY >= height)
+            return null;
+
+        return tiles[targetX, targetY];
     }
 
     private void UpdateUI()
