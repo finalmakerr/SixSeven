@@ -12,6 +12,7 @@ namespace GameCore
         [SerializeField] private Vector2Int fallbackGridSize = new Vector2Int(7, 7);
         [SerializeField] private int fallbackTargetScore = 500;
         [SerializeField] private LevelDatabase levelDatabase;
+        [SerializeField] private LevelManager levelManager;
 
         [Header("References")]
         [SerializeField] private Board board;
@@ -53,6 +54,12 @@ namespace GameCore
 
         private void Start()
         {
+            if (levelManager != null)
+            {
+                levelManager.LoadStartingLevel(this);
+                return;
+            }
+
             LoadLevel(startingLevelIndex);
         }
 
@@ -79,6 +86,17 @@ namespace GameCore
             }
 
             ResetGame();
+        }
+
+        public bool LoadNextLevel()
+        {
+            if (levelManager != null)
+            {
+                return levelManager.LoadNextLevel(this);
+            }
+
+            LoadLevel(CurrentLevelIndex + 1);
+            return true;
         }
 
         public void AddScore(int piecesCleared)
