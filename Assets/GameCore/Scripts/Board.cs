@@ -25,6 +25,12 @@ namespace GameCore
 
         private void Awake()
         {
+            if (!ValidateConfiguration())
+            {
+                enabled = false;
+                return;
+            }
+
             sprites = GenerateSprites();
         }
 
@@ -38,6 +44,11 @@ namespace GameCore
 
         public void InitializeBoard(int newWidth, int newHeight)
         {
+            if (!enabled)
+            {
+                return;
+            }
+
             width = Mathf.Max(3, newWidth);
             height = Mathf.Max(3, newHeight);
             hasInitialized = true;
@@ -102,6 +113,11 @@ namespace GameCore
 
         private Piece CreatePiece(int x, int y, int colorIndex)
         {
+            if (piecePrefab == null || sprites == null || sprites.Length == 0)
+            {
+                return null;
+            }
+
             var worldPosition = GridToWorld(x, y);
             var piece = Instantiate(piecePrefab, worldPosition, Quaternion.identity, transform);
             piece.Initialize(x, y, colorIndex, sprites[colorIndex]);
@@ -116,7 +132,7 @@ namespace GameCore
 
         public bool TrySwap(Piece first, Vector2Int direction)
         {
-            if (isBusy)
+            if (isBusy || first == null || pieces == null)
             {
                 return false;
             }
@@ -146,7 +162,7 @@ namespace GameCore
 
         public bool IsSwapValid(Piece first, Piece second)
         {
-            if (first == null || second == null)
+            if (first == null || second == null || pieces == null)
             {
                 return false;
             }
@@ -183,6 +199,11 @@ namespace GameCore
 
         private void SwapPieces(Piece first, Piece second)
         {
+            if (first == null || second == null)
+            {
+                return;
+            }
+
             pieces[first.X, first.Y] = second;
             pieces[second.X, second.Y] = first;
 
@@ -195,6 +216,11 @@ namespace GameCore
 
         private void SwapPiecesInGrid(Piece first, Piece second)
         {
+            if (first == null || second == null)
+            {
+                return;
+            }
+
             pieces[first.X, first.Y] = second;
             pieces[second.X, second.Y] = first;
 
@@ -254,6 +280,7 @@ namespace GameCore
         {
             matchBuffer.Clear();
 
+            // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
             {
                 var runLength = 1;
@@ -275,6 +302,7 @@ namespace GameCore
                 AddRunMatches(width - 1, y, runLength, Vector2Int.right);
             }
 
+            // Scan vertically for runs of 3+ matching pieces.
             for (var x = 0; x < width; x++)
             {
                 var runLength = 1;
@@ -329,6 +357,7 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
+                // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
             }
         }
@@ -342,7 +371,10 @@ namespace GameCore
                     continue;
                 }
 
-                pieces[piece.X, piece.Y] = null;
+                if (IsInBounds(piece.X, piece.Y))
+                {
+                    pieces[piece.X, piece.Y] = null;
+                }
                 Destroy(piece.gameObject);
             }
         }
@@ -366,6 +398,7 @@ namespace GameCore
                         var piece = pieces[x, y];
                         pieces[x, y] = null;
                         pieces[x, nextEmptyY] = piece;
+                        // Move the piece down to the lowest available slot.
                         piece.SetPosition(x, nextEmptyY, GridToWorld(x, nextEmptyY));
                         nextEmptyY++;
                     }
@@ -424,6 +457,23 @@ namespace GameCore
             }
 
             return spriteList.ToArray();
+        }
+
+        private bool ValidateConfiguration()
+        {
+            if (piecePrefab == null)
+            {
+                Debug.LogError("Board is missing a Piece prefab reference.", this);
+                return false;
+            }
+
+            if (colorCount <= 0)
+            {
+                Debug.LogError("Board color count must be greater than zero.", this);
+                return false;
+            }
+
+            return true;
         }
     }
 }
