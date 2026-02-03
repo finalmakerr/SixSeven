@@ -27,12 +27,16 @@ namespace GameCore
         private Coroutine moveRoutine;
         // STAGE 1
         private Coroutine shakeRoutine;
+        // STAGE 5
+        private Coroutine punchRoutine;
+        private Vector3 baseScale;
 
         private void Awake()
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
             var collider = GetComponent<BoxCollider2D>();
             collider.size = new Vector2(size, size);
+            baseScale = transform.localScale;
         }
 
         public void Initialize(int x, int y, int colorIndex, Sprite sprite)
@@ -83,6 +87,17 @@ namespace GameCore
             moveRoutine = StartCoroutine(MoveRoutine(targetPosition, duration));
         }
 
+        // STAGE 5
+        public void PunchScale(float peakScale, float duration)
+        {
+            if (punchRoutine != null)
+            {
+                StopCoroutine(punchRoutine);
+            }
+
+            punchRoutine = StartCoroutine(PunchScaleRoutine(peakScale, duration));
+        }
+
         // STAGE 1
         public void MicroShake(float duration, float magnitude)
         {
@@ -92,6 +107,41 @@ namespace GameCore
             }
 
             shakeRoutine = StartCoroutine(ShakeRoutine(duration, magnitude));
+        }
+
+        // STAGE 5
+        private IEnumerator PunchScaleRoutine(float peakScale, float duration)
+        {
+            if (duration <= 0f)
+            {
+                transform.localScale = baseScale;
+                punchRoutine = null;
+                yield break;
+            }
+
+            var targetScale = baseScale * peakScale;
+            var halfDuration = duration * 0.5f;
+            var elapsed = 0f;
+
+            while (elapsed < halfDuration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / halfDuration);
+                transform.localScale = Vector3.Lerp(baseScale, targetScale, t);
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < halfDuration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / halfDuration);
+                transform.localScale = Vector3.Lerp(targetScale, baseScale, t);
+                yield return null;
+            }
+
+            transform.localScale = baseScale;
+            punchRoutine = null;
         }
 
         // STAGE 1
