@@ -1,6 +1,7 @@
 {
   "name": "SixSeven.PlayModeTests",
   "references": [
+    "Assembly-CSharp",
     "UnityEngine.TestRunner"
   ],
   "includePlatforms": [],
