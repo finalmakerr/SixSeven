@@ -188,6 +188,14 @@ namespace GameCore
 
             hasEnded = true;
             OnLose?.Invoke();
+        public void TriggerInstantWin()
+        {
+            HasMetTarget = true;
+            if (Score < TargetScore)
+            {
+                Score = TargetScore;
+            }
+            UpdateUI();
         }
 
         private void UpdateUI()
