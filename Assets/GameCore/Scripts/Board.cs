@@ -12,15 +12,24 @@ namespace GameCore
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
         [SerializeField] private float refillDelay = 0.1f;
+        [SerializeField] private float swapDuration = 0.12f;
+        [SerializeField] private float invalidSwapDuration = 0.1f;
+        [SerializeField] private float fallDuration = 0.1f;
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
+
+        [Header("Audio")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip swapClip;
+        [SerializeField] private AudioClip matchClearClip;
+        [SerializeField] private AudioClip cascadeFallClip;
+        [SerializeField] private AudioClip specialActivationClip;
 
         private Piece[,] pieces;
         private Sprite[] sprites;
         private bool isBusy;
         private bool hasInitialized;
-
         private readonly List<Piece> matchBuffer = new List<Piece>();
         private readonly List<MatchGroup> matchGroupsBuffer = new List<MatchGroup>();
 
@@ -148,6 +157,7 @@ namespace GameCore
 
             if (!IsSwapValid(first, second))
             {
+                StartCoroutine(InvalidSwapRoutine(first, second));
                 return false;
             }
 
@@ -176,14 +186,16 @@ namespace GameCore
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
-            SwapPieces(first, second);
+            SwapPieces(first, second, swapDuration);
+            PlayClip(swapClip);
 
-            yield return new WaitForSeconds(0.05f);
+            yield return new WaitForSeconds(swapDuration);
 
             var matches = FindMatches();
             if (matches.Count == 0)
             {
-                SwapPieces(first, second);
+                SwapPieces(first, second, invalidSwapDuration);
+                yield return new WaitForSeconds(invalidSwapDuration);
                 isBusy = false;
                 yield break;
             }
@@ -192,7 +204,23 @@ namespace GameCore
             isBusy = false;
         }
 
-        private void SwapPieces(Piece first, Piece second)
+        private IEnumerator InvalidSwapRoutine(Piece first, Piece second)
+        {
+            if (isBusy)
+            {
+                yield break;
+            }
+
+            isBusy = true;
+            SwapPieces(first, second, invalidSwapDuration);
+            PlayClip(swapClip);
+            yield return new WaitForSeconds(invalidSwapDuration);
+            SwapPieces(first, second, invalidSwapDuration);
+            yield return new WaitForSeconds(invalidSwapDuration);
+            isBusy = false;
+        }
+
+        private void SwapPieces(Piece first, Piece second, float duration)
         {
             pieces[first.X, first.Y] = second;
             pieces[second.X, second.Y] = first;
@@ -200,8 +228,11 @@ namespace GameCore
             var firstX = first.X;
             var firstY = first.Y;
 
-            first.SetPosition(second.X, second.Y, GridToWorld(second.X, second.Y));
-            second.SetPosition(firstX, firstY, GridToWorld(firstX, firstY));
+            first.UpdateGridPosition(second.X, second.Y);
+            second.UpdateGridPosition(firstX, firstY);
+
+            first.MoveTo(GridToWorld(second.X, second.Y), duration);
+            second.MoveTo(GridToWorld(firstX, firstY), duration);
         }
 
         private void SwapPiecesInGrid(Piece first, Piece second)
@@ -212,8 +243,8 @@ namespace GameCore
             var firstX = first.X;
             var firstY = first.Y;
 
-            first.SetPosition(second.X, second.Y, first.transform.position);
-            second.SetPosition(firstX, firstY, second.transform.position);
+            first.UpdateGridPosition(second.X, second.Y);
+            second.UpdateGridPosition(firstX, firstY);
         }
 
         private bool HasMatchAt(int x, int y)
@@ -356,8 +387,20 @@ namespace GameCore
             {
                 var protectedPieces = CreateSpecialTiles(matchGroups);
                 ClearMatches(matchBuffer, protectedPieces);
+            while (true)
+            {
+                ClearMatches(matches);
+                PlayClip(matchClearClip);
+                var matchGroups = FindMatchGroups();
+                if (matchGroups.Count == 0)
+                {
+                    yield break;
+                }
+
+                ClearMatches(matchGroups[0].Pieces);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
+                PlayClip(cascadeFallClip);
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
@@ -409,6 +452,61 @@ namespace GameCore
                     }
 
                     if (piece.Special != Piece.SpecialType.None)
+        private List<MatchGroup> FindMatchGroups()
+        {
+            var matched = new bool[width, height];
+
+            for (var y = 0; y < height; y++)
+            {
+                var runLength = 1;
+                for (var x = 1; x < width; x++)
+                {
+                    var current = pieces[x, y];
+                    var previous = pieces[x - 1, y];
+                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    {
+                        runLength++;
+                    }
+                    else
+                    {
+                        MarkRunMatches(matched, x - 1, y, runLength, Vector2Int.right);
+                        runLength = 1;
+                    }
+                }
+
+                MarkRunMatches(matched, width - 1, y, runLength, Vector2Int.right);
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                var runLength = 1;
+                for (var y = 1; y < height; y++)
+                {
+                    var current = pieces[x, y];
+                    var previous = pieces[x, y - 1];
+                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    {
+                        runLength++;
+                    }
+                    else
+                    {
+                        MarkRunMatches(matched, x, y - 1, runLength, Vector2Int.up);
+                        runLength = 1;
+                    }
+                }
+
+                MarkRunMatches(matched, x, height - 1, runLength, Vector2Int.up);
+            }
+
+            var visited = new bool[width, height];
+            var groups = new List<MatchGroup>();
+            var queue = new Queue<Vector2Int>();
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (!matched[x, y] || visited[x, y])
                     {
                         continue;
                     }
@@ -444,6 +542,72 @@ namespace GameCore
                 >= 7 => Piece.SpecialType.UltimateBomb,
                 _ => Piece.SpecialType.None
             };
+                    var groupPieces = new List<Piece>();
+                    queue.Enqueue(new Vector2Int(x, y));
+                    visited[x, y] = true;
+
+                    while (queue.Count > 0)
+                    {
+                        var current = queue.Dequeue();
+                        var piece = pieces[current.x, current.y];
+                        if (piece != null)
+                        {
+                            groupPieces.Add(piece);
+                        }
+
+                        TryEnqueueMatchNeighbor(current.x + 1, current.y, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x - 1, current.y, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x, current.y + 1, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x, current.y - 1, matched, visited, queue);
+                    }
+
+                    if (groupPieces.Count > 0)
+                    {
+                        groups.Add(new MatchGroup(groupPieces));
+                    }
+                }
+            }
+
+            groups.Sort((first, second) => second.Size.CompareTo(first.Size));
+            return groups;
+        }
+
+        private void MarkRunMatches(bool[,] matched, int endX, int endY, int runLength, Vector2Int direction)
+        {
+            if (runLength < 3)
+            {
+                return;
+            }
+
+            for (var i = 0; i < runLength; i++)
+            {
+                var x = endX - direction.x * i;
+                var y = endY - direction.y * i;
+                matched[x, y] = true;
+            }
+        }
+
+        private void TryEnqueueMatchNeighbor(int x, int y, bool[,] matched, bool[,] visited, Queue<Vector2Int> queue)
+        {
+            if (!IsInBounds(x, y) || visited[x, y] || !matched[x, y])
+            {
+                return;
+            }
+
+            visited[x, y] = true;
+            queue.Enqueue(new Vector2Int(x, y));
+        }
+
+        private class MatchGroup
+        {
+            public MatchGroup(List<Piece> pieces)
+            {
+                Pieces = pieces;
+            }
+
+            public List<Piece> Pieces { get; }
+
+            public int Size => Pieces.Count;
         }
 
         private void CollapseColumns()
@@ -465,7 +629,8 @@ namespace GameCore
                         var piece = pieces[x, y];
                         pieces[x, y] = null;
                         pieces[x, nextEmptyY] = piece;
-                        piece.SetPosition(x, nextEmptyY, GridToWorld(x, nextEmptyY));
+                        piece.UpdateGridPosition(x, nextEmptyY);
+                        piece.MoveTo(GridToWorld(x, nextEmptyY), fallDuration);
                         nextEmptyY++;
                     }
                 }
@@ -480,7 +645,10 @@ namespace GameCore
                 {
                     if (pieces[x, y] == null)
                     {
-                        CreatePiece(x, y, GetRandomColorIndex());
+                        var newPiece = CreatePiece(x, y, GetRandomColorIndex());
+                        var spawnPosition = GridToWorld(x, height + 1);
+                        newPiece.transform.position = spawnPosition;
+                        newPiece.MoveTo(GridToWorld(x, y), fallDuration);
                     }
                 }
             }
@@ -523,6 +691,26 @@ namespace GameCore
             }
 
             return spriteList.ToArray();
+        }
+
+        public void TriggerSpecialActivation(Piece piece)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            PlayClip(specialActivationClip);
+        }
+
+        private void PlayClip(AudioClip clip)
+        {
+            if (audioSource == null || clip == null)
+            {
+                return;
+            }
+
+            audioSource.PlayOneShot(clip);
         }
     }
 }
