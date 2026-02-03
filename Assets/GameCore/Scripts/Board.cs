@@ -31,23 +31,32 @@ namespace GameCore
         [SerializeField] private AudioClip cascadeFallClip;
         [SerializeField] private AudioClip specialActivationClip;
 
+        // STAGE 0: Debug toggle for state transition logging.
+        [Header("Debug")]
+        [SerializeField] private bool logStateTransitions;
+
         private Piece[,] pieces;
         private Sprite[] sprites;
+
+        // STAGE 0: Global busy gate for swap/resolve/refill.
         private bool isBusy;
         private bool hasInitialized;
-        private readonly List<Piece> matchBuffer = new List<Piece>();
         private const int MegaBombIndex = 6;
         private const int UltimateBombIndex = 7;
-        private readonly List<MatchGroup> matchGroupsBuffer = new List<MatchGroup>();
+
+        // STAGE 0: Read-only busy state for input gating.
+        public bool IsBusy => isBusy;
 
         private class MatchGroup
         {
-            public List<Piece> Pieces { get; }
-
             public MatchGroup(List<Piece> pieces)
             {
                 Pieces = pieces;
             }
+
+            public List<Piece> Pieces { get; }
+
+            public int Size => Pieces.Count;
         }
 
         private void Awake()
@@ -85,33 +94,27 @@ namespace GameCore
         private void ResetBoardState()
         {
             StopAllCoroutines();
-            isBusy = false;
+            // STAGE 0: Lock input during board reset/initial resolve.
+            isBusy = true;
             ClearExistingPieces();
             pieces = new Piece[width, height];
             CreateBoard();
-            StartCoroutine(ClearMatchesRoutine());
+            StartCoroutine(ResolveBoardRoutine());
         }
 
         private void ClearExistingPieces()
         {
-            if (pieces == null)
+            if (pieces != null)
             {
-                foreach (Transform child in transform)
+                for (var x = 0; x < pieces.GetLength(0); x++)
                 {
-                    Destroy(child.gameObject);
-                }
-
-                return;
-            }
-
-            for (var x = 0; x < pieces.GetLength(0); x++)
-            {
-                for (var y = 0; y < pieces.GetLength(1); y++)
-                {
-                    var piece = pieces[x, y];
-                    if (piece != null)
+                    for (var y = 0; y < pieces.GetLength(1); y++)
                     {
-                        Destroy(piece.gameObject);
+                        var piece = pieces[x, y];
+                        if (piece != null)
+                        {
+                            Destroy(piece.gameObject);
+                        }
                     }
                 }
             }
@@ -220,12 +223,16 @@ namespace GameCore
 
             if (!IsSwapValid(first, second))
             {
+                // STAGE 0: Atomic invalid swap gate.
+                isBusy = true;
                 StartCoroutine(InvalidSwapRoutine(first, second));
                 return false;
             }
 
             ValidSwap?.Invoke();
-            StartCoroutine(SwapRoutine(first, second));
+            // STAGE 0: Atomic swap gate + pipeline entry.
+            isBusy = true;
+            StartCoroutine(SwapAndResolveRoutine(first, second));
             return true;
         }
 
@@ -252,9 +259,10 @@ namespace GameCore
             return hasMatch;
         }
 
-        private IEnumerator SwapRoutine(Piece first, Piece second)
+        // STAGE 0: Swap -> Detect -> Resolve -> Refill -> Detect cascades -> Unlock input.
+        private IEnumerator SwapAndResolveRoutine(Piece first, Piece second)
         {
-            isBusy = true;
+            LogState("SwapStart");
             SwapPieces(first, second, swapDuration);
             PlayClip(swapClip);
 
@@ -266,36 +274,35 @@ namespace GameCore
                 SignalBoardCleared();
                 SignalLevelWin();
                 isBusy = false;
+                LogState("Unlock");
                 yield break;
             }
 
-            var matches = FindMatches();
-            if (matches.Count == 0)
+            var matchGroups = FindMatchGroups();
+            if (matchGroups.Count == 0)
             {
                 SwapPieces(first, second, invalidSwapDuration);
                 yield return new WaitForSeconds(invalidSwapDuration);
                 isBusy = false;
+                LogState("Unlock");
                 yield break;
             }
 
-            yield return StartCoroutine(ClearMatchesRoutine());
+            yield return StartCoroutine(ResolveBoardRoutine());
             isBusy = false;
+            LogState("Unlock");
         }
 
         private IEnumerator InvalidSwapRoutine(Piece first, Piece second)
         {
-            if (isBusy)
-            {
-                yield break;
-            }
-
-            isBusy = true;
+            LogState("InvalidSwap");
             SwapPieces(first, second, invalidSwapDuration);
             PlayClip(swapClip);
             yield return new WaitForSeconds(invalidSwapDuration);
             SwapPieces(first, second, invalidSwapDuration);
             yield return new WaitForSeconds(invalidSwapDuration);
             isBusy = false;
+            LogState("Unlock");
         }
 
         private void SwapPieces(Piece first, Piece second, float duration)
@@ -337,6 +344,11 @@ namespace GameCore
 
         private bool HasMatchAt(int x, int y)
         {
+            if (!IsInBounds(x, y))
+            {
+                return false;
+            }
+
             var piece = pieces[x, y];
             if (piece == null)
             {
@@ -380,217 +392,11 @@ namespace GameCore
             return count;
         }
 
-        private List<Piece> FindMatches()
-        {
-            FindMatchGroups();
-            return matchBuffer;
-        }
-
-        private List<MatchGroup> FindMatchGroups()
-        {
-            matchBuffer.Clear();
-            var matchGroups = FindMatchGroups();
-            var seen = new HashSet<Piece>();
-            foreach (var group in matchGroups)
-            {
-                foreach (var piece in group)
-                {
-                    if (piece != null && seen.Add(piece))
-                    {
-                        matchBuffer.Add(piece);
-                    }
-                }
-            }
-            return matchBuffer;
-        }
-
-        private List<List<Piece>> FindMatchGroups()
-        {
-            var groups = new List<List<Piece>>();
-            matchGroupsBuffer.Clear();
-
-            // Scan horizontally for runs of 3+ matching pieces.
-            for (var y = 0; y < height; y++)
-            {
-                var runLength = 1;
-                for (var x = 1; x < width; x++)
-                {
-                    var current = pieces[x, y];
-                    var previous = pieces[x - 1, y];
-                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
-                    {
-                        runLength++;
-                    }
-                    else
-                    {
-                        AddRunMatchGroup(groups, x - 1, y, runLength, Vector2Int.right);
-                        runLength = 1;
-                    }
-                }
-
-                AddRunMatchGroup(groups, width - 1, y, runLength, Vector2Int.right);
-            }
-
-            // Scan vertically for runs of 3+ matching pieces.
-            for (var x = 0; x < width; x++)
-            {
-                var runLength = 1;
-                for (var y = 1; y < height; y++)
-                {
-                    var current = pieces[x, y];
-                    var previous = pieces[x, y - 1];
-                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
-                    {
-                        runLength++;
-                    }
-                    else
-                    {
-                        AddRunMatchGroup(groups, x, y - 1, runLength, Vector2Int.up);
-                        runLength = 1;
-                    }
-                }
-
-                AddRunMatchGroup(groups, x, height - 1, runLength, Vector2Int.up);
-            }
-
-            groups.Sort((a, b) => b.Count.CompareTo(a.Count));
-            return groups;
-            return matchGroupsBuffer;
-        }
-
-        private void AddRunMatchGroup(List<List<Piece>> groups, int endX, int endY, int runLength, Vector2Int direction)
-        {
-            if (runLength < 3)
-            {
-                return;
-            }
-
-            var group = new List<Piece>(runLength);
-            var runPieces = new List<Piece>(runLength);
-
-            for (var i = 0; i < runLength; i++)
-            {
-                var x = endX - direction.x * i;
-                var y = endY - direction.y * i;
-                var piece = pieces[x, y];
-                if (piece != null)
-                if (piece == null)
-                {
-                    continue;
-                }
-
-                runPieces.Add(piece);
-                if (!matchBuffer.Contains(piece))
-                {
-                    group.Add(piece);
-                }
-            }
-
-            if (group.Count > 0)
-            {
-                groups.Add(group);
-            if (runPieces.Count >= 3)
-            {
-                matchGroupsBuffer.Add(new MatchGroup(runPieces));
-            }
-        }
-
-        private IEnumerator ClearMatchesRoutine()
-        {
-            isBusy = true;
-            var matches = FindMatches();
-            while (matches.Count > 0)
-            var matchGroups = FindMatchGroups();
-            while (matchGroups.Count > 0)
-            {
-                var protectedPieces = CreateSpecialTiles(matchGroups);
-                ClearMatches(matchBuffer, protectedPieces);
-            while (true)
-            {
-                ClearMatches(matches);
-                PlayClip(matchClearClip);
-                var matchGroups = FindMatchGroups();
-                if (matchGroups.Count == 0)
-                {
-                    yield break;
-                }
-
-                ClearMatches(matchGroups[0].Pieces);
-                yield return new WaitForSeconds(refillDelay);
-                CollapseColumns();
-                PlayClip(cascadeFallClip);
-                yield return new WaitForSeconds(refillDelay);
-                RefillBoard();
-                yield return new WaitForSeconds(refillDelay);
-                // Continue clearing until the board settles with no matches.
-                matches = FindMatches();
-                matchGroups = FindMatchGroups();
-            }
-
-            isBusy = false;
-        }
-
-        private void ClearMatches(List<Piece> matches, HashSet<Piece> protectedPieces)
-        {
-            var clearedCount = 0;
-            foreach (var piece in matches)
-            {
-                if (piece == null)
-                {
-                    continue;
-                }
-
-                if (IsInBounds(piece.X, piece.Y))
-                {
-                    pieces[piece.X, piece.Y] = null;
-                }
-                clearedCount++;
-                if (piece.Special != Piece.SpecialType.None)
-                {
-                    continue;
-                }
-
-                if (protectedPieces.Contains(piece))
-                {
-                    continue;
-                }
-
-                pieces[piece.X, piece.Y] = null;
-                Destroy(piece.gameObject);
-            }
-
-            if (clearedCount > 0)
-            {
-                MatchesCleared?.Invoke(clearedCount);
-            }
-        }
-
-        private void ClearBoard()
-        {
-        private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups)
-        {
-            var protectedPieces = new HashSet<Piece>();
-            foreach (var group in matchGroups)
-            {
-                var specialType = GetSpecialTypeForMatch(group.Pieces.Count);
-                if (specialType == Piece.SpecialType.None)
-                {
-                    continue;
-                }
-
-                Piece candidate = null;
-                foreach (var piece in group.Pieces)
-                {
-                    if (piece == null)
-                    {
-                        continue;
-                    }
-
-                    if (piece.Special != Piece.SpecialType.None)
         private List<MatchGroup> FindMatchGroups()
         {
             var matched = new bool[width, height];
 
+            // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
             {
                 var runLength = 1;
@@ -612,6 +418,7 @@ namespace GameCore
                 MarkRunMatches(matched, width - 1, y, runLength, Vector2Int.right);
             }
 
+            // Scan vertically for runs of 3+ matching pieces.
             for (var x = 0; x < width; x++)
             {
                 var runLength = 1;
@@ -641,48 +448,11 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
-                    var piece = pieces[x, y];
-                    if (piece == null)
                     if (!matched[x, y] || visited[x, y])
                     {
                         continue;
                     }
 
-                    pieces[x, y] = null;
-                    Destroy(piece.gameObject);
-                }
-            }
-                    if (protectedPieces.Contains(piece))
-                    {
-                        continue;
-                    }
-
-                    candidate = piece;
-                    break;
-                }
-
-                if (candidate == null)
-                {
-                    continue;
-                }
-
-                candidate.SetSpecialType(specialType);
-                protectedPieces.Add(candidate);
-            }
-
-            return protectedPieces;
-        }
-
-        private Piece.SpecialType GetSpecialTypeForMatch(int matchSize)
-        {
-            return matchSize switch
-            {
-                4 => Piece.SpecialType.Bomb,
-                5 => Piece.SpecialType.StrongBomb,
-                6 => Piece.SpecialType.MegaBomb,
-                >= 7 => Piece.SpecialType.UltimateBomb,
-                _ => Piece.SpecialType.None
-            };
                     var groupPieces = new List<Piece>();
                     queue.Enqueue(new Vector2Int(x, y));
                     visited[x, y] = true;
@@ -739,16 +509,129 @@ namespace GameCore
             queue.Enqueue(new Vector2Int(x, y));
         }
 
-        private class MatchGroup
+        // STAGE 0: Resolve loop for clears, falls, refills, and cascades.
+        private IEnumerator ResolveBoardRoutine()
         {
-            public MatchGroup(List<Piece> pieces)
+            LogState("ResolveStart");
+            var matchGroups = FindMatchGroups();
+            while (matchGroups.Count > 0)
             {
-                Pieces = pieces;
+                var protectedPieces = CreateSpecialTiles(matchGroups);
+                var clearedCount = ClearMatches(matchGroups, protectedPieces);
+                if (clearedCount > 0)
+                {
+                    MatchesCleared?.Invoke(clearedCount);
+                    PlayClip(matchClearClip);
+                }
+
+                yield return new WaitForSeconds(refillDelay);
+                CollapseColumns();
+                PlayClip(cascadeFallClip);
+                yield return new WaitForSeconds(refillDelay);
+                RefillBoard();
+                yield return new WaitForSeconds(refillDelay);
+
+                matchGroups = FindMatchGroups();
             }
 
-            public List<Piece> Pieces { get; }
+            LogState("ResolveComplete");
+        }
 
-            public int Size => Pieces.Count;
+        private int ClearMatches(List<MatchGroup> matchGroups, HashSet<Piece> protectedPieces)
+        {
+            var clearedCount = 0;
+            var uniqueMatches = new HashSet<Piece>();
+
+            foreach (var group in matchGroups)
+            {
+                foreach (var piece in group.Pieces)
+                {
+                    if (piece != null)
+                    {
+                        uniqueMatches.Add(piece);
+                    }
+                }
+            }
+
+            foreach (var piece in uniqueMatches)
+            {
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                if (piece.Special != Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                if (protectedPieces.Contains(piece))
+                {
+                    continue;
+                }
+
+                if (IsInBounds(piece.X, piece.Y))
+                {
+                    pieces[piece.X, piece.Y] = null;
+                }
+
+                Destroy(piece.gameObject);
+                clearedCount++;
+            }
+
+            return clearedCount;
+        }
+
+        private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups)
+        {
+            var protectedPieces = new HashSet<Piece>();
+            foreach (var group in matchGroups)
+            {
+                var specialType = GetSpecialTypeForMatch(group.Pieces.Count);
+                if (specialType == Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                Piece candidate = null;
+                foreach (var piece in group.Pieces)
+                {
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.Special != Piece.SpecialType.None)
+                    {
+                        continue;
+                    }
+
+                    candidate = piece;
+                    break;
+                }
+
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                candidate.SetSpecialType(specialType);
+                protectedPieces.Add(candidate);
+            }
+
+            return protectedPieces;
+        }
+
+        private Piece.SpecialType GetSpecialTypeForMatch(int matchSize)
+        {
+            return matchSize switch
+            {
+                4 => Piece.SpecialType.Bomb,
+                5 => Piece.SpecialType.StrongBomb,
+                6 => Piece.SpecialType.MegaBomb,
+                >= 7 => Piece.SpecialType.UltimateBomb,
+                _ => Piece.SpecialType.None
+            };
         }
 
         private void CollapseColumns()
@@ -815,6 +698,24 @@ namespace GameCore
                 || (firstIndex == UltimateBombIndex && secondIndex == MegaBombIndex);
         }
 
+        private void ClearBoard()
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    pieces[x, y] = null;
+                    Destroy(piece.gameObject);
+                }
+            }
+        }
+
         private void SignalBoardCleared()
         {
             OnBoardCleared?.Invoke();
@@ -879,6 +780,8 @@ namespace GameCore
             }
 
             return true;
+        }
+
         public void TriggerSpecialActivation(Piece piece)
         {
             if (piece == null)
@@ -897,6 +800,17 @@ namespace GameCore
             }
 
             audioSource.PlayOneShot(clip);
+        }
+
+        // STAGE 0: Optional debug output for board pipeline state.
+        private void LogState(string state)
+        {
+            if (!logStateTransitions)
+            {
+                return;
+            }
+
+            Debug.Log($"[Board] State -> {state}", this);
         }
     }
 }

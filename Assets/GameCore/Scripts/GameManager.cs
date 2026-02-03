@@ -206,6 +206,8 @@ namespace GameCore
 
             hasEnded = true;
             OnLose?.Invoke();
+        }
+
         public void TriggerInstantWin()
         {
             HasMetTarget = true;
