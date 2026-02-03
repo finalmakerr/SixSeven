@@ -31,6 +31,17 @@ namespace GameCore
         private bool isBusy;
         private bool hasInitialized;
         private readonly List<Piece> matchBuffer = new List<Piece>();
+        private readonly List<MatchGroup> matchGroupsBuffer = new List<MatchGroup>();
+
+        private class MatchGroup
+        {
+            public List<Piece> Pieces { get; }
+
+            public MatchGroup(List<Piece> pieces)
+            {
+                Pieces = pieces;
+            }
+        }
 
         private void Awake()
         {
@@ -283,7 +294,14 @@ namespace GameCore
 
         private List<Piece> FindMatches()
         {
+            FindMatchGroups();
+            return matchBuffer;
+        }
+
+        private List<MatchGroup> FindMatchGroups()
+        {
             matchBuffer.Clear();
+            matchGroupsBuffer.Clear();
 
             for (var y = 0; y < height; y++)
             {
@@ -327,7 +345,7 @@ namespace GameCore
                 AddRunMatches(x, height - 1, runLength, Vector2Int.up);
             }
 
-            return matchBuffer;
+            return matchGroupsBuffer;
         }
 
         private void AddRunMatches(int endX, int endY, int runLength, Vector2Int direction)
@@ -337,20 +355,38 @@ namespace GameCore
                 return;
             }
 
+            var runPieces = new List<Piece>(runLength);
+
             for (var i = 0; i < runLength; i++)
             {
                 var x = endX - direction.x * i;
                 var y = endY - direction.y * i;
                 var piece = pieces[x, y];
-                if (piece != null && !matchBuffer.Contains(piece))
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                runPieces.Add(piece);
+                if (!matchBuffer.Contains(piece))
                 {
                     matchBuffer.Add(piece);
                 }
+            }
+
+            if (runPieces.Count >= 3)
+            {
+                matchGroupsBuffer.Add(new MatchGroup(runPieces));
             }
         }
 
         private IEnumerator ClearMatchesRoutine()
         {
+            var matchGroups = FindMatchGroups();
+            while (matchGroups.Count > 0)
+            {
+                var protectedPieces = CreateSpecialTiles(matchGroups);
+                ClearMatches(matchBuffer, protectedPieces);
             while (true)
             {
                 ClearMatches(matches);
@@ -368,14 +404,25 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
+                matchGroups = FindMatchGroups();
             }
         }
 
-        private void ClearMatches(List<Piece> matches)
+        private void ClearMatches(List<Piece> matches, HashSet<Piece> protectedPieces)
         {
             foreach (var piece in matches)
             {
                 if (piece == null)
+                {
+                    continue;
+                }
+
+                if (piece.Special != Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                if (protectedPieces.Contains(piece))
                 {
                     continue;
                 }
@@ -385,6 +432,26 @@ namespace GameCore
             }
         }
 
+        private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups)
+        {
+            var protectedPieces = new HashSet<Piece>();
+            foreach (var group in matchGroups)
+            {
+                var specialType = GetSpecialTypeForMatch(group.Pieces.Count);
+                if (specialType == Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                Piece candidate = null;
+                foreach (var piece in group.Pieces)
+                {
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.Special != Piece.SpecialType.None)
         private List<MatchGroup> FindMatchGroups()
         {
             var matched = new bool[width, height];
@@ -444,6 +511,37 @@ namespace GameCore
                         continue;
                     }
 
+                    if (protectedPieces.Contains(piece))
+                    {
+                        continue;
+                    }
+
+                    candidate = piece;
+                    break;
+                }
+
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                candidate.SetSpecialType(specialType);
+                protectedPieces.Add(candidate);
+            }
+
+            return protectedPieces;
+        }
+
+        private Piece.SpecialType GetSpecialTypeForMatch(int matchSize)
+        {
+            return matchSize switch
+            {
+                4 => Piece.SpecialType.Bomb,
+                5 => Piece.SpecialType.StrongBomb,
+                6 => Piece.SpecialType.MegaBomb,
+                >= 7 => Piece.SpecialType.UltimateBomb,
+                _ => Piece.SpecialType.None
+            };
                     var groupPieces = new List<Piece>();
                     queue.Enqueue(new Vector2Int(x, y));
                     visited[x, y] = true;
