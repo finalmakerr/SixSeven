@@ -16,7 +16,10 @@ namespace GameCore
         [SerializeField] private int height = 7;
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
-        [SerializeField] private float refillDelay = 0.1f;
+        // STAGE 2: Delay timings for match confirmation, clears, and falls.
+        [SerializeField] private float matchConfirmDelay = 0.12f;
+        [SerializeField] private float clearDelay = 0.05f;
+        [SerializeField] private float fallDelay = 0.10f;
         [SerializeField] private float swapDuration = 0.12f;
         [SerializeField] private float fallDuration = 0.1f;
         // STAGE 1
@@ -552,27 +555,30 @@ namespace GameCore
             queue.Enqueue(new Vector2Int(x, y));
         }
 
-        // STAGE 0: Resolve loop for clears, falls, refills, and cascades.
+        // STAGE 2: Resolve loop enforces detect -> pause -> clear -> pause -> collapse -> pause -> refill.
         private IEnumerator ResolveBoardRoutine()
         {
             LogState("ResolveStart");
             var matchGroups = FindMatchGroups();
             while (matchGroups.Count > 0)
             {
+                yield return new WaitForSeconds(matchConfirmDelay);
                 var protectedPieces = CreateSpecialTiles(matchGroups);
                 var clearedCount = ClearMatches(matchGroups, protectedPieces);
                 if (clearedCount > 0)
                 {
                     MatchesCleared?.Invoke(clearedCount);
+                    // STAGE 2: Play clear audio per clear batch.
                     PlayClip(matchClearClip);
                 }
 
-                yield return new WaitForSeconds(refillDelay);
-                CollapseColumns();
+                yield return new WaitForSeconds(clearDelay);
+                // STAGE 2: Falling begins with a cascade clip.
                 PlayClip(cascadeFallClip);
-                yield return new WaitForSeconds(refillDelay);
+                CollapseColumns();
+                yield return new WaitForSeconds(fallDelay);
                 RefillBoard();
-                yield return new WaitForSeconds(refillDelay);
+                yield return new WaitForSeconds(fallDelay);
 
                 matchGroups = FindMatchGroups();
             }
