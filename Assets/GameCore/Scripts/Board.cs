@@ -351,18 +351,23 @@ namespace GameCore
 
         private IEnumerator ClearMatchesRoutine()
         {
-            var matches = FindMatches();
-            while (matches.Count > 0)
+            while (true)
             {
                 ClearMatches(matches);
                 PlayClip(matchClearClip);
+                var matchGroups = FindMatchGroups();
+                if (matchGroups.Count == 0)
+                {
+                    yield break;
+                }
+
+                ClearMatches(matchGroups[0].Pieces);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
                 PlayClip(cascadeFallClip);
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
-                matches = FindMatches();
             }
         }
 
@@ -378,6 +383,133 @@ namespace GameCore
                 pieces[piece.X, piece.Y] = null;
                 Destroy(piece.gameObject);
             }
+        }
+
+        private List<MatchGroup> FindMatchGroups()
+        {
+            var matched = new bool[width, height];
+
+            for (var y = 0; y < height; y++)
+            {
+                var runLength = 1;
+                for (var x = 1; x < width; x++)
+                {
+                    var current = pieces[x, y];
+                    var previous = pieces[x - 1, y];
+                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    {
+                        runLength++;
+                    }
+                    else
+                    {
+                        MarkRunMatches(matched, x - 1, y, runLength, Vector2Int.right);
+                        runLength = 1;
+                    }
+                }
+
+                MarkRunMatches(matched, width - 1, y, runLength, Vector2Int.right);
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                var runLength = 1;
+                for (var y = 1; y < height; y++)
+                {
+                    var current = pieces[x, y];
+                    var previous = pieces[x, y - 1];
+                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    {
+                        runLength++;
+                    }
+                    else
+                    {
+                        MarkRunMatches(matched, x, y - 1, runLength, Vector2Int.up);
+                        runLength = 1;
+                    }
+                }
+
+                MarkRunMatches(matched, x, height - 1, runLength, Vector2Int.up);
+            }
+
+            var visited = new bool[width, height];
+            var groups = new List<MatchGroup>();
+            var queue = new Queue<Vector2Int>();
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (!matched[x, y] || visited[x, y])
+                    {
+                        continue;
+                    }
+
+                    var groupPieces = new List<Piece>();
+                    queue.Enqueue(new Vector2Int(x, y));
+                    visited[x, y] = true;
+
+                    while (queue.Count > 0)
+                    {
+                        var current = queue.Dequeue();
+                        var piece = pieces[current.x, current.y];
+                        if (piece != null)
+                        {
+                            groupPieces.Add(piece);
+                        }
+
+                        TryEnqueueMatchNeighbor(current.x + 1, current.y, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x - 1, current.y, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x, current.y + 1, matched, visited, queue);
+                        TryEnqueueMatchNeighbor(current.x, current.y - 1, matched, visited, queue);
+                    }
+
+                    if (groupPieces.Count > 0)
+                    {
+                        groups.Add(new MatchGroup(groupPieces));
+                    }
+                }
+            }
+
+            groups.Sort((first, second) => second.Size.CompareTo(first.Size));
+            return groups;
+        }
+
+        private void MarkRunMatches(bool[,] matched, int endX, int endY, int runLength, Vector2Int direction)
+        {
+            if (runLength < 3)
+            {
+                return;
+            }
+
+            for (var i = 0; i < runLength; i++)
+            {
+                var x = endX - direction.x * i;
+                var y = endY - direction.y * i;
+                matched[x, y] = true;
+            }
+        }
+
+        private void TryEnqueueMatchNeighbor(int x, int y, bool[,] matched, bool[,] visited, Queue<Vector2Int> queue)
+        {
+            if (!IsInBounds(x, y) || visited[x, y] || !matched[x, y])
+            {
+                return;
+            }
+
+            visited[x, y] = true;
+            queue.Enqueue(new Vector2Int(x, y));
+        }
+
+        private class MatchGroup
+        {
+            public MatchGroup(List<Piece> pieces)
+            {
+                Pieces = pieces;
+            }
+
+            public List<Piece> Pieces { get; }
+
+            public int Size => Pieces.Count;
         }
 
         private void CollapseColumns()
