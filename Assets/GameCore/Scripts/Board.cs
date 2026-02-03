@@ -7,7 +7,8 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
-        public event Action<int> MatchesCleared;
+        // STAGE 3: Matches cleared with cascade count for combo scoring.
+        public event Action<int, int> MatchesCleared;
         public event Action ValidSwap;
         public event Action OnBoardCleared;
 
@@ -304,6 +305,7 @@ namespace GameCore
                 yield break;
             }
 
+            // STAGE 3: Reset cascade count per player move.
             yield return StartCoroutine(ResolveBoardRoutine());
             isBusy = false;
             onComplete?.Invoke(true);
@@ -556,18 +558,21 @@ namespace GameCore
         }
 
         // STAGE 2: Resolve loop enforces detect -> pause -> clear -> pause -> collapse -> pause -> refill.
+        // STAGE 3: Cascade count increments per clear batch during resolve.
         private IEnumerator ResolveBoardRoutine()
         {
             LogState("ResolveStart");
             var matchGroups = FindMatchGroups();
+            var cascadeCount = 0;
             while (matchGroups.Count > 0)
             {
+                cascadeCount++;
                 yield return new WaitForSeconds(matchConfirmDelay);
                 var protectedPieces = CreateSpecialTiles(matchGroups);
                 var clearedCount = ClearMatches(matchGroups, protectedPieces);
                 if (clearedCount > 0)
                 {
-                    MatchesCleared?.Invoke(clearedCount);
+                    MatchesCleared?.Invoke(clearedCount, cascadeCount);
                     // STAGE 2: Play clear audio per clear batch.
                     PlayClip(matchClearClip);
                 }

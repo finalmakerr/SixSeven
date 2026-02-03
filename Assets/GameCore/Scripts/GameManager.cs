@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -24,6 +25,10 @@ namespace GameCore
         [Header("UI")]
         [SerializeField] private Text scoreText;
         [SerializeField] private Text movesText;
+        // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
+        [SerializeField] private Text comboText;
+        // STAGE 3: Duration to display combo callouts.
+        [SerializeField] private float comboDisplayDuration = 0.75f;
 
         public static GameManager Instance { get; private set; }
 
@@ -34,6 +39,7 @@ namespace GameCore
         public bool HasMetTarget { get; private set; }
 
         private bool hasEnded;
+        private Coroutine comboRoutine;
 
         private void Awake()
         {
@@ -82,6 +88,7 @@ namespace GameCore
             MovesRemaining = startingMoves;
             HasMetTarget = false;
             hasEnded = false;
+            HideComboText();
             UpdateUI();
         }
 
@@ -113,9 +120,11 @@ namespace GameCore
             return true;
         }
 
-        public void AddScore(int piecesCleared)
+        // STAGE 3: Apply cascade multiplier to match scoring.
+        public void AddScore(int piecesCleared, int cascadeCount)
         {
-            Score += piecesCleared * scorePerPiece;
+            var baseMatchScore = piecesCleared * scorePerPiece;
+            Score += baseMatchScore * Mathf.Max(1, cascadeCount);
             if (Score >= TargetScore)
             {
                 HasMetTarget = true;
@@ -162,14 +171,18 @@ namespace GameCore
             board.ValidSwap -= HandleValidSwap;
         }
 
-        private void HandleMatchesCleared(int clearedCount)
+        private void HandleMatchesCleared(int clearedCount, int cascadeCount)
         {
             if (hasEnded)
             {
                 return;
             }
 
-            AddScore(clearedCount);
+            AddScore(clearedCount, cascadeCount);
+            if (cascadeCount >= 2)
+            {
+                ShowComboText(cascadeCount);
+            }
         }
 
         private void HandleValidSwap()
@@ -229,6 +242,40 @@ namespace GameCore
             {
                 movesText.text = $"Moves: {MovesRemaining}";
             }
+        }
+
+        // STAGE 3: Combo callout helper.
+        private void ShowComboText(int cascadeCount)
+        {
+            if (comboText == null)
+            {
+                return;
+            }
+
+            if (comboRoutine != null)
+            {
+                StopCoroutine(comboRoutine);
+            }
+
+            comboRoutine = StartCoroutine(ComboTextRoutine(cascadeCount));
+        }
+
+        private IEnumerator ComboTextRoutine(int cascadeCount)
+        {
+            comboText.text = $"COMBO x{cascadeCount}";
+            comboText.enabled = true;
+            yield return new WaitForSeconds(comboDisplayDuration);
+            HideComboText();
+        }
+
+        private void HideComboText()
+        {
+            if (comboText == null)
+            {
+                return;
+            }
+
+            comboText.enabled = false;
         }
     }
 }
