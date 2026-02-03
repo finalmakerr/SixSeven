@@ -25,6 +25,8 @@ namespace GameCore
 
         private SpriteRenderer spriteRenderer;
         private Coroutine moveRoutine;
+        // STAGE 1
+        private Coroutine shakeRoutine;
 
         private void Awake()
         {
@@ -79,6 +81,41 @@ namespace GameCore
             }
 
             moveRoutine = StartCoroutine(MoveRoutine(targetPosition, duration));
+        }
+
+        // STAGE 1
+        public void MicroShake(float duration, float magnitude)
+        {
+            if (shakeRoutine != null)
+            {
+                StopCoroutine(shakeRoutine);
+            }
+
+            shakeRoutine = StartCoroutine(ShakeRoutine(duration, magnitude));
+        }
+
+        // STAGE 1
+        private IEnumerator ShakeRoutine(float duration, float magnitude)
+        {
+            var basePosition = transform.position;
+            if (duration <= 0f || magnitude <= 0f)
+            {
+                transform.position = basePosition;
+                shakeRoutine = null;
+                yield break;
+            }
+
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var offset = (Vector3)Random.insideUnitCircle * magnitude;
+                transform.position = basePosition + offset;
+                yield return null;
+            }
+
+            transform.position = basePosition;
+            shakeRoutine = null;
         }
 
         private IEnumerator MoveRoutine(Vector3 targetPosition, float duration)
