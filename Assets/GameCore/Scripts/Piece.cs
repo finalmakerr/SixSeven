@@ -8,10 +8,14 @@ namespace GameCore
     public class Piece : MonoBehaviour
     {
         [SerializeField] private float size = 0.9f;
+        // STAGE 6
+        [SerializeField] private Color rowClearTint = new Color(0.75f, 1f, 1f, 1f);
 
         public enum SpecialType
         {
             None,
+            // STAGE 6
+            RowClear,
             Bomb,
             StrongBomb,
             MegaBomb,
@@ -30,6 +34,8 @@ namespace GameCore
         // STAGE 5
         private Coroutine punchRoutine;
         private Vector3 baseScale;
+        // STAGE 6
+        private Color baseTint = Color.white;
 
         private void Awake()
         {
@@ -54,12 +60,20 @@ namespace GameCore
             if (spriteRenderer != null)
             {
                 spriteRenderer.sprite = sprite;
+                spriteRenderer.color = baseTint;
             }
         }
 
         public void SetSpecialType(SpecialType specialType)
         {
             Special = specialType;
+            // STAGE 6
+            if (spriteRenderer == null)
+            {
+                return;
+            }
+
+            spriteRenderer.color = specialType == SpecialType.RowClear ? rowClearTint : baseTint;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)

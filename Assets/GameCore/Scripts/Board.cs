@@ -56,6 +56,8 @@ namespace GameCore
         private bool hasInitialized;
         private const int MegaBombIndex = 6;
         private const int UltimateBombIndex = 7;
+        // STAGE 6
+        private HashSet<Vector2Int> pendingSwapPositions;
 
         // STAGE 0: Read-only busy state for input gating.
         public bool IsBusy => isBusy;
@@ -282,6 +284,12 @@ namespace GameCore
             LogState("SwapStart");
             SwapPieces(first, second, swapDuration);
             PlayClip(swapClip);
+            // STAGE 6: Track swap positions for RowClear creation.
+            pendingSwapPositions = new HashSet<Vector2Int>
+            {
+                new Vector2Int(first.X, first.Y),
+                new Vector2Int(second.X, second.Y)
+            };
 
             yield return new WaitForSeconds(swapDuration);
 
@@ -290,6 +298,8 @@ namespace GameCore
                 ClearBoard();
                 SignalBoardCleared();
                 SignalLevelWin();
+                // STAGE 6
+                pendingSwapPositions = null;
                 isBusy = false;
                 onComplete?.Invoke(true);
                 LogState("Unlock");
@@ -299,6 +309,8 @@ namespace GameCore
             var matchGroups = FindMatchGroups();
             if (matchGroups.Count == 0)
             {
+                // STAGE 6
+                pendingSwapPositions = null;
                 // STAGE 1
                 SwapPieces(first, second, swapDuration);
                 PlayClip(invalidSwapClip);
@@ -569,13 +581,17 @@ namespace GameCore
             LogState("ResolveStart");
             var matchGroups = FindMatchGroups();
             var cascadeCount = 0;
+            // STAGE 6: Only use the swap positions for the first resolve batch.
+            var swapPositions = pendingSwapPositions;
+            pendingSwapPositions = null;
             while (matchGroups.Count > 0)
             {
                 cascadeCount++;
                 // STAGE 5: Punch-scale matched tiles before clearing.
                 TriggerMatchPunch(matchGroups);
                 yield return new WaitForSeconds(matchConfirmDelay);
-                var protectedPieces = CreateSpecialTiles(matchGroups);
+                var protectedPieces = CreateSpecialTiles(matchGroups, swapPositions);
+                swapPositions = null;
                 var clearedCount = ClearMatches(matchGroups, protectedPieces);
                 if (clearedCount > 0)
                 {
@@ -614,6 +630,10 @@ namespace GameCore
                 }
             }
 
+            var rowClearSources = new List<Piece>();
+            var rowClearAffected = new HashSet<Piece>();
+            var clearSet = new HashSet<Piece>();
+
             foreach (var piece in uniqueMatches)
             {
                 if (piece == null)
@@ -621,12 +641,48 @@ namespace GameCore
                     continue;
                 }
 
-                if (piece.Special != Piece.SpecialType.None)
+                if (protectedPieces.Contains(piece))
                 {
                     continue;
                 }
 
-                if (protectedPieces.Contains(piece))
+                if (piece.Special == Piece.SpecialType.RowClear)
+                {
+                    rowClearSources.Add(piece);
+                }
+
+                if (piece.Special == Piece.SpecialType.None || piece.Special == Piece.SpecialType.RowClear)
+                {
+                    clearSet.Add(piece);
+                }
+            }
+
+            foreach (var rowClear in rowClearSources)
+            {
+                TriggerSpecialActivation(rowClear);
+                for (var x = 0; x < width; x++)
+                {
+                    var candidate = pieces[x, rowClear.Y];
+                    if (candidate == null || protectedPieces.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    clearSet.Add(candidate);
+                    rowClearAffected.Add(candidate);
+                }
+            }
+
+            foreach (var piece in clearSet)
+            {
+                if (piece == null || protectedPieces.Contains(piece))
+                {
+                    continue;
+                }
+
+                if (piece.Special != Piece.SpecialType.None
+                    && piece.Special != Piece.SpecialType.RowClear
+                    && !rowClearAffected.Contains(piece))
                 {
                     continue;
                 }
@@ -643,7 +699,7 @@ namespace GameCore
             return clearedCount;
         }
 
-        private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups)
+        private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups, HashSet<Vector2Int> swapPositions)
         {
             var protectedPieces = new HashSet<Piece>();
             foreach (var group in matchGroups)
@@ -654,22 +710,7 @@ namespace GameCore
                     continue;
                 }
 
-                Piece candidate = null;
-                foreach (var piece in group.Pieces)
-                {
-                    if (piece == null)
-                    {
-                        continue;
-                    }
-
-                    if (piece.Special != Piece.SpecialType.None)
-                    {
-                        continue;
-                    }
-
-                    candidate = piece;
-                    break;
-                }
+                var candidate = SelectSpecialCandidate(group.Pieces, specialType, swapPositions);
 
                 if (candidate == null)
                 {
@@ -687,12 +728,56 @@ namespace GameCore
         {
             return matchSize switch
             {
-                4 => Piece.SpecialType.Bomb,
+                // STAGE 6
+                4 => Piece.SpecialType.RowClear,
                 5 => Piece.SpecialType.StrongBomb,
                 6 => Piece.SpecialType.MegaBomb,
                 >= 7 => Piece.SpecialType.UltimateBomb,
                 _ => Piece.SpecialType.None
             };
+        }
+
+        // STAGE 6
+        private Piece SelectSpecialCandidate(List<Piece> candidates, Piece.SpecialType specialType, HashSet<Vector2Int> swapPositions)
+        {
+            if (candidates == null || candidates.Count == 0)
+            {
+                return null;
+            }
+
+            if (specialType == Piece.SpecialType.RowClear && swapPositions != null)
+            {
+                foreach (var piece in candidates)
+                {
+                    if (piece == null || piece.Special != Piece.SpecialType.None)
+                    {
+                        continue;
+                    }
+
+                    if (swapPositions.Contains(new Vector2Int(piece.X, piece.Y)))
+                    {
+                        return piece;
+                    }
+                }
+            }
+
+            Piece fallback = null;
+            foreach (var piece in candidates)
+            {
+                if (piece == null || piece.Special != Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                if (fallback == null
+                    || piece.Y < fallback.Y
+                    || (piece.Y == fallback.Y && piece.X < fallback.X))
+                {
+                    fallback = piece;
+                }
+            }
+
+            return fallback;
         }
 
         private void CollapseColumns()
