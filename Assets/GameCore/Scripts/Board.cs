@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,8 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        public event Action OnBoardCleared;
+
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
         [SerializeField] private int height = 7;
@@ -31,6 +34,8 @@ namespace GameCore
         private bool isBusy;
         private bool hasInitialized;
         private readonly List<Piece> matchBuffer = new List<Piece>();
+        private const int MegaBombIndex = 6;
+        private const int UltimateBombIndex = 7;
         private readonly List<MatchGroup> matchGroupsBuffer = new List<MatchGroup>();
 
         private class MatchGroup
@@ -177,6 +182,11 @@ namespace GameCore
                 return false;
             }
 
+            if (IsMegaUltimateCombo(first, second))
+            {
+                return true;
+            }
+
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
             SwapPiecesInGrid(first, second);
@@ -190,6 +200,15 @@ namespace GameCore
             PlayClip(swapClip);
 
             yield return new WaitForSeconds(swapDuration);
+
+            if (IsMegaUltimateCombo(first, second))
+            {
+                ClearBoard();
+                SignalBoardCleared();
+                SignalLevelWin();
+                isBusy = false;
+                yield break;
+            }
 
             var matches = FindMatches();
             if (matches.Count == 0)
@@ -432,6 +451,8 @@ namespace GameCore
             }
         }
 
+        private void ClearBoard()
+        {
         private HashSet<Piece> CreateSpecialTiles(List<MatchGroup> matchGroups)
         {
             var protectedPieces = new HashSet<Piece>();
@@ -506,11 +527,17 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
+                    var piece = pieces[x, y];
+                    if (piece == null)
                     if (!matched[x, y] || visited[x, y])
                     {
                         continue;
                     }
 
+                    pieces[x, y] = null;
+                    Destroy(piece.gameObject);
+                }
+            }
                     if (protectedPieces.Contains(piece))
                     {
                         continue;
@@ -657,6 +684,34 @@ namespace GameCore
         private bool IsInBounds(int x, int y)
         {
             return x >= 0 && x < width && y >= 0 && y < height;
+        }
+
+        private bool IsMegaUltimateCombo(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            var firstIndex = first.ColorIndex;
+            var secondIndex = second.ColorIndex;
+            return (firstIndex == MegaBombIndex && secondIndex == UltimateBombIndex)
+                || (firstIndex == UltimateBombIndex && secondIndex == MegaBombIndex);
+        }
+
+        private void SignalBoardCleared()
+        {
+            OnBoardCleared?.Invoke();
+        }
+
+        private void SignalLevelWin()
+        {
+            if (GameManager.Instance == null)
+            {
+                return;
+            }
+
+            GameManager.Instance.TriggerInstantWin();
         }
 
         private Sprite[] GenerateSprites()
