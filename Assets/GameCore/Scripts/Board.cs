@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,9 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        public event Action<int> MatchesCleared;
+        public event Action ValidSwap;
+
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
         [SerializeField] private int height = 7;
@@ -140,6 +144,7 @@ namespace GameCore
                 return false;
             }
 
+            ValidSwap?.Invoke();
             StartCoroutine(SwapRoutine(first, second));
             return true;
         }
@@ -335,6 +340,7 @@ namespace GameCore
 
         private void ClearMatches(List<Piece> matches)
         {
+            var clearedCount = 0;
             foreach (var piece in matches)
             {
                 if (piece == null)
@@ -342,8 +348,14 @@ namespace GameCore
                     continue;
                 }
 
+                clearedCount++;
                 pieces[piece.X, piece.Y] = null;
                 Destroy(piece.gameObject);
+            }
+
+            if (clearedCount > 0)
+            {
+                MatchesCleared?.Invoke(clearedCount);
             }
         }
 
