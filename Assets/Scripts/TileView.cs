@@ -8,9 +8,11 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
     [SerializeField] private GameObject selection;
     [SerializeField] private Button button;
     [SerializeField] private float dragThreshold = 28f;
+    [SerializeField] private Vector2 pressedScale = new Vector2(1.02f, 0.96f);
 
     private GameManager manager;
     private RectTransform rectTransform;
+    private Vector3 baseScale;
     private Vector2 pointerDownPosition;
     private bool dragTriggered;
 
@@ -25,6 +27,8 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
         if (button == null)
             button = GetComponent<Button>();
         rectTransform = GetComponent<RectTransform>();
+        if (rectTransform != null)
+            baseScale = rectTransform.localScale;
     }
 
     public void Init(GameManager owner, int x, int y)
@@ -59,13 +63,17 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
         if (rectTransform == null)
             rectTransform = GetComponent<RectTransform>();
         if (rectTransform != null)
-            rectTransform.localScale = Vector3.one * scale;
+        {
+            baseScale = Vector3.one * scale;
+            rectTransform.localScale = baseScale;
+        }
     }
 
     public void OnPointerDown(PointerEventData eventData)
     {
         pointerDownPosition = eventData.position;
         dragTriggered = false;
+        ApplyPressScale(true);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -78,6 +86,7 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
             return;
 
         dragTriggered = true;
+        ApplyPressScale(false);
         Vector2 direction = Mathf.Abs(delta.x) > Mathf.Abs(delta.y)
             ? (delta.x > 0 ? Vector2.right : Vector2.left)
             : (delta.y > 0 ? Vector2.up : Vector2.down);
@@ -87,9 +96,22 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
 
     public void OnPointerUp(PointerEventData eventData)
     {
+        ApplyPressScale(false);
         if (dragTriggered || manager == null)
             return;
 
         manager.OnTileClicked(this);
+    }
+
+    private void ApplyPressScale(bool isPressed)
+    {
+        if (rectTransform == null)
+            rectTransform = GetComponent<RectTransform>();
+        if (rectTransform == null)
+            return;
+
+        rectTransform.localScale = isPressed
+            ? new Vector3(baseScale.x * pressedScale.x, baseScale.y * pressedScale.y, baseScale.z)
+            : baseScale;
     }
 }
