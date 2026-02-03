@@ -117,7 +117,7 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
-                    CreatePiece(x, y, GetRandomColorIndex());
+                    CreatePiece(x, y, GetValidColorIndexForPosition(x, y));
                 }
             }
         }
@@ -125,6 +125,46 @@ namespace GameCore
         private int GetRandomColorIndex()
         {
             return Random.Range(0, colorCount);
+        }
+
+        private int GetValidColorIndexForPosition(int x, int y)
+        {
+            var available = new List<int>();
+            for (var color = 0; color < colorCount; color++)
+            {
+                available.Add(color);
+            }
+
+            var left1 = x - 1;
+            var left2 = x - 2;
+            if (left2 >= 0)
+            {
+                var first = pieces[left1, y];
+                var second = pieces[left2, y];
+                if (first != null && second != null && first.ColorIndex == second.ColorIndex)
+                {
+                    available.Remove(first.ColorIndex);
+                }
+            }
+
+            var down1 = y - 1;
+            var down2 = y - 2;
+            if (down2 >= 0)
+            {
+                var first = pieces[x, down1];
+                var second = pieces[x, down2];
+                if (first != null && second != null && first.ColorIndex == second.ColorIndex)
+                {
+                    available.Remove(first.ColorIndex);
+                }
+            }
+
+            if (available.Count == 0)
+            {
+                return GetRandomColorIndex();
+            }
+
+            return available[Random.Range(0, available.Count)];
         }
 
         private Piece CreatePiece(int x, int y, int colorIndex)
@@ -323,6 +363,24 @@ namespace GameCore
         private List<MatchGroup> FindMatchGroups()
         {
             matchBuffer.Clear();
+            var matchGroups = FindMatchGroups();
+            var seen = new HashSet<Piece>();
+            foreach (var group in matchGroups)
+            {
+                foreach (var piece in group)
+                {
+                    if (piece != null && seen.Add(piece))
+                    {
+                        matchBuffer.Add(piece);
+                    }
+                }
+            }
+            return matchBuffer;
+        }
+
+        private List<List<Piece>> FindMatchGroups()
+        {
+            var groups = new List<List<Piece>>();
             matchGroupsBuffer.Clear();
 
             for (var y = 0; y < height; y++)
@@ -338,12 +396,12 @@ namespace GameCore
                     }
                     else
                     {
-                        AddRunMatches(x - 1, y, runLength, Vector2Int.right);
+                        AddRunMatchGroup(groups, x - 1, y, runLength, Vector2Int.right);
                         runLength = 1;
                     }
                 }
 
-                AddRunMatches(width - 1, y, runLength, Vector2Int.right);
+                AddRunMatchGroup(groups, width - 1, y, runLength, Vector2Int.right);
             }
 
             for (var x = 0; x < width; x++)
@@ -359,24 +417,27 @@ namespace GameCore
                     }
                     else
                     {
-                        AddRunMatches(x, y - 1, runLength, Vector2Int.up);
+                        AddRunMatchGroup(groups, x, y - 1, runLength, Vector2Int.up);
                         runLength = 1;
                     }
                 }
 
-                AddRunMatches(x, height - 1, runLength, Vector2Int.up);
+                AddRunMatchGroup(groups, x, height - 1, runLength, Vector2Int.up);
             }
 
+            groups.Sort((a, b) => b.Count.CompareTo(a.Count));
+            return groups;
             return matchGroupsBuffer;
         }
 
-        private void AddRunMatches(int endX, int endY, int runLength, Vector2Int direction)
+        private void AddRunMatchGroup(List<List<Piece>> groups, int endX, int endY, int runLength, Vector2Int direction)
         {
             if (runLength < 3)
             {
                 return;
             }
 
+            var group = new List<Piece>(runLength);
             var runPieces = new List<Piece>(runLength);
 
             for (var i = 0; i < runLength; i++)
@@ -384,6 +445,7 @@ namespace GameCore
                 var x = endX - direction.x * i;
                 var y = endY - direction.y * i;
                 var piece = pieces[x, y];
+                if (piece != null)
                 if (piece == null)
                 {
                     continue;
@@ -392,10 +454,13 @@ namespace GameCore
                 runPieces.Add(piece);
                 if (!matchBuffer.Contains(piece))
                 {
-                    matchBuffer.Add(piece);
+                    group.Add(piece);
                 }
             }
 
+            if (group.Count > 0)
+            {
+                groups.Add(group);
             if (runPieces.Count >= 3)
             {
                 matchGroupsBuffer.Add(new MatchGroup(runPieces));
@@ -404,6 +469,9 @@ namespace GameCore
 
         private IEnumerator ClearMatchesRoutine()
         {
+            isBusy = true;
+            var matches = FindMatches();
+            while (matches.Count > 0)
             var matchGroups = FindMatchGroups();
             while (matchGroups.Count > 0)
             {
@@ -428,6 +496,8 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 matchGroups = FindMatchGroups();
             }
+
+            isBusy = false;
         }
 
         private void ClearMatches(List<Piece> matches, HashSet<Piece> protectedPieces)
