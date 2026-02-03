@@ -1,9 +1,12 @@
 {
-  "name": "SixSeven.PlayModeTests",
+  "name": "SixSeven.EditModeTests",
   "references": [
-    "UnityEngine.TestRunner"
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
   ],
-  "includePlatforms": [],
+  "includePlatforms": [
+    "Editor"
+  ],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": false,
