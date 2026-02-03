@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -5,6 +6,9 @@ namespace GameCore
 {
     public class GameManager : MonoBehaviour
     {
+        public event Action OnWin;
+        public event Action OnLose;
+
         [Header("Game Settings")]
         [SerializeField] private int startingMoves = 30;
         [SerializeField] private int scorePerPiece = 10;
@@ -12,6 +16,7 @@ namespace GameCore
         [SerializeField] private Vector2Int fallbackGridSize = new Vector2Int(7, 7);
         [SerializeField] private int fallbackTargetScore = 500;
         [SerializeField] private LevelDatabase levelDatabase;
+        [SerializeField] private LevelManager levelManager;
 
         [Header("References")]
         [SerializeField] private Board board;
@@ -27,6 +32,8 @@ namespace GameCore
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
         public bool HasMetTarget { get; private set; }
+
+        private bool hasEnded;
 
         private void Awake()
         {
@@ -49,10 +56,23 @@ namespace GameCore
             {
                 levelDatabase = Resources.Load<LevelDatabase>("LevelDatabase");
             }
+
+            RegisterBoardEvents();
+        }
+
+        private void OnDisable()
+        {
+            UnregisterBoardEvents();
         }
 
         private void Start()
         {
+            if (levelManager != null)
+            {
+                levelManager.LoadStartingLevel(this);
+                return;
+            }
+
             LoadLevel(startingLevelIndex);
         }
 
@@ -61,6 +81,7 @@ namespace GameCore
             Score = 0;
             MovesRemaining = startingMoves;
             HasMetTarget = false;
+            hasEnded = false;
             UpdateUI();
         }
 
@@ -81,6 +102,17 @@ namespace GameCore
             ResetGame();
         }
 
+        public bool LoadNextLevel()
+        {
+            if (levelManager != null)
+            {
+                return levelManager.LoadNextLevel(this);
+            }
+
+            LoadLevel(CurrentLevelIndex + 1);
+            return true;
+        }
+
         public void AddScore(int piecesCleared)
         {
             Score += piecesCleared * scorePerPiece;
@@ -89,6 +121,11 @@ namespace GameCore
                 HasMetTarget = true;
             }
             UpdateUI();
+
+            if (HasMetTarget && !hasEnded)
+            {
+                TriggerWin();
+            }
         }
 
         public bool TryUseMove()
@@ -101,6 +138,82 @@ namespace GameCore
             MovesRemaining -= 1;
             UpdateUI();
             return true;
+        }
+
+        private void RegisterBoardEvents()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            board.MatchesCleared += HandleMatchesCleared;
+            board.ValidSwap += HandleValidSwap;
+        }
+
+        private void UnregisterBoardEvents()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            board.MatchesCleared -= HandleMatchesCleared;
+            board.ValidSwap -= HandleValidSwap;
+        }
+
+        private void HandleMatchesCleared(int clearedCount)
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            AddScore(clearedCount);
+        }
+
+        private void HandleValidSwap()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            TryUseMove();
+            if (MovesRemaining <= 0 && !HasMetTarget)
+            {
+                TriggerLose();
+            }
+        }
+
+        private void TriggerWin()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            hasEnded = true;
+            OnWin?.Invoke();
+        }
+
+        private void TriggerLose()
+        {
+            if (hasEnded)
+            {
+                return;
+            }
+
+            hasEnded = true;
+            OnLose?.Invoke();
+        public void TriggerInstantWin()
+        {
+            HasMetTarget = true;
+            if (Score < TargetScore)
+            {
+                Score = TargetScore;
+            }
+            UpdateUI();
         }
 
         private void UpdateUI()
