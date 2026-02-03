@@ -26,6 +26,9 @@ namespace GameCore
         // STAGE 1
         [SerializeField] private float invalidShakeDuration = 0.06f;
         [SerializeField] private float invalidShakeMagnitude = 0.05f;
+        // STAGE 5
+        [SerializeField] private float matchPunchScale = 1.15f;
+        [SerializeField] private float matchPunchDuration = 0.1f;
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
@@ -38,6 +41,8 @@ namespace GameCore
         [SerializeField] private AudioClip matchClearClip;
         [SerializeField] private AudioClip cascadeFallClip;
         [SerializeField] private AudioClip specialActivationClip;
+        // STAGE 5
+        [SerializeField] private float audioPitchVariance = 0.05f;
 
         // STAGE 0: Debug toggle for state transition logging.
         [Header("Debug")]
@@ -567,6 +572,8 @@ namespace GameCore
             while (matchGroups.Count > 0)
             {
                 cascadeCount++;
+                // STAGE 5: Punch-scale matched tiles before clearing.
+                TriggerMatchPunch(matchGroups);
                 yield return new WaitForSeconds(matchConfirmDelay);
                 var protectedPieces = CreateSpecialTiles(matchGroups);
                 var clearedCount = ClearMatches(matchGroups, protectedPieces);
@@ -853,7 +860,43 @@ namespace GameCore
                 return;
             }
 
+            // STAGE 5: Slight random pitch variation.
+            var originalPitch = audioSource.pitch;
+            var pitchJitter = Mathf.Clamp(audioPitchVariance, 0f, 1f);
+            audioSource.pitch = Random.Range(1f - pitchJitter, 1f + pitchJitter);
             audioSource.PlayOneShot(clip);
+            audioSource.pitch = originalPitch;
+        }
+
+        // STAGE 5
+        private void TriggerMatchPunch(List<MatchGroup> matchGroups)
+        {
+            if (matchGroups == null || matchGroups.Count == 0)
+            {
+                return;
+            }
+
+            var uniqueMatches = new HashSet<Piece>();
+            foreach (var group in matchGroups)
+            {
+                if (group?.Pieces == null)
+                {
+                    continue;
+                }
+
+                foreach (var piece in group.Pieces)
+                {
+                    if (piece != null)
+                    {
+                        uniqueMatches.Add(piece);
+                    }
+                }
+            }
+
+            foreach (var piece in uniqueMatches)
+            {
+                piece.PunchScale(matchPunchScale, matchPunchDuration);
+            }
         }
 
         // STAGE 0: Optional debug output for board pipeline state.

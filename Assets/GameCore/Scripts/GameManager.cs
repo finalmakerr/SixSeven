@@ -27,8 +27,16 @@ namespace GameCore
         [SerializeField] private Text movesText;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
+        // STAGE 5: Optional camera transform for screen shake.
+        [SerializeField] private Transform screenShakeTarget;
         // STAGE 3: Duration to display combo callouts.
         [SerializeField] private float comboDisplayDuration = 0.75f;
+        // STAGE 5: Score count-up duration.
+        [SerializeField] private float scoreLerpDuration = 0.25f;
+        // STAGE 5: Big clear screen shake settings.
+        [SerializeField] private int bigClearThreshold = 5;
+        [SerializeField] private float bigClearShakeDuration = 0.1f;
+        [SerializeField] private float bigClearShakeMagnitude = 0.08f;
 
         public static GameManager Instance { get; private set; }
 
@@ -40,6 +48,10 @@ namespace GameCore
 
         private bool hasEnded;
         private Coroutine comboRoutine;
+        // STAGE 5
+        private Coroutine scoreRoutine;
+        private Coroutine shakeRoutine;
+        private int displayedScore;
 
         private void Awake()
         {
@@ -53,6 +65,11 @@ namespace GameCore
             if (board == null)
             {
                 board = FindObjectOfType<Board>();
+            }
+
+            if (screenShakeTarget == null && Camera.main != null)
+            {
+                screenShakeTarget = Camera.main.transform;
             }
         }
 
@@ -89,6 +106,7 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             HideComboText();
+            displayedScore = Score;
             UpdateUI();
         }
 
@@ -183,6 +201,11 @@ namespace GameCore
             {
                 ShowComboText(cascadeCount);
             }
+
+            if (clearedCount >= bigClearThreshold)
+            {
+                TriggerScreenShake();
+            }
         }
 
         private void HandleValidSwap()
@@ -233,15 +256,94 @@ namespace GameCore
 
         private void UpdateUI()
         {
-            if (scoreText != null)
-            {
-                scoreText.text = $"Score: {Score}";
-            }
+            UpdateScoreText();
 
             if (movesText != null)
             {
                 movesText.text = $"Moves: {MovesRemaining}";
             }
+        }
+
+        // STAGE 5: Score count-up helper.
+        private void UpdateScoreText()
+        {
+            if (scoreText == null)
+            {
+                return;
+            }
+
+            if (scoreRoutine != null)
+            {
+                StopCoroutine(scoreRoutine);
+            }
+
+            if (scoreLerpDuration <= 0f)
+            {
+                displayedScore = Score;
+                scoreText.text = $"Score: {Score}";
+                return;
+            }
+
+            scoreRoutine = StartCoroutine(ScoreLerpRoutine(displayedScore, Score, scoreLerpDuration));
+        }
+
+        // STAGE 5
+        private IEnumerator ScoreLerpRoutine(int startScore, int endScore, float duration)
+        {
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / duration);
+                var lerpedScore = Mathf.RoundToInt(Mathf.Lerp(startScore, endScore, t));
+                displayedScore = lerpedScore;
+                scoreText.text = $"Score: {lerpedScore}";
+                yield return null;
+            }
+
+            displayedScore = endScore;
+            scoreText.text = $"Score: {endScore}";
+            scoreRoutine = null;
+        }
+
+        // STAGE 5
+        private void TriggerScreenShake()
+        {
+            if (screenShakeTarget == null)
+            {
+                return;
+            }
+
+            if (shakeRoutine != null)
+            {
+                StopCoroutine(shakeRoutine);
+            }
+
+            shakeRoutine = StartCoroutine(ScreenShakeRoutine(bigClearShakeDuration, bigClearShakeMagnitude));
+        }
+
+        // STAGE 5
+        private IEnumerator ScreenShakeRoutine(float duration, float magnitude)
+        {
+            var basePosition = screenShakeTarget.localPosition;
+            if (duration <= 0f || magnitude <= 0f)
+            {
+                screenShakeTarget.localPosition = basePosition;
+                shakeRoutine = null;
+                yield break;
+            }
+
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var offset = (Vector3)UnityEngine.Random.insideUnitCircle * magnitude;
+                screenShakeTarget.localPosition = basePosition + offset;
+                yield return null;
+            }
+
+            screenShakeTarget.localPosition = basePosition;
+            shakeRoutine = null;
         }
 
         // STAGE 3: Combo callout helper.
