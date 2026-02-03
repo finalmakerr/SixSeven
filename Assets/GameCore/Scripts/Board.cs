@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,8 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        public event Action OnBoardCleared;
+
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
         [SerializeField] private int height = 7;
@@ -22,6 +25,8 @@ namespace GameCore
         private bool hasInitialized;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
+        private const int MegaBombIndex = 6;
+        private const int UltimateBombIndex = 7;
 
         private void Awake()
         {
@@ -156,6 +161,11 @@ namespace GameCore
                 return false;
             }
 
+            if (IsMegaUltimateCombo(first, second))
+            {
+                return true;
+            }
+
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
             SwapPiecesInGrid(first, second);
@@ -168,6 +178,15 @@ namespace GameCore
             SwapPieces(first, second);
 
             yield return new WaitForSeconds(0.05f);
+
+            if (IsMegaUltimateCombo(first, second))
+            {
+                ClearBoard();
+                SignalBoardCleared();
+                SignalLevelWin();
+                isBusy = false;
+                yield break;
+            }
 
             var matches = FindMatches();
             if (matches.Count == 0)
@@ -347,6 +366,24 @@ namespace GameCore
             }
         }
 
+        private void ClearBoard()
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    pieces[x, y] = null;
+                    Destroy(piece.gameObject);
+                }
+            }
+        }
+
         private void CollapseColumns()
         {
             for (var x = 0; x < width; x++)
@@ -390,6 +427,34 @@ namespace GameCore
         private bool IsInBounds(int x, int y)
         {
             return x >= 0 && x < width && y >= 0 && y < height;
+        }
+
+        private bool IsMegaUltimateCombo(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            var firstIndex = first.ColorIndex;
+            var secondIndex = second.ColorIndex;
+            return (firstIndex == MegaBombIndex && secondIndex == UltimateBombIndex)
+                || (firstIndex == UltimateBombIndex && secondIndex == MegaBombIndex);
+        }
+
+        private void SignalBoardCleared()
+        {
+            OnBoardCleared?.Invoke();
+        }
+
+        private void SignalLevelWin()
+        {
+            if (GameManager.Instance == null)
+            {
+                return;
+            }
+
+            GameManager.Instance.TriggerInstantWin();
         }
 
         private Sprite[] GenerateSprites()

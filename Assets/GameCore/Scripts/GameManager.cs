@@ -103,6 +103,16 @@ namespace GameCore
             return true;
         }
 
+        public void TriggerInstantWin()
+        {
+            HasMetTarget = true;
+            if (Score < TargetScore)
+            {
+                Score = TargetScore;
+            }
+            UpdateUI();
+        }
+
         private void UpdateUI()
         {
             if (scoreText != null)
