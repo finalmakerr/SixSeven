@@ -17,6 +17,9 @@ namespace GameCore
         [SerializeField] private int height = 7;
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
+        [SerializeField] private int rngSeed;
+        [Tooltip("Optional per-color weights (size should match color count). Values <= 0 disable a color.")]
+        [SerializeField] private float[] spawnWeights;
         // STAGE 2: Delay timings for match confirmation, clears, and falls.
         [SerializeField] private float matchConfirmDelay = 0.12f;
         [SerializeField] private float clearDelay = 0.05f;
@@ -50,6 +53,9 @@ namespace GameCore
 
         private Piece[,] pieces;
         private Sprite[] sprites;
+        private System.Random rng;
+        private readonly List<int> spawnBag = new List<int>();
+        private const int MinimumValidMoves = 3;
 
         // STAGE 0: Global busy gate for swap/resolve/refill.
         private bool isBusy;
@@ -115,8 +121,10 @@ namespace GameCore
             isBusy = true;
             ClearExistingPieces();
             pieces = new Piece[width, height];
+            InitializeRng();
+            spawnBag.Clear();
             CreateBoard();
-            StartCoroutine(ResolveBoardRoutine());
+            StartCoroutine(InitialSetupRoutine());
         }
 
         private void ClearExistingPieces()
@@ -148,22 +156,44 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
-                    CreatePiece(x, y, GetValidColorIndexForPosition(x, y));
+                    CreatePiece(x, y, GetSpawnColorIndexForPosition(x, y, true));
                 }
             }
         }
 
-        private int GetRandomColorIndex()
+        private int GetSpawnColorIndexForPosition(int x, int y, bool avoidImmediateMatches)
         {
-            return Random.Range(0, colorCount);
+            if (!avoidImmediateMatches)
+            {
+                return DrawFromSpawnBag(null);
+            }
+
+            var available = GetAvailableColorsForPosition(x, y);
+            if (available.Count == 0)
+            {
+                return DrawFromSpawnBag(null);
+            }
+
+            return DrawFromSpawnBag(available);
         }
 
-        private int GetValidColorIndexForPosition(int x, int y)
+        private List<int> GetAvailableColorsForPosition(int x, int y)
         {
             var available = new List<int>();
             for (var color = 0; color < colorCount; color++)
             {
                 available.Add(color);
+            }
+
+            if (IsWeightingActive())
+            {
+                for (var i = available.Count - 1; i >= 0; i--)
+                {
+                    if (GetWeightForColor(available[i]) <= 0f)
+                    {
+                        available.RemoveAt(i);
+                    }
+                }
             }
 
             var left1 = x - 1;
@@ -190,12 +220,7 @@ namespace GameCore
                 }
             }
 
-            if (available.Count == 0)
-            {
-                return GetRandomColorIndex();
-            }
-
-            return available[Random.Range(0, available.Count)];
+            return available;
         }
 
         private Piece CreatePiece(int x, int y, int colorIndex)
@@ -612,7 +637,7 @@ namespace GameCore
 
                 matchGroups = FindMatchGroups();
                 // STAGE 7: Dead board detection after refills.
-                if (matchGroups.Count == 0 && !HasAnyValidMoves())
+                if (matchGroups.Count == 0 && CountValidMoves() < MinimumValidMoves)
                 {
                     yield return StartCoroutine(ReshuffleRoutine(true));
                     matchGroups = FindMatchGroups();
@@ -825,7 +850,7 @@ namespace GameCore
                 {
                     if (pieces[x, y] == null)
                     {
-                        var newPiece = CreatePiece(x, y, GetRandomColorIndex());
+                        var newPiece = CreatePiece(x, y, GetSpawnColorIndexForPosition(x, y, false));
                         var spawnPosition = GridToWorld(x, height + 1);
                         newPiece.transform.position = spawnPosition;
                         newPiece.MoveTo(GridToWorld(x, y), fallDuration);
@@ -837,10 +862,17 @@ namespace GameCore
         // STAGE 7
         public bool HasAnyValidMoves()
         {
+            return CountValidMoves() > 0;
+        }
+
+        private int CountValidMoves()
+        {
             if (pieces == null)
             {
-                return false;
+                return 0;
             }
+
+            var moveCount = 0;
 
             for (var x = 0; x < width; x++)
             {
@@ -854,17 +886,22 @@ namespace GameCore
 
                     if (x + 1 < width && IsSwapValid(piece, pieces[x + 1, y]))
                     {
-                        return true;
+                        moveCount++;
                     }
 
                     if (y + 1 < height && IsSwapValid(piece, pieces[x, y + 1]))
                     {
-                        return true;
+                        moveCount++;
+                    }
+
+                    if (moveCount >= MinimumValidMoves)
+                    {
+                        return moveCount;
                     }
                 }
             }
 
-            return false;
+            return moveCount;
         }
 
         // STAGE 7
@@ -918,7 +955,7 @@ namespace GameCore
                     continue;
                 }
 
-                if (!HasAnyValidMoves())
+                if (CountValidMoves() < MinimumValidMoves)
                 {
                     continue;
                 }
@@ -927,7 +964,7 @@ namespace GameCore
             }
 
             var ensureMoveAttempt = 0;
-            while (!HasAnyValidMoves() && ensureMoveAttempt < ReshuffleAttemptLimit)
+            while (CountValidMoves() < MinimumValidMoves && ensureMoveAttempt < ReshuffleAttemptLimit)
             {
                 ensureMoveAttempt++;
                 ShuffleList(piecePool);
@@ -953,7 +990,7 @@ namespace GameCore
         {
             for (var i = list.Count - 1; i > 0; i--)
             {
-                var swapIndex = Random.Range(0, i + 1);
+                var swapIndex = NextRandomInt(0, i + 1);
                 (list[i], list[swapIndex]) = (list[swapIndex], list[i]);
             }
         }
@@ -1106,6 +1143,160 @@ namespace GameCore
             audioSource.pitch = Random.Range(1f - pitchJitter, 1f + pitchJitter);
             audioSource.PlayOneShot(clip);
             audioSource.pitch = originalPitch;
+        }
+
+        private IEnumerator InitialSetupRoutine()
+        {
+            yield return StartCoroutine(EnsureMinimumMovesRoutine(true));
+            StartCoroutine(ResolveBoardRoutine());
+        }
+
+        private IEnumerator EnsureMinimumMovesRoutine(bool avoidImmediateMatches)
+        {
+            var attempt = 0;
+            while (CountValidMoves() < MinimumValidMoves && attempt < ReshuffleAttemptLimit)
+            {
+                attempt++;
+                yield return StartCoroutine(ReshuffleRoutine(avoidImmediateMatches));
+            }
+        }
+
+        private void InitializeRng()
+        {
+            var seedValue = rngSeed;
+            if (seedValue == 0)
+            {
+                seedValue = Environment.TickCount;
+            }
+
+            rng = new System.Random(seedValue);
+        }
+
+        private int NextRandomInt(int minInclusive, int maxExclusive)
+        {
+            if (rng == null)
+            {
+                InitializeRng();
+            }
+
+            return rng.Next(minInclusive, maxExclusive);
+        }
+
+        private void EnsureSpawnBag()
+        {
+            if (spawnBag.Count == 0)
+            {
+                BuildSpawnBag();
+            }
+        }
+
+        private void BuildSpawnBag()
+        {
+            spawnBag.Clear();
+            var hasWeights = IsWeightingActive();
+
+            for (var color = 0; color < colorCount; color++)
+            {
+                var weight = hasWeights ? GetWeightForColor(color) : 1f;
+                if (weight <= 0f)
+                {
+                    continue;
+                }
+
+                var count = Mathf.Max(1, Mathf.RoundToInt(weight));
+                for (var i = 0; i < count; i++)
+                {
+                    spawnBag.Add(color);
+                }
+            }
+
+            if (spawnBag.Count == 0)
+            {
+                for (var color = 0; color < colorCount; color++)
+                {
+                    spawnBag.Add(color);
+                }
+            }
+
+            ShuffleSpawnBag();
+        }
+
+        private float GetWeightForColor(int colorIndex)
+        {
+            if (spawnWeights == null || spawnWeights.Length <= colorIndex)
+            {
+                return 1f;
+            }
+
+            return spawnWeights[colorIndex];
+        }
+
+        private bool IsWeightingActive()
+        {
+            if (spawnWeights == null)
+            {
+                return false;
+            }
+
+            var limit = Mathf.Min(spawnWeights.Length, colorCount);
+            for (var i = 0; i < limit; i++)
+            {
+                if (spawnWeights[i] > 0f)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void ShuffleSpawnBag()
+        {
+            for (var i = spawnBag.Count - 1; i > 0; i--)
+            {
+                var swapIndex = NextRandomInt(0, i + 1);
+                (spawnBag[i], spawnBag[swapIndex]) = (spawnBag[swapIndex], spawnBag[i]);
+            }
+        }
+
+        private int DrawFromSpawnBag(List<int> allowedColors)
+        {
+            EnsureSpawnBag();
+
+            if (allowedColors != null && allowedColors.Count > 0)
+            {
+                for (var i = 0; i < spawnBag.Count; i++)
+                {
+                    var candidate = spawnBag[i];
+                    if (!allowedColors.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    spawnBag.RemoveAt(i);
+                    return candidate;
+                }
+
+                BuildSpawnBag();
+                for (var i = 0; i < spawnBag.Count; i++)
+                {
+                    var candidate = spawnBag[i];
+                    if (!allowedColors.Contains(candidate))
+                    {
+                        continue;
+                    }
+
+                    spawnBag.RemoveAt(i);
+                    return candidate;
+                }
+
+                return allowedColors[NextRandomInt(0, allowedColors.Count)];
+            }
+
+            var lastIndex = spawnBag.Count - 1;
+            var colorIndex = spawnBag[lastIndex];
+            spawnBag.RemoveAt(lastIndex);
+            return colorIndex;
         }
 
         // STAGE 5
