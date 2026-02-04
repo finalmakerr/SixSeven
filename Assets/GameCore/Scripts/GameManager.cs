@@ -34,6 +34,16 @@ namespace GameCore
         [SerializeField] private Text bossLabelText;
         // CODEX BOSS PR4
         [SerializeField] private Text bossPowersText;
+        // CODEX BOSS PR2
+        [SerializeField] private GameObject bossChallengePanel;
+        // CODEX BOSS PR2
+        [SerializeField] private Text bossChallengePromptText;
+        // CODEX BOSS PR2
+        [SerializeField] private Text bossChallengeWarningText;
+        // CODEX BOSS PR2
+        [SerializeField] private Button bossChallengeFightButton;
+        // CODEX BOSS PR2
+        [SerializeField] private Button bossChallengeSkipButton;
         // CODEX BOSS PR5
         [SerializeField] private GameObject bossPowerDiscardPanel;
         // CODEX BOSS PR5
@@ -80,6 +90,8 @@ namespace GameCore
         private int displayedScore;
         // CODEX BOSS PR5
         private bool awaitingBossPowerDiscard;
+        // CODEX BOSS PR2
+        private bool awaitingBossChallengeChoice;
         // CODEX BOSS PR4
         [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
 
@@ -111,6 +123,8 @@ namespace GameCore
             {
                 screenShakeTarget = Camera.main.transform;
             }
+
+            ConfigureBossChallengeButtons();
         }
 
         private void OnEnable()
@@ -166,7 +180,7 @@ namespace GameCore
             var isBossLevel = levelIndex == 5;
             var isOptionalBossLevel = levelIndex == 6;
             IsOptionalBossLevel = isOptionalBossLevel;
-            IsBossLevel = isBossLevel || isOptionalBossLevel;
+            IsBossLevel = isBossLevel;
             level.isBossLevel = IsBossLevel;
             // CODEX BOSS PR1
             CurrentBossState = new BossState
@@ -174,8 +188,6 @@ namespace GameCore
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
                 bossAlive = IsBossLevel
             };
-            // CODEX BOSS PR1
-            EnsureBossSelected();
 
             if (board != null)
             {
@@ -183,6 +195,14 @@ namespace GameCore
             }
 
             ResetGame();
+
+            // CODEX BOSS PR1
+            EnsureBossSelected();
+            // CODEX BOSS PR2
+            if (IsOptionalBossLevel)
+            {
+                BeginBossChallengeChoice();
+            }
         }
 
         public bool LoadNextLevel()
@@ -399,6 +419,86 @@ namespace GameCore
 
             // CODEX BOSS PR4
             UpdateBossPowerUI();
+        }
+
+        // CODEX BOSS PR2
+        private void ConfigureBossChallengeButtons()
+        {
+            if (bossChallengeFightButton != null)
+            {
+                bossChallengeFightButton.onClick.RemoveAllListeners();
+                bossChallengeFightButton.onClick.AddListener(() => ResolveBossChallengeChoice(true));
+            }
+
+            if (bossChallengeSkipButton != null)
+            {
+                bossChallengeSkipButton.onClick.RemoveAllListeners();
+                bossChallengeSkipButton.onClick.AddListener(() => ResolveBossChallengeChoice(false));
+            }
+        }
+
+        // CODEX BOSS PR2
+        private void BeginBossChallengeChoice()
+        {
+            if (bossChallengePanel == null)
+            {
+                return;
+            }
+
+            awaitingBossChallengeChoice = true;
+            bossChallengePanel.SetActive(true);
+
+            if (bossChallengePromptText != null)
+            {
+                bossChallengePromptText.text = "Face a Boss for extra reward?";
+            }
+
+            if (bossChallengeWarningText != null)
+            {
+                bossChallengeWarningText.text = "If you wipe, you must discard 1 boss power (confirmed).";
+            }
+
+            SetBoardInputLock(true);
+        }
+
+        // CODEX BOSS PR2
+        private void ResolveBossChallengeChoice(bool fightBoss)
+        {
+            if (!awaitingBossChallengeChoice)
+            {
+                return;
+            }
+
+            awaitingBossChallengeChoice = false;
+
+            if (bossChallengePanel != null)
+            {
+                bossChallengePanel.SetActive(false);
+            }
+
+            IsBossLevel = fightBoss;
+            var bossState = CurrentBossState;
+            bossState.bossAlive = fightBoss;
+            CurrentBossState = bossState;
+
+            if (fightBoss)
+            {
+                EnsureBossSelected();
+            }
+
+            SetBoardInputLock(false);
+            UpdateUI();
+        }
+
+        // CODEX BOSS PR2
+        private void SetBoardInputLock(bool locked)
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            board.SetExternalInputLock(locked);
         }
 
         // STAGE 5: Score count-up helper.
