@@ -231,7 +231,9 @@ MonoBehaviour:
   height: 7
   spacing: 1.1
   colorCount: 5
-  refillDelay: 0.1
+  matchConfirmDelay: 0.12
+  clearDelay: 0.05
+  fallDelay: 0.1
   piecePrefab: {fileID: 100000, guid: 1f669de0283d40b8a4ea2d6c70afda2c, type: 3}
 --- !u!114 &3003
 MonoBehaviour:
