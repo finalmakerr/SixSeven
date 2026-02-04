@@ -25,6 +25,9 @@ namespace GameCore
         [Header("UI")]
         [SerializeField] private Text scoreText;
         [SerializeField] private Text movesText;
+        // CODEX: LEVEL_LOOP
+        [SerializeField] private GameObject winPanel;
+        [SerializeField] private GameObject losePanel;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -45,6 +48,8 @@ namespace GameCore
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
         public bool HasMetTarget { get; private set; }
+        // CODEX: LEVEL_LOOP
+        public int MovesLimit { get; private set; }
 
         private bool hasEnded;
         private Coroutine comboRoutine;
@@ -102,11 +107,14 @@ namespace GameCore
         public void ResetGame()
         {
             Score = 0;
-            MovesRemaining = startingMoves;
+            // CODEX: LEVEL_LOOP
+            MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
             HasMetTarget = false;
             hasEnded = false;
             HideComboText();
             displayedScore = Score;
+            // CODEX: LEVEL_LOOP
+            SetEndPanels(false, false);
             UpdateUI();
         }
 
@@ -115,7 +123,8 @@ namespace GameCore
             CurrentLevelIndex = levelIndex;
             var level = levelDatabase != null ? levelDatabase.GetLevel(levelIndex) : LevelDefinition.Default;
 
-            startingMoves = level.moves > 0 ? level.moves : startingMoves;
+            // CODEX: LEVEL_LOOP
+            MovesLimit = level.movesLimit > 0 ? level.movesLimit : startingMoves;
             TargetScore = level.targetScore > 0 ? level.targetScore : fallbackTargetScore;
             var gridSize = level.gridSize == Vector2Int.zero ? fallbackGridSize : level.gridSize;
 
@@ -230,6 +239,8 @@ namespace GameCore
             }
 
             hasEnded = true;
+            // CODEX: LEVEL_LOOP
+            SetEndPanels(true, false);
             OnWin?.Invoke();
         }
 
@@ -241,6 +252,8 @@ namespace GameCore
             }
 
             hasEnded = true;
+            // CODEX: LEVEL_LOOP
+            SetEndPanels(false, true);
             OnLose?.Invoke();
         }
 
@@ -260,7 +273,10 @@ namespace GameCore
 
             if (movesText != null)
             {
-                movesText.text = $"Moves: {MovesRemaining}";
+                // CODEX: LEVEL_LOOP
+                movesText.text = MovesLimit > 0
+                    ? $"Moves: {MovesRemaining}/{MovesLimit}"
+                    : $"Moves: {MovesRemaining}";
             }
         }
 
@@ -280,7 +296,8 @@ namespace GameCore
             if (scoreLerpDuration <= 0f)
             {
                 displayedScore = Score;
-                scoreText.text = $"Score: {Score}";
+                // CODEX: LEVEL_LOOP
+                scoreText.text = $"Score: {Score}/{TargetScore}";
                 return;
             }
 
@@ -297,13 +314,29 @@ namespace GameCore
                 var t = Mathf.Clamp01(elapsed / duration);
                 var lerpedScore = Mathf.RoundToInt(Mathf.Lerp(startScore, endScore, t));
                 displayedScore = lerpedScore;
-                scoreText.text = $"Score: {lerpedScore}";
+                // CODEX: LEVEL_LOOP
+                scoreText.text = $"Score: {lerpedScore}/{TargetScore}";
                 yield return null;
             }
 
             displayedScore = endScore;
-            scoreText.text = $"Score: {endScore}";
+            // CODEX: LEVEL_LOOP
+            scoreText.text = $"Score: {endScore}/{TargetScore}";
             scoreRoutine = null;
+        }
+
+        // CODEX: LEVEL_LOOP
+        private void SetEndPanels(bool showWin, bool showLose)
+        {
+            if (winPanel != null)
+            {
+                winPanel.SetActive(showWin);
+            }
+
+            if (losePanel != null)
+            {
+                losePanel.SetActive(showLose);
+            }
         }
 
         // STAGE 5

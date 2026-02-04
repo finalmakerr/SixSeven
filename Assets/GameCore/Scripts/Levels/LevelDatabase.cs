@@ -25,13 +25,15 @@ namespace GameCore
     [System.Serializable]
     public struct LevelDefinition
     {
-        public int moves;
+        // CODEX: LEVEL_LOOP
+        public int movesLimit;
         public int targetScore;
         public Vector2Int gridSize;
 
         public static LevelDefinition Default => new LevelDefinition
         {
-            moves = 30,
+            // CODEX: LEVEL_LOOP
+            movesLimit = 30,
             targetScore = 500,
             gridSize = new Vector2Int(7, 7)
         };
