@@ -21,6 +21,8 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Board board;
+        // CODEX BOSS PR1
+        [SerializeField] private BossManager bossManager;
 
         [Header("UI")]
         [SerializeField] private Text scoreText;
@@ -62,7 +64,11 @@ namespace GameCore
         // CODEX BOSS PR1
         public bool IsBossLevel { get; private set; }
         // CODEX BOSS PR1
+        public bool IsOptionalBossLevel { get; private set; }
+        // CODEX BOSS PR1
         public BossState CurrentBossState { get; private set; }
+        // CODEX BOSS PR1
+        public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
 
@@ -89,6 +95,11 @@ namespace GameCore
             if (board == null)
             {
                 board = FindObjectOfType<Board>();
+            }
+
+            if (bossManager == null)
+            {
+                bossManager = FindObjectOfType<BossManager>();
             }
 
             if (bossPowerInventory == null)
@@ -152,15 +163,19 @@ namespace GameCore
             TargetScore = level.targetScore > 0 ? level.targetScore : fallbackTargetScore;
             var gridSize = level.gridSize == Vector2Int.zero ? fallbackGridSize : level.gridSize;
             // CODEX BOSS PR1
-            var isBossLevel = (levelIndex + 1) % 6 == 0;
-            level.isBossLevel = isBossLevel;
-            IsBossLevel = isBossLevel;
+            var isBossLevel = levelIndex == 5;
+            var isOptionalBossLevel = levelIndex == 6;
+            IsOptionalBossLevel = isOptionalBossLevel;
+            IsBossLevel = isBossLevel || isOptionalBossLevel;
+            level.isBossLevel = IsBossLevel;
             // CODEX BOSS PR1
             CurrentBossState = new BossState
             {
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
-                bossAlive = isBossLevel
+                bossAlive = IsBossLevel
             };
+            // CODEX BOSS PR1
+            EnsureBossSelected();
 
             if (board != null)
             {
@@ -179,6 +194,18 @@ namespace GameCore
 
             LoadLevel(CurrentLevelIndex + 1);
             return true;
+        }
+
+        // CODEX BOSS PR1
+        private void EnsureBossSelected()
+        {
+            if (!IsBossLevel || bossManager == null || bossManager.CurrentBoss != null)
+            {
+                return;
+            }
+
+            var seed = board != null ? board.RandomSeed : 0;
+            bossManager.SelectBossForRun(seed, debugMode);
         }
 
         // STAGE 3: Apply cascade multiplier to match scoring.
@@ -287,7 +314,8 @@ namespace GameCore
                 return;
             }
 
-            if (DistanceManhattan(position, bossState.bossPosition) > 2)
+            var requiredDistance = CurrentBoss != null ? CurrentBoss.requiredBombDistance : 2;
+            if (DistanceManhattan(position, bossState.bossPosition) > requiredDistance)
             {
                 return;
             }

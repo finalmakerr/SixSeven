@@ -50,6 +50,8 @@ namespace GameCore
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
 
         public bool IsBusy => isBusy; // CODEX VERIFY: input lock gate for stable board state.
+        // CODEX BOSS PR1
+        public int RandomSeed => randomSeed;
 
         private void Awake()
         {
