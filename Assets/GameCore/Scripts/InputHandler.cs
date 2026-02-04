@@ -27,6 +27,12 @@ namespace GameCore
                 return;
             }
 
+            if (board.IsBusy)
+            {
+                selectedPiece = null;
+                return; // CODEX VERIFY: lock input while board resolves.
+            }
+
             if (Input.GetMouseButtonDown(0))
             {
                 startPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
