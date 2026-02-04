@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,10 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        // CODEX: LEVEL_LOOP
+        public event Action<int, int> MatchesCleared;
+        public event Action ValidSwap;
+
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
         [SerializeField] private int height = 7;
@@ -193,6 +198,8 @@ namespace GameCore
                 yield break;
             }
 
+            // CODEX: LEVEL_LOOP
+            ValidSwap?.Invoke();
             yield return StartCoroutine(ClearMatchesRoutine());
             isBusy = false;
         }
@@ -349,8 +356,12 @@ namespace GameCore
         private IEnumerator ClearMatchesRoutine()
         {
             var matches = FindMatches();
+            var cascadeCount = 0;
             while (matches.Count > 0)
             {
+                cascadeCount++;
+                // CODEX: LEVEL_LOOP
+                MatchesCleared?.Invoke(matches.Count, cascadeCount);
                 ClearMatches(matches);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
