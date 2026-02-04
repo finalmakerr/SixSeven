@@ -58,6 +58,8 @@ namespace GameCore
         private const int UltimateBombIndex = 7;
         // STAGE 6
         private HashSet<Vector2Int> pendingSwapPositions;
+        // STAGE 7
+        private const int ReshuffleAttemptLimit = 25;
 
         // STAGE 0: Read-only busy state for input gating.
         public bool IsBusy => isBusy;
@@ -609,6 +611,12 @@ namespace GameCore
                 yield return new WaitForSeconds(fallDelay);
 
                 matchGroups = FindMatchGroups();
+                // STAGE 7: Dead board detection after refills.
+                if (matchGroups.Count == 0 && !HasAnyValidMoves())
+                {
+                    yield return StartCoroutine(ReshuffleRoutine(true));
+                    matchGroups = FindMatchGroups();
+                }
             }
 
             LogState("ResolveComplete");
@@ -822,6 +830,153 @@ namespace GameCore
                         newPiece.transform.position = spawnPosition;
                         newPiece.MoveTo(GridToWorld(x, y), fallDuration);
                     }
+                }
+            }
+        }
+
+        // STAGE 7
+        public bool HasAnyValidMoves()
+        {
+            if (pieces == null)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (x + 1 < width && IsSwapValid(piece, pieces[x + 1, y]))
+                    {
+                        return true;
+                    }
+
+                    if (y + 1 < height && IsSwapValid(piece, pieces[x, y + 1]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // STAGE 7
+        public void DebugReshuffle()
+        {
+            if (isBusy)
+            {
+                return;
+            }
+
+            StartCoroutine(ReshuffleRoutine(true));
+        }
+
+        // STAGE 7
+        private IEnumerator ReshuffleRoutine(bool avoidImmediateMatches)
+        {
+            var wasBusy = isBusy;
+            isBusy = true;
+
+            var piecePool = new List<Piece>();
+            var positions = new List<Vector2Int>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (pieces[x, y] == null)
+                    {
+                        continue;
+                    }
+
+                    piecePool.Add(pieces[x, y]);
+                    positions.Add(new Vector2Int(x, y));
+                }
+            }
+
+            if (piecePool.Count == 0 || positions.Count == 0)
+            {
+                isBusy = wasBusy;
+                yield break;
+            }
+
+            var attempt = 0;
+            while (attempt < ReshuffleAttemptLimit)
+            {
+                attempt++;
+                ShuffleList(piecePool);
+                AssignShuffledPieces(piecePool, positions);
+
+                if (avoidImmediateMatches && FindMatchGroups().Count > 0)
+                {
+                    continue;
+                }
+
+                if (!HasAnyValidMoves())
+                {
+                    continue;
+                }
+
+                break;
+            }
+
+            var ensureMoveAttempt = 0;
+            while (!HasAnyValidMoves() && ensureMoveAttempt < ReshuffleAttemptLimit)
+            {
+                ensureMoveAttempt++;
+                ShuffleList(piecePool);
+                AssignShuffledPieces(piecePool, positions);
+            }
+
+            foreach (var piece in piecePool)
+            {
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                piece.MoveTo(GridToWorld(piece.X, piece.Y), fallDuration);
+            }
+
+            yield return new WaitForSeconds(fallDuration);
+            isBusy = wasBusy;
+        }
+
+        // STAGE 7
+        private void ShuffleList(List<Piece> list)
+        {
+            for (var i = list.Count - 1; i > 0; i--)
+            {
+                var swapIndex = Random.Range(0, i + 1);
+                (list[i], list[swapIndex]) = (list[swapIndex], list[i]);
+            }
+        }
+
+        // STAGE 7
+        private void AssignShuffledPieces(List<Piece> piecePool, List<Vector2Int> positions)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    pieces[x, y] = null;
+                }
+            }
+
+            for (var i = 0; i < piecePool.Count && i < positions.Count; i++)
+            {
+                var piece = piecePool[i];
+                var position = positions[i];
+                pieces[position.x, position.y] = piece;
+                if (piece != null)
+                {
+                    piece.UpdateGridPosition(position.x, position.y);
                 }
             }
         }
