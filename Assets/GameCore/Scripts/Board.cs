@@ -23,6 +23,8 @@ namespace GameCore
         [SerializeField] private int height = 7;
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
+        [Tooltip("Max attempts to avoid free matches on spawn/refill before allowing a fallback.")]
+        [SerializeField] private int noFreeMatchSpawnAttempts = 10;
         [SerializeField] private int rngSeed;
         [Tooltip("Optional per-color weights (size should match color count). Values <= 0 disable a color.")]
         [SerializeField] private float[] spawnWeights;
@@ -189,13 +191,79 @@ namespace GameCore
                 return DrawFromSpawnBag(null);
             }
 
-            var available = GetAvailableColorsForPosition(x, y);
-            if (available.Count == 0)
+            // CODEX: NO_FREE_MATCHES
+            var rejected = new List<int>();
+            var attempt = 0;
+            while (attempt < noFreeMatchSpawnAttempts)
             {
-                return DrawFromSpawnBag(null);
+                attempt++;
+                var candidate = DrawFromSpawnBag(null);
+                if (!WouldCreateMatchAt(x, y, candidate))
+                {
+                    ReinsertRejectedColors(rejected);
+                    return candidate;
+                }
+
+                rejected.Add(candidate);
             }
 
-            return DrawFromSpawnBag(available);
+            ReinsertRejectedColors(rejected);
+            if (debugMode)
+            {
+                Debug.LogWarning($"[Board] Spawn fallback after {noFreeMatchSpawnAttempts} attempts at ({x}, {y}).", this);
+            }
+
+            return DrawFromSpawnBag(null);
+        }
+
+        private void ReinsertRejectedColors(List<int> rejected)
+        {
+            if (rejected == null || rejected.Count == 0)
+            {
+                return;
+            }
+
+            spawnBag.AddRange(rejected);
+            ShuffleSpawnBag();
+        }
+
+        // CODEX: NO_FREE_MATCHES
+        private bool WouldCreateMatchAt(int x, int y, int colorIndex)
+        {
+            var horizontal = 1;
+            horizontal += CountMatchesInDirection(x, y, 1, 0, colorIndex);
+            horizontal += CountMatchesInDirection(x, y, -1, 0, colorIndex);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            var vertical = 1;
+            vertical += CountMatchesInDirection(x, y, 0, 1, colorIndex);
+            vertical += CountMatchesInDirection(x, y, 0, -1, colorIndex);
+            return vertical >= 3;
+        }
+
+        // CODEX: NO_FREE_MATCHES
+        private int CountMatchesInDirection(int startX, int startY, int stepX, int stepY, int colorIndex)
+        {
+            var count = 0;
+            var x = startX + stepX;
+            var y = startY + stepY;
+            while (IsInBounds(x, y))
+            {
+                var candidate = pieces[x, y];
+                if (candidate == null || candidate.ColorIndex != colorIndex)
+                {
+                    break;
+                }
+
+                count++;
+                x += stepX;
+                y += stepY;
+            }
+
+            return count;
         }
 
         private List<int> GetAvailableColorsForPosition(int x, int y)
@@ -870,7 +938,8 @@ namespace GameCore
                 {
                     if (pieces[x, y] == null)
                     {
-                        var newPiece = CreatePiece(x, y, GetSpawnColorIndexForPosition(x, y, false));
+                        // CODEX: NO_FREE_MATCHES
+                        var newPiece = CreatePiece(x, y, GetSpawnColorIndexForPosition(x, y, true));
                         var spawnPosition = GridToWorld(x, height + 1);
                         newPiece.transform.position = spawnPosition;
                         newPiece.MoveTo(GridToWorld(x, y), fallDuration);
