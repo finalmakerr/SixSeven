@@ -35,6 +35,8 @@ namespace GameCore
         private Piece[,] pieces;
         private Sprite[] sprites;
         private bool isBusy;
+        // CODEX BOSS PR2
+        private bool externalInputLock;
         private bool hasInitialized;
         // CODEX: RNG_BAG
         private readonly List<int> colorBag = new List<int>();
@@ -49,7 +51,7 @@ namespace GameCore
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
 
-        public bool IsBusy => isBusy; // CODEX VERIFY: input lock gate for stable board state.
+        public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
         // CODEX BOSS PR1
         public int RandomSeed => randomSeed;
 
@@ -70,6 +72,12 @@ namespace GameCore
             {
                 InitializeBoard(width, height);
             }
+        }
+
+        // CODEX BOSS PR2
+        public void SetExternalInputLock(bool locked)
+        {
+            externalInputLock = locked;
         }
 
         public void InitializeBoard(int newWidth, int newHeight)
