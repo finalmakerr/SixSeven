@@ -1,16 +1,17 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
-
 public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
 {
-    [SerializeField] private Image image;
-    [SerializeField] private GameObject selection;
-    [SerializeField] private Button button;
+    [SerializeField] private SpriteRenderer iconRenderer;
+    [SerializeField] private SpriteRenderer backgroundRenderer;
+    [SerializeField] private Color selectedTint = new Color(1f, 0.92f, 0.2f, 0.35f);
     [SerializeField] private float dragThreshold = 28f;
+    [SerializeField] private Vector2 pressedScale = new Vector2(1.02f, 0.96f);
 
     private GameManager manager;
-    private RectTransform rectTransform;
+    private Transform cachedTransform;
+    private Vector3 baseScale;
+    private Color baseBackgroundColor;
     private Vector2 pointerDownPosition;
     private bool dragTriggered;
 
@@ -20,11 +21,15 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
 
     private void Awake()
     {
-        if (image == null)
-            image = GetComponent<Image>();
-        if (button == null)
-            button = GetComponent<Button>();
-        rectTransform = GetComponent<RectTransform>();
+        if (iconRenderer == null)
+            iconRenderer = FindRenderer("Icon");
+        if (backgroundRenderer == null)
+            backgroundRenderer = FindRenderer("Background");
+        if (backgroundRenderer != null)
+            baseBackgroundColor = backgroundRenderer.color;
+
+        cachedTransform = transform;
+        baseScale = cachedTransform.localScale;
     }
 
     public void Init(GameManager owner, int x, int y)
@@ -33,39 +38,36 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
         X = x;
         Y = y;
 
-        if (button != null)
-        {
-            button.onClick.RemoveAllListeners();
-        }
     }
 
     public void SetSprite(Sprite sprite)
     {
-        if (image == null)
+        if (iconRenderer == null)
             return;
 
-        image.sprite = sprite;
-        image.enabled = sprite != null;
+        iconRenderer.sprite = sprite;
+        iconRenderer.enabled = sprite != null;
     }
 
     public void SetSelected(bool isSelected)
     {
-        if (selection != null)
-            selection.SetActive(isSelected);
+        if (backgroundRenderer == null)
+            return;
+
+        backgroundRenderer.color = isSelected ? selectedTint : baseBackgroundColor;
     }
 
     public void SetScale(float scale)
     {
-        if (rectTransform == null)
-            rectTransform = GetComponent<RectTransform>();
-        if (rectTransform != null)
-            rectTransform.localScale = Vector3.one * scale;
+        baseScale = Vector3.one * scale;
+        cachedTransform.localScale = baseScale;
     }
 
     public void OnPointerDown(PointerEventData eventData)
     {
         pointerDownPosition = eventData.position;
         dragTriggered = false;
+        ApplyPressScale(true);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -78,6 +80,7 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
             return;
 
         dragTriggered = true;
+        ApplyPressScale(false);
         Vector2 direction = Mathf.Abs(delta.x) > Mathf.Abs(delta.y)
             ? (delta.x > 0 ? Vector2.right : Vector2.left)
             : (delta.y > 0 ? Vector2.up : Vector2.down);
@@ -87,9 +90,26 @@ public class TileView : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, I
 
     public void OnPointerUp(PointerEventData eventData)
     {
+        ApplyPressScale(false);
         if (dragTriggered || manager == null)
             return;
 
         manager.OnTileClicked(this);
+    }
+
+    private void ApplyPressScale(bool isPressed)
+    {
+        cachedTransform.localScale = isPressed
+            ? new Vector3(baseScale.x * pressedScale.x, baseScale.y * pressedScale.y, baseScale.z)
+            : baseScale;
+    }
+
+    private SpriteRenderer FindRenderer(string childName)
+    {
+        Transform child = transform.Find(childName);
+        if (child == null)
+            return null;
+
+        return child.GetComponent<SpriteRenderer>();
     }
 }
