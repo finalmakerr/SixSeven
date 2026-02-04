@@ -29,13 +29,17 @@ namespace GameCore
         public int movesLimit;
         public int targetScore;
         public Vector2Int gridSize;
+        // CODEX BOSS PR1
+        public bool isBossLevel;
 
         public static LevelDefinition Default => new LevelDefinition
         {
             // CODEX: LEVEL_LOOP
             movesLimit = 30,
             targetScore = 500,
-            gridSize = new Vector2Int(7, 7)
+            gridSize = new Vector2Int(7, 7),
+            // CODEX BOSS PR1
+            isBossLevel = false
         };
     }
 }
