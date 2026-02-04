@@ -30,6 +30,8 @@ namespace GameCore
         [SerializeField] private GameObject losePanel;
         // CODEX BOSS PR1
         [SerializeField] private Text bossLabelText;
+        // CODEX BOSS PR4
+        [SerializeField] private Text bossPowersText;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -57,6 +59,8 @@ namespace GameCore
         public bool IsBossLevel { get; private set; }
         // CODEX BOSS PR1
         public BossState CurrentBossState { get; private set; }
+        // CODEX BOSS PR4
+        public BossPowerInventory BossPowerInventory => bossPowerInventory;
 
         private bool hasEnded;
         private Coroutine comboRoutine;
@@ -64,6 +68,8 @@ namespace GameCore
         private Coroutine scoreRoutine;
         private Coroutine shakeRoutine;
         private int displayedScore;
+        // CODEX BOSS PR4
+        [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
 
         private void Awake()
         {
@@ -77,6 +83,11 @@ namespace GameCore
             if (board == null)
             {
                 board = FindObjectOfType<Board>();
+            }
+
+            if (bossPowerInventory == null)
+            {
+                bossPowerInventory = new BossPowerInventory(3);
             }
 
             if (screenShakeTarget == null && Camera.main != null)
@@ -297,6 +308,8 @@ namespace GameCore
             hasEnded = true;
             // CODEX: LEVEL_LOOP
             SetEndPanels(true, false);
+            // CODEX BOSS PR4
+            GrantBossPowerIfEligible();
             OnWin?.Invoke();
         }
 
@@ -347,6 +360,9 @@ namespace GameCore
                 bossLabelText.text = "BOSS";
                 bossLabelText.enabled = IsBossLevel;
             }
+
+            // CODEX BOSS PR4
+            UpdateBossPowerUI();
         }
 
         // STAGE 5: Score count-up helper.
@@ -480,6 +496,41 @@ namespace GameCore
             }
 
             comboText.enabled = false;
+        }
+
+        // CODEX BOSS PR4
+        private void GrantBossPowerIfEligible()
+        {
+            if (!IsBossLevel || CurrentBossState.bossAlive)
+            {
+                return;
+            }
+
+            if (bossPowerInventory == null)
+            {
+                bossPowerInventory = new BossPowerInventory(3);
+            }
+
+            var powerValues = (BossPower[])Enum.GetValues(typeof(BossPower));
+            if (powerValues.Length == 0)
+            {
+                return;
+            }
+
+            var randomPower = powerValues[UnityEngine.Random.Range(0, powerValues.Length)];
+            bossPowerInventory.TryAddPower(randomPower);
+            UpdateBossPowerUI();
+        }
+
+        // CODEX BOSS PR4
+        private void UpdateBossPowerUI()
+        {
+            if (bossPowersText == null || bossPowerInventory == null)
+            {
+                return;
+            }
+
+            bossPowersText.text = bossPowerInventory.BuildDisplayString();
         }
     }
 }
