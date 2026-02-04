@@ -37,6 +37,10 @@ namespace GameCore
         private System.Random randomGenerator;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
+        private readonly HashSet<Vector2Int> specialCreationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: track special creation logs once per run.
+        private readonly HashSet<Vector2Int> specialActivationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: prevent double activation logs per resolve step.
+        private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
+        private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
 
         public bool IsBusy => isBusy; // CODEX VERIFY: input lock gate for stable board state.
 
@@ -76,6 +80,8 @@ namespace GameCore
         {
             StopAllCoroutines();
             isBusy = true; // CODEX VERIFY: lock input while board initializes.
+            activeMoveId = 0; // CODEX VERIFY 2: reset move diagnostics for initialization clears.
+            moveId = 0; // CODEX VERIFY 2: reset move id for new board sessions.
             ClearExistingPieces();
             pieces = new Piece[width, height];
             // CODEX: RNG_BAG
@@ -291,32 +297,31 @@ namespace GameCore
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
-            if (debugMode)
-            {
-                Debug.Log($"MoveStart: ({first.X},{first.Y}) -> ({second.X},{second.Y})", this); // CODEX VERIFY: move start log.
-            }
             SwapPieces(first, second);
 
             yield return new WaitForSeconds(0.05f);
 
+            activeMoveId = moveId + 1; // CODEX VERIFY 2: stage upcoming move id for match diagnostics.
             var matches = FindMatches();
             if (matches.Count == 0)
             {
                 SwapPieces(first, second);
-                if (debugMode)
-                {
-                    Debug.Log("MoveEnd: invalid swap reverted.", this); // CODEX VERIFY: move end log.
-                }
+                activeMoveId = moveId; // CODEX VERIFY 2: restore current move id on invalid swaps.
                 isBusy = false;
                 yield break;
             }
 
             // CODEX: LEVEL_LOOP
+            moveId = activeMoveId; // CODEX VERIFY 2: commit staged move id for accepted swaps.
+            if (debugMode)
+            {
+                Debug.Log($"MoveStart({activeMoveId}): ({first.X},{first.Y}) -> ({second.X},{second.Y})", this); // CODEX VERIFY 2: move start log once per accepted swap.
+            }
             ValidSwap?.Invoke();
             yield return StartCoroutine(ClearMatchesRoutine());
             if (debugMode)
             {
-                Debug.Log("MoveEnd: resolve complete.", this); // CODEX VERIFY: move end log.
+                Debug.Log($"MoveEnd({activeMoveId}): resolve complete.", this); // CODEX VERIFY 2: move end log once per accepted swap.
             }
             isBusy = false;
         }
@@ -403,6 +408,8 @@ namespace GameCore
         private List<Piece> FindMatches()
         {
             matchBuffer.Clear();
+            specialCreationLogged.Clear(); // CODEX VERIFY 2: reset special creation logs per scan.
+            specialActivationLogged.Clear(); // CODEX VERIFY 2: reset special activation logs per scan.
 
             // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
@@ -458,6 +465,15 @@ namespace GameCore
                 return;
             }
 
+            if (runLength >= 4 && debugMode)
+            {
+                var specialPosition = new Vector2Int(endX, endY); // CODEX VERIFY 2: log once per match run.
+                if (specialCreationLogged.Add(specialPosition))
+                {
+                    Debug.Log($"SpecialCreate({activeMoveId}): ({specialPosition.x},{specialPosition.y}) length={runLength}", this); // CODEX VERIFY 2: special creation log with move id.
+                }
+            }
+
             for (var i = 0; i < runLength; i++)
             {
                 var x = endX - direction.x * i;
@@ -480,7 +496,7 @@ namespace GameCore
                 cascadeCount++;
                 if (debugMode)
                 {
-                    Debug.Log($"CascadeCount: {cascadeCount}", this); // CODEX VERIFY: cascade instrumentation.
+                    Debug.Log($"CascadeCount({activeMoveId}): {cascadeCount}", this); // CODEX VERIFY 2: cascade instrumentation with move id.
                 }
                 // CODEX: LEVEL_LOOP
                 MatchesCleared?.Invoke(matches.Count, cascadeCount);
@@ -505,6 +521,15 @@ namespace GameCore
                 if (piece == null)
                 {
                     continue;
+                }
+
+                if (debugMode)
+                {
+                    var position = new Vector2Int(piece.X, piece.Y); // CODEX VERIFY 2: log special activation once per resolve step.
+                    if (specialCreationLogged.Contains(position) && specialActivationLogged.Add(position))
+                    {
+                        Debug.Log($"SpecialActivate({activeMoveId}): ({position.x},{position.y})", this); // CODEX VERIFY 2: special activation log with move id.
+                    }
                 }
 
                 if (IsInBounds(piece.X, piece.Y))
@@ -566,7 +591,7 @@ namespace GameCore
             var validMovesAfterShuffle = ShuffleBoard();
             if (debugMode)
             {
-                Debug.Log($"ShuffleTriggered: validMoves={validMovesAfterShuffle}", this); // CODEX VERIFY: shuffle instrumentation.
+                Debug.Log($"ShuffleTriggered({activeMoveId}): validMoves={validMovesAfterShuffle}", this); // CODEX VERIFY 2: shuffle instrumentation with move id.
             }
         }
 
