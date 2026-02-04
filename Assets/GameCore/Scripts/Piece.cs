@@ -11,6 +11,7 @@ namespace GameCore
         public int X { get; private set; }
         public int Y { get; private set; }
         public int ColorIndex { get; private set; }
+        public SpecialType SpecialType { get; private set; }
 
         private SpriteRenderer spriteRenderer;
 
@@ -26,6 +27,7 @@ namespace GameCore
             X = x;
             Y = y;
             SetColor(colorIndex, sprite);
+            SetSpecialType(SpecialType.None);
             name = $"Piece_{x}_{y}";
         }
 
@@ -35,7 +37,27 @@ namespace GameCore
             if (spriteRenderer != null)
             {
                 spriteRenderer.sprite = sprite;
+                ApplySpecialVisual();
             }
+        }
+
+        // CODEX BOSS PR2
+        public void SetSpecialType(SpecialType type)
+        {
+            SpecialType = type;
+            ApplySpecialVisual();
+        }
+
+        private void ApplySpecialVisual()
+        {
+            if (spriteRenderer == null)
+            {
+                return;
+            }
+
+            spriteRenderer.color = SpecialType == SpecialType.Bomb
+                ? new Color(0.25f, 0.25f, 0.25f)
+                : Color.white;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)

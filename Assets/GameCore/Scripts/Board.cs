@@ -10,6 +10,8 @@ namespace GameCore
         // CODEX: LEVEL_LOOP
         public event Action<int, int> MatchesCleared;
         public event Action ValidSwap;
+        // CODEX BOSS PR2
+        public event Action<Vector2Int> OnBombDetonated;
 
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
@@ -17,6 +19,8 @@ namespace GameCore
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
         [SerializeField] private float refillDelay = 0.1f;
+        // CODEX BOSS PR2
+        [SerializeField] private bool bombOnlyOnBossLevels;
         // CODEX: RNG_BAG
         [Header("Randomness")]
         [SerializeField] private int randomSeed = 0;
@@ -39,6 +43,9 @@ namespace GameCore
         private readonly List<Piece> matchBuffer = new List<Piece>();
         private readonly HashSet<Vector2Int> specialCreationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: track special creation logs once per run.
         private readonly HashSet<Vector2Int> specialActivationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: prevent double activation logs per resolve step.
+        // CODEX BOSS PR2
+        private readonly HashSet<Vector2Int> bombCreationPositions = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> bombDetonationsThisStep = new HashSet<Vector2Int>();
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
 
@@ -410,6 +417,8 @@ namespace GameCore
             matchBuffer.Clear();
             specialCreationLogged.Clear(); // CODEX VERIFY 2: reset special creation logs per scan.
             specialActivationLogged.Clear(); // CODEX VERIFY 2: reset special activation logs per scan.
+            // CODEX BOSS PR2
+            bombCreationPositions.Clear();
 
             // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
@@ -465,6 +474,21 @@ namespace GameCore
                 return;
             }
 
+            // CODEX BOSS PR2
+            Vector2Int? bombPosition = null;
+            if (runLength >= 5 && ShouldAllowBombCreation())
+            {
+                var candidatePosition = new Vector2Int(endX, endY);
+                var candidatePiece = pieces[endX, endY];
+                if (candidatePiece != null
+                    && candidatePiece.SpecialType == SpecialType.None
+                    && bombCreationPositions.Add(candidatePosition))
+                {
+                    candidatePiece.SetSpecialType(SpecialType.Bomb);
+                    bombPosition = candidatePosition;
+                }
+            }
+
             if (runLength >= 4 && debugMode)
             {
                 var specialPosition = new Vector2Int(endX, endY); // CODEX VERIFY 2: log once per match run.
@@ -478,6 +502,14 @@ namespace GameCore
             {
                 var x = endX - direction.x * i;
                 var y = endY - direction.y * i;
+                if (bombPosition.HasValue && bombPosition.Value.x == x && bombPosition.Value.y == y)
+                {
+                    continue;
+                }
+                if (bombCreationPositions.Contains(new Vector2Int(x, y)))
+                {
+                    continue;
+                }
                 var piece = pieces[x, y];
                 if (piece != null && !matchBuffer.Contains(piece))
                 {
@@ -516,6 +548,9 @@ namespace GameCore
 
         private void ClearMatches(List<Piece> matches)
         {
+            var clearedPositions = new HashSet<Vector2Int>();
+            bombDetonationsThisStep.Clear();
+
             foreach (var piece in matches)
             {
                 if (piece == null)
@@ -532,12 +567,83 @@ namespace GameCore
                     }
                 }
 
+                var position = new Vector2Int(piece.X, piece.Y);
+                if (piece.SpecialType == SpecialType.Bomb)
+                {
+                    DetonateBomb(position, clearedPositions);
+                    continue;
+                }
+
                 if (IsInBounds(piece.X, piece.Y))
                 {
-                    pieces[piece.X, piece.Y] = null;
+                    clearedPositions.Add(position);
                 }
+            }
+
+            foreach (var position in clearedPositions)
+            {
+                if (!IsInBounds(position.x, position.y))
+                {
+                    continue;
+                }
+
+                var piece = pieces[position.x, position.y];
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
+        }
+
+        // CODEX BOSS PR2
+        private void DetonateBomb(Vector2Int position, HashSet<Vector2Int> clearedPositions)
+        {
+            if (!bombDetonationsThisStep.Add(position))
+            {
+                return;
+            }
+
+            OnBombDetonated?.Invoke(position);
+
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                for (var dy = -1; dy <= 1; dy++)
+                {
+                    var x = position.x + dx;
+                    var y = position.y + dy;
+                    if (!IsInBounds(x, y))
+                    {
+                        continue;
+                    }
+
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    var targetPosition = new Vector2Int(x, y);
+                    clearedPositions.Add(targetPosition);
+                    if (piece.SpecialType == SpecialType.Bomb)
+                    {
+                        DetonateBomb(targetPosition, clearedPositions);
+                    }
+                }
+            }
+        }
+
+        // CODEX BOSS PR2
+        private bool ShouldAllowBombCreation()
+        {
+            if (!bombOnlyOnBossLevels)
+            {
+                return true;
+            }
+
+            return GameManager.Instance != null && GameManager.Instance.IsBossLevel;
         }
 
         private void CollapseColumns()
