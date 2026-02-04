@@ -326,6 +326,8 @@ namespace GameCore
             SetState(BoardState.Swapping);
             LogPipeline("MoveStart");
             LogState("SwapStart");
+            // CODEX: CASCADE_LOOP
+            CascadeCount = 0;
             SwapPieces(first, second, swapDuration);
             PlayClip(swapClip);
             // STAGE 6: Track swap positions for RowClear creation.
@@ -611,9 +613,10 @@ namespace GameCore
             // CODEX: CC_SWAP_RULES
             SetState(BoardState.Resolving);
             LogState("ResolveStart");
-            var matchGroups = FindMatchGroups();
             // CODEX: CASCADE_LOOP
             CascadeCount = 0;
+            // CODEX: CASCADE_LOOP
+            var matchGroups = FindMatchGroups();
             // STAGE 6: Only use the swap positions for the first resolve batch.
             var swapPositions = pendingSwapPositions;
             pendingSwapPositions = null;
