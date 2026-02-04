@@ -24,6 +24,9 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
+        [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
+        [SerializeField] private int maxSpawnAttempts = 6; // CODEX VERIFY: cap retry attempts for spawn/refill.
+        [SerializeField] private int maxShuffleAttempts = 10; // CODEX VERIFY: cap shuffle retries for dead boards.
 
         private Piece[,] pieces;
         private Sprite[] sprites;
@@ -34,6 +37,8 @@ namespace GameCore
         private System.Random randomGenerator;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
+
+        public bool IsBusy => isBusy; // CODEX VERIFY: input lock gate for stable board state.
 
         private void Awake()
         {
@@ -70,7 +75,7 @@ namespace GameCore
         private void ResetBoardState()
         {
             StopAllCoroutines();
-            isBusy = false;
+            isBusy = true; // CODEX VERIFY: lock input while board initializes.
             ClearExistingPieces();
             pieces = new Piece[width, height];
             // CODEX: RNG_BAG
@@ -116,7 +121,7 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
-                    CreatePiece(x, y, GetRandomColorIndex());
+                    CreatePiece(x, y, GetRandomColorIndexAvoidingMatch(x, y));
                 }
             }
         }
@@ -129,6 +134,26 @@ namespace GameCore
             var colorIndex = colorBag[bagIndex];
             colorBag.RemoveAt(bagIndex);
             return colorIndex;
+        }
+
+        private int GetRandomColorIndexAvoidingMatch(int x, int y)
+        {
+            // CODEX VERIFY: avoid spawning immediate matches with a capped retry.
+            EnsureColorBag();
+            var attempts = Mathf.Max(1, maxSpawnAttempts);
+            for (var attempt = 0; attempt < attempts; attempt++)
+            {
+                var bagIndex = RandomRange(0, colorBag.Count);
+                var colorIndex = colorBag[bagIndex];
+                if (!WouldFormMatch(x, y, colorIndex))
+                {
+                    colorBag.RemoveAt(bagIndex);
+                    return colorIndex;
+                }
+            }
+
+            // CODEX VERIFY: fallback to prevent infinite loops if all colors match.
+            return GetRandomColorIndex();
         }
 
         // CODEX: RNG_BAG
@@ -266,6 +291,10 @@ namespace GameCore
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
+            if (debugMode)
+            {
+                Debug.Log($"MoveStart: ({first.X},{first.Y}) -> ({second.X},{second.Y})", this); // CODEX VERIFY: move start log.
+            }
             SwapPieces(first, second);
 
             yield return new WaitForSeconds(0.05f);
@@ -274,6 +303,10 @@ namespace GameCore
             if (matches.Count == 0)
             {
                 SwapPieces(first, second);
+                if (debugMode)
+                {
+                    Debug.Log("MoveEnd: invalid swap reverted.", this); // CODEX VERIFY: move end log.
+                }
                 isBusy = false;
                 yield break;
             }
@@ -281,6 +314,10 @@ namespace GameCore
             // CODEX: LEVEL_LOOP
             ValidSwap?.Invoke();
             yield return StartCoroutine(ClearMatchesRoutine());
+            if (debugMode)
+            {
+                Debug.Log("MoveEnd: resolve complete.", this); // CODEX VERIFY: move end log.
+            }
             isBusy = false;
         }
 
@@ -435,11 +472,16 @@ namespace GameCore
 
         private IEnumerator ClearMatchesRoutine()
         {
+            isBusy = true;
             var matches = FindMatches();
             var cascadeCount = 0;
             while (matches.Count > 0)
             {
                 cascadeCount++;
+                if (debugMode)
+                {
+                    Debug.Log($"CascadeCount: {cascadeCount}", this); // CODEX VERIFY: cascade instrumentation.
+                }
                 // CODEX: LEVEL_LOOP
                 MatchesCleared?.Invoke(matches.Count, cascadeCount);
                 ClearMatches(matches);
@@ -451,6 +493,9 @@ namespace GameCore
                 // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
             }
+
+            EnsurePlayableBoard();
+            isBusy = false;
         }
 
         private void ClearMatches(List<Piece> matches)
@@ -505,10 +550,212 @@ namespace GameCore
                 {
                     if (pieces[x, y] == null)
                     {
-                        CreatePiece(x, y, GetRandomColorIndex());
+                        CreatePiece(x, y, GetRandomColorIndexAvoidingMatch(x, y));
                     }
                 }
             }
+        }
+
+        private void EnsurePlayableBoard()
+        {
+            if (HasAnyValidMoves())
+            {
+                return;
+            }
+
+            var validMovesAfterShuffle = ShuffleBoard();
+            if (debugMode)
+            {
+                Debug.Log($"ShuffleTriggered: validMoves={validMovesAfterShuffle}", this); // CODEX VERIFY: shuffle instrumentation.
+            }
+        }
+
+        private bool ShuffleBoard()
+        {
+            var piecesList = new List<Piece>();
+            var colors = new List<int>();
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    piecesList.Add(piece);
+                    colors.Add(piece.ColorIndex);
+                }
+            }
+
+            if (piecesList.Count == 0)
+            {
+                return false;
+            }
+
+            var attempts = Mathf.Max(1, maxShuffleAttempts);
+            for (var attempt = 0; attempt < attempts; attempt++)
+            {
+                ShuffleColors(colors);
+                for (var i = 0; i < piecesList.Count; i++)
+                {
+                    var colorIndex = colors[i];
+                    piecesList[i].SetColor(colorIndex, sprites[colorIndex]);
+                }
+
+                if (FindMatches().Count == 0 && HasAnyValidMoves())
+                {
+                    return true;
+                }
+            }
+
+            // CODEX VERIFY: fallback re-roll to avoid dead boards after shuffles.
+            ResetRandomGenerator();
+            colorBag.Clear();
+            for (var i = 0; i < piecesList.Count; i++)
+            {
+                var piece = piecesList[i];
+                var colorIndex = GetRandomColorIndexAvoidingMatch(piece.X, piece.Y);
+                piece.SetColor(colorIndex, sprites[colorIndex]);
+            }
+
+            return FindMatches().Count == 0 && HasAnyValidMoves();
+        }
+
+        private void ShuffleColors(List<int> colors)
+        {
+            for (var i = colors.Count - 1; i > 0; i--)
+            {
+                var swapIndex = RandomRange(0, i + 1);
+                var temp = colors[i];
+                colors[i] = colors[swapIndex];
+                colors[swapIndex] = temp;
+            }
+        }
+
+        private bool HasAnyValidMoves()
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (pieces[x, y] == null)
+                    {
+                        continue;
+                    }
+
+                    if (HasValidSwapAt(x, y, x + 1, y) || HasValidSwapAt(x, y, x, y + 1))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private bool HasValidSwapAt(int x1, int y1, int x2, int y2)
+        {
+            if (!IsInBounds(x2, y2))
+            {
+                return false;
+            }
+
+            var first = pieces[x1, y1];
+            var second = pieces[x2, y2];
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (first.ColorIndex == second.ColorIndex)
+            {
+                return false;
+            }
+
+            return WouldSwapCreateMatch(x1, y1, x2, y2);
+        }
+
+        private bool WouldSwapCreateMatch(int x1, int y1, int x2, int y2)
+        {
+            return HasMatchAtSimulated(x1, y1, x1, y1, x2, y2) || HasMatchAtSimulated(x2, y2, x1, y1, x2, y2);
+        }
+
+        private bool HasMatchAtSimulated(int x, int y, int swapX1, int swapY1, int swapX2, int swapY2)
+        {
+            var colorIndex = GetColorIndexForSwap(x, y, swapX1, swapY1, swapX2, swapY2);
+            if (colorIndex < 0)
+            {
+                return false;
+            }
+
+            var horizontal = 1;
+            horizontal += CountDirectionMatchesForColor(x, y, 1, 0, colorIndex, swapX1, swapY1, swapX2, swapY2);
+            horizontal += CountDirectionMatchesForColor(x, y, -1, 0, colorIndex, swapX1, swapY1, swapX2, swapY2);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            var vertical = 1;
+            vertical += CountDirectionMatchesForColor(x, y, 0, 1, colorIndex, swapX1, swapY1, swapX2, swapY2);
+            vertical += CountDirectionMatchesForColor(x, y, 0, -1, colorIndex, swapX1, swapY1, swapX2, swapY2);
+            return vertical >= 3;
+        }
+
+        private int CountDirectionMatchesForColor(int startX, int startY, int stepX, int stepY, int colorIndex, int swapX1, int swapY1, int swapX2, int swapY2)
+        {
+            var count = 0;
+            var x = startX + stepX;
+            var y = startY + stepY;
+            while (IsInBounds(x, y))
+            {
+                var candidateColor = GetColorIndexForSwap(x, y, swapX1, swapY1, swapX2, swapY2);
+                if (candidateColor != colorIndex)
+                {
+                    break;
+                }
+
+                count++;
+                x += stepX;
+                y += stepY;
+            }
+
+            return count;
+        }
+
+        private int GetColorIndexForSwap(int x, int y, int swapX1, int swapY1, int swapX2, int swapY2)
+        {
+            if (x == swapX1 && y == swapY1)
+            {
+                return pieces[swapX2, swapY2] != null ? pieces[swapX2, swapY2].ColorIndex : -1;
+            }
+
+            if (x == swapX2 && y == swapY2)
+            {
+                return pieces[swapX1, swapY1] != null ? pieces[swapX1, swapY1].ColorIndex : -1;
+            }
+
+            return pieces[x, y] != null ? pieces[x, y].ColorIndex : -1;
+        }
+
+        private bool WouldFormMatch(int x, int y, int colorIndex)
+        {
+            // CODEX VERIFY: used for spawn/refill to avoid instant matches.
+            var horizontal = 1;
+            horizontal += CountDirectionMatchesForColor(x, y, 1, 0, colorIndex, -1, -1, -1, -1);
+            horizontal += CountDirectionMatchesForColor(x, y, -1, 0, colorIndex, -1, -1, -1, -1);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            var vertical = 1;
+            vertical += CountDirectionMatchesForColor(x, y, 0, 1, colorIndex, -1, -1, -1, -1);
+            vertical += CountDirectionMatchesForColor(x, y, 0, -1, colorIndex, -1, -1, -1, -1);
+            return vertical >= 3;
         }
 
         private bool IsInBounds(int x, int y)

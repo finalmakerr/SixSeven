@@ -40,6 +40,7 @@ namespace GameCore
         [SerializeField] private int bigClearThreshold = 5;
         [SerializeField] private float bigClearShakeDuration = 0.1f;
         [SerializeField] private float bigClearShakeMagnitude = 0.08f;
+        [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
 
         public static GameManager Instance { get; private set; }
 
@@ -172,6 +173,10 @@ namespace GameCore
             }
 
             MovesRemaining -= 1;
+            if (debugMode)
+            {
+                Debug.Log($"MovesRemaining: {MovesRemaining}", this); // CODEX VERIFY: move counter log.
+            }
             UpdateUI();
             return true;
         }
