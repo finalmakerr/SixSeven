@@ -206,6 +206,8 @@ namespace GameCore
 
             board.MatchesCleared += HandleMatchesCleared;
             board.ValidSwap += HandleValidSwap;
+            // CODEX BOSS PR3
+            board.OnBombDetonated += HandleBombDetonated;
         }
 
         private void UnregisterBoardEvents()
@@ -217,6 +219,8 @@ namespace GameCore
 
             board.MatchesCleared -= HandleMatchesCleared;
             board.ValidSwap -= HandleValidSwap;
+            // CODEX BOSS PR3
+            board.OnBombDetonated -= HandleBombDetonated;
         }
 
         private void HandleMatchesCleared(int clearedCount, int cascadeCount)
@@ -252,6 +256,37 @@ namespace GameCore
             }
         }
 
+        // CODEX BOSS PR3
+        private void HandleBombDetonated(Vector2Int position)
+        {
+            if (hasEnded || !IsBossLevel)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive)
+            {
+                return;
+            }
+
+            if (DistanceManhattan(position, bossState.bossPosition) > 2)
+            {
+                return;
+            }
+
+            bossState.bossAlive = false;
+            CurrentBossState = bossState;
+
+            if (debugMode)
+            {
+                Debug.Log($"BossDefeated by bomb at {position.x},{position.y}", this);
+            }
+
+            TriggerInstantWin();
+            TriggerWin();
+        }
+
         private void TriggerWin()
         {
             if (hasEnded)
@@ -276,6 +311,12 @@ namespace GameCore
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, true);
             OnLose?.Invoke();
+        }
+
+        // CODEX BOSS PR3
+        private static int DistanceManhattan(Vector2Int a, Vector2Int b)
+        {
+            return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
         }
 
         public void TriggerInstantWin()
