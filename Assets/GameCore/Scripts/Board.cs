@@ -17,6 +17,10 @@ namespace GameCore
         [SerializeField] private float spacing = 1.1f;
         [SerializeField] private int colorCount = 5;
         [SerializeField] private float refillDelay = 0.1f;
+        // CODEX: RNG_BAG
+        [Header("Randomness")]
+        [SerializeField] private int randomSeed = 0;
+        [SerializeField] private List<float> tileWeights = new List<float>();
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
@@ -25,6 +29,9 @@ namespace GameCore
         private Sprite[] sprites;
         private bool isBusy;
         private bool hasInitialized;
+        // CODEX: RNG_BAG
+        private readonly List<int> colorBag = new List<int>();
+        private System.Random randomGenerator;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
 
@@ -66,6 +73,9 @@ namespace GameCore
             isBusy = false;
             ClearExistingPieces();
             pieces = new Piece[width, height];
+            // CODEX: RNG_BAG
+            ResetRandomGenerator();
+            colorBag.Clear();
             CreateBoard();
             StartCoroutine(ClearMatchesRoutine());
         }
@@ -113,7 +123,77 @@ namespace GameCore
 
         private int GetRandomColorIndex()
         {
-            return Random.Range(0, colorCount);
+            // CODEX: RNG_BAG
+            EnsureColorBag();
+            var bagIndex = RandomRange(0, colorBag.Count);
+            var colorIndex = colorBag[bagIndex];
+            colorBag.RemoveAt(bagIndex);
+            return colorIndex;
+        }
+
+        // CODEX: RNG_BAG
+        private void ResetRandomGenerator()
+        {
+            randomGenerator = randomSeed > 0 ? new System.Random(randomSeed) : new System.Random();
+        }
+
+        // CODEX: RNG_BAG
+        private void EnsureColorBag()
+        {
+            if (colorBag.Count > 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < colorCount; i++)
+            {
+                var weight = GetTileWeight(i);
+                if (weight <= 0f)
+                {
+                    continue;
+                }
+
+                var count = Mathf.Max(1, Mathf.RoundToInt(weight));
+                for (var j = 0; j < count; j++)
+                {
+                    colorBag.Add(i);
+                }
+            }
+
+            if (colorBag.Count == 0)
+            {
+                for (var i = 0; i < colorCount; i++)
+                {
+                    colorBag.Add(i);
+                }
+            }
+        }
+
+        // CODEX: RNG_BAG
+        private float GetTileWeight(int colorIndex)
+        {
+            if (tileWeights == null || tileWeights.Count == 0)
+            {
+                return 1f;
+            }
+
+            if (colorIndex < 0 || colorIndex >= tileWeights.Count)
+            {
+                return 1f;
+            }
+
+            return tileWeights[colorIndex];
+        }
+
+        // CODEX: RNG_BAG
+        private int RandomRange(int minInclusive, int maxExclusive)
+        {
+            if (maxExclusive <= minInclusive)
+            {
+                return minInclusive;
+            }
+
+            return randomGenerator.Next(minInclusive, maxExclusive);
         }
 
         private Piece CreatePiece(int x, int y, int colorIndex)
