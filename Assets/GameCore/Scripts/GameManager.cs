@@ -28,6 +28,8 @@ namespace GameCore
         // CODEX: LEVEL_LOOP
         [SerializeField] private GameObject winPanel;
         [SerializeField] private GameObject losePanel;
+        // CODEX BOSS PR1
+        [SerializeField] private Text bossLabelText;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -51,6 +53,10 @@ namespace GameCore
         public bool HasMetTarget { get; private set; }
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
+        // CODEX BOSS PR1
+        public bool IsBossLevel { get; private set; }
+        // CODEX BOSS PR1
+        public BossState CurrentBossState { get; private set; }
 
         private bool hasEnded;
         private Coroutine comboRoutine;
@@ -128,6 +134,16 @@ namespace GameCore
             MovesLimit = level.movesLimit > 0 ? level.movesLimit : startingMoves;
             TargetScore = level.targetScore > 0 ? level.targetScore : fallbackTargetScore;
             var gridSize = level.gridSize == Vector2Int.zero ? fallbackGridSize : level.gridSize;
+            // CODEX BOSS PR1
+            var isBossLevel = (levelIndex + 1) % 6 == 0;
+            level.isBossLevel = isBossLevel;
+            IsBossLevel = isBossLevel;
+            // CODEX BOSS PR1
+            CurrentBossState = new BossState
+            {
+                bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
+                bossAlive = isBossLevel
+            };
 
             if (board != null)
             {
@@ -282,6 +298,13 @@ namespace GameCore
                 movesText.text = MovesLimit > 0
                     ? $"Moves: {MovesRemaining}/{MovesLimit}"
                     : $"Moves: {MovesRemaining}";
+            }
+
+            // CODEX BOSS PR1
+            if (bossLabelText != null)
+            {
+                bossLabelText.text = "BOSS";
+                bossLabelText.enabled = IsBossLevel;
             }
         }
 
