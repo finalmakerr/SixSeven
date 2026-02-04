@@ -10,6 +10,7 @@ namespace GameCore
     {
         public int MaxSlots => maxSlots;
         public IReadOnlyList<BossPower> Powers => powers;
+        public int Count => powers.Count;
 
         [UnityEngine.SerializeField] private int maxSlots = 3;
         [UnityEngine.SerializeField] private List<BossPower> powers = new List<BossPower>();
@@ -32,6 +33,18 @@ namespace GameCore
 
             powers.Add(power);
             return true;
+        }
+
+        // CODEX BOSS PR5
+        public bool TryRemovePower(BossPower power)
+        {
+            return powers.Remove(power);
+        }
+
+        // CODEX BOSS PR5
+        public bool HasPower(BossPower power)
+        {
+            return powers.Contains(power);
         }
 
         public string BuildDisplayString()
