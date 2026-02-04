@@ -380,6 +380,12 @@ namespace GameCore
             {
                 return true;
             }
+            // CODEX: SPECIAL_TILES
+            if (IsColorBombSwap(first, second))
+            {
+                return true;
+            }
+            // CODEX: SPECIAL_TILES
 
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
@@ -423,6 +429,22 @@ namespace GameCore
                 LogState("Unlock");
                 yield break;
             }
+
+            // CODEX: SPECIAL_TILES
+            if (TryGetColorBombSwap(first, second, out var colorBombPiece, out var targetColor))
+            {
+                pendingSwapPositions = null;
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Resolving);
+                yield return StartCoroutine(ResolveColorBombRoutine(colorBombPiece, targetColor));
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Idle);
+                onComplete?.Invoke(true);
+                LogPipeline("MoveEnd");
+                LogState("Unlock");
+                yield break;
+            }
+            // CODEX: SPECIAL_TILES
 
             var matchGroups = FindMatchGroups();
             if (matchGroups.Count == 0)
@@ -752,8 +774,9 @@ namespace GameCore
                 }
             }
 
-            var rowClearSources = new List<Piece>();
-            var rowClearAffected = new HashSet<Piece>();
+            // CODEX: SPECIAL_TILES
+            var lineClearSources = new List<Piece>();
+            var lineClearAffected = new HashSet<Piece>();
             var clearSet = new HashSet<Piece>();
 
             foreach (var piece in uniqueMatches)
@@ -768,30 +791,48 @@ namespace GameCore
                     continue;
                 }
 
-                if (piece.Special == Piece.SpecialType.RowClear)
+                if (piece.Special == Piece.SpecialType.LineClear)
                 {
-                    rowClearSources.Add(piece);
+                    lineClearSources.Add(piece);
                 }
 
-                if (piece.Special == Piece.SpecialType.None || piece.Special == Piece.SpecialType.RowClear)
+                if (piece.Special == Piece.SpecialType.None
+                    || piece.Special == Piece.SpecialType.LineClear
+                    || piece.Special == Piece.SpecialType.ColorBomb)
                 {
                     clearSet.Add(piece);
                 }
             }
 
-            foreach (var rowClear in rowClearSources)
+            foreach (var lineClear in lineClearSources)
             {
-                TriggerSpecialActivation(rowClear);
+                TriggerSpecialActivation(lineClear);
+                if (lineClear.LineOrientation == Piece.LineClearOrientation.Column)
+                {
+                    for (var y = 0; y < height; y++)
+                    {
+                        var candidate = pieces[lineClear.X, y];
+                        if (candidate == null || protectedPieces.Contains(candidate))
+                        {
+                            continue;
+                        }
+
+                        clearSet.Add(candidate);
+                        lineClearAffected.Add(candidate);
+                    }
+                    continue;
+                }
+
                 for (var x = 0; x < width; x++)
                 {
-                    var candidate = pieces[x, rowClear.Y];
+                    var candidate = pieces[x, lineClear.Y];
                     if (candidate == null || protectedPieces.Contains(candidate))
                     {
                         continue;
                     }
 
                     clearSet.Add(candidate);
-                    rowClearAffected.Add(candidate);
+                    lineClearAffected.Add(candidate);
                 }
             }
 
@@ -803,8 +844,9 @@ namespace GameCore
                 }
 
                 if (piece.Special != Piece.SpecialType.None
-                    && piece.Special != Piece.SpecialType.RowClear
-                    && !rowClearAffected.Contains(piece))
+                    && piece.Special != Piece.SpecialType.LineClear
+                    && piece.Special != Piece.SpecialType.ColorBomb
+                    && !lineClearAffected.Contains(piece))
                 {
                     continue;
                 }
@@ -826,7 +868,8 @@ namespace GameCore
             var protectedPieces = new HashSet<Piece>();
             foreach (var group in matchGroups)
             {
-                var specialType = GetSpecialTypeForMatch(group.Pieces.Count);
+                // CODEX: SPECIAL_TILES
+                var specialType = GetSpecialTypeForMatch(group.Pieces, out var lineClearOrientation);
                 if (specialType == Piece.SpecialType.None)
                 {
                     continue;
@@ -839,27 +882,59 @@ namespace GameCore
                     continue;
                 }
 
-                candidate.SetSpecialType(specialType);
+                if (specialType == Piece.SpecialType.LineClear)
+                {
+                    candidate.SetLineClearSpecial(lineClearOrientation);
+                }
+                else
+                {
+                    candidate.SetSpecialType(specialType);
+                }
                 protectedPieces.Add(candidate);
             }
 
             return protectedPieces;
         }
 
-        private Piece.SpecialType GetSpecialTypeForMatch(int matchSize)
+        // CODEX: SPECIAL_TILES
+        private Piece.SpecialType GetSpecialTypeForMatch(List<Piece> groupPieces, out Piece.LineClearOrientation lineClearOrientation)
         {
-            return matchSize switch
+            lineClearOrientation = Piece.LineClearOrientation.Row;
+            if (groupPieces == null || groupPieces.Count < 3)
             {
-                // STAGE 6
-                4 => Piece.SpecialType.RowClear,
-                5 => Piece.SpecialType.StrongBomb,
-                6 => Piece.SpecialType.MegaBomb,
-                >= 7 => Piece.SpecialType.UltimateBomb,
-                _ => Piece.SpecialType.None
-            };
+                return Piece.SpecialType.None;
+            }
+
+            GetMaxRunLengths(groupPieces, out var maxRowRun, out var maxColumnRun);
+
+            if (maxRowRun >= 5 || maxColumnRun >= 5)
+            {
+                return Piece.SpecialType.ColorBomb;
+            }
+
+            if (maxRowRun >= 4 || maxColumnRun >= 4)
+            {
+                lineClearOrientation = maxRowRun >= maxColumnRun
+                    ? Piece.LineClearOrientation.Row
+                    : Piece.LineClearOrientation.Column;
+                return Piece.SpecialType.LineClear;
+            }
+
+            if (groupPieces.Count == 6)
+            {
+                return Piece.SpecialType.MegaBomb;
+            }
+
+            if (groupPieces.Count >= 7)
+            {
+                return Piece.SpecialType.UltimateBomb;
+            }
+
+            return Piece.SpecialType.None;
         }
 
         // STAGE 6
+        // CODEX: SPECIAL_TILES
         private Piece SelectSpecialCandidate(List<Piece> candidates, Piece.SpecialType specialType, HashSet<Vector2Int> swapPositions)
         {
             if (candidates == null || candidates.Count == 0)
@@ -867,7 +942,7 @@ namespace GameCore
                 return null;
             }
 
-            if (specialType == Piece.SpecialType.RowClear && swapPositions != null)
+            if (swapPositions != null)
             {
                 foreach (var piece in candidates)
                 {
@@ -883,7 +958,9 @@ namespace GameCore
                 }
             }
 
-            Piece fallback = null;
+            var sumX = 0f;
+            var sumY = 0f;
+            var validCount = 0;
             foreach (var piece in candidates)
             {
                 if (piece == null || piece.Special != Piece.SpecialType.None)
@@ -891,9 +968,42 @@ namespace GameCore
                     continue;
                 }
 
-                if (fallback == null
-                    || piece.Y < fallback.Y
-                    || (piece.Y == fallback.Y && piece.X < fallback.X))
+                sumX += piece.X;
+                sumY += piece.Y;
+                validCount++;
+            }
+
+            if (validCount == 0)
+            {
+                return null;
+            }
+
+            var centerX = sumX / validCount;
+            var centerY = sumY / validCount;
+            Piece fallback = null;
+            var bestDistance = float.MaxValue;
+
+            foreach (var piece in candidates)
+            {
+                if (piece == null || piece.Special != Piece.SpecialType.None)
+                {
+                    continue;
+                }
+
+                var dx = piece.X - centerX;
+                var dy = piece.Y - centerY;
+                var distance = dx * dx + dy * dy;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    fallback = piece;
+                    continue;
+                }
+
+                if (Mathf.Approximately(distance, bestDistance)
+                    && (fallback == null
+                        || piece.Y < fallback.Y
+                        || (piece.Y == fallback.Y && piece.X < fallback.X)))
                 {
                     fallback = piece;
                 }
@@ -901,6 +1011,234 @@ namespace GameCore
 
             return fallback;
         }
+        // CODEX: SPECIAL_TILES
+
+        // CODEX: SPECIAL_TILES
+        private void GetMaxRunLengths(List<Piece> groupPieces, out int maxRowRun, out int maxColumnRun)
+        {
+            maxRowRun = 0;
+            maxColumnRun = 0;
+
+            var rowMap = new Dictionary<int, List<int>>();
+            var columnMap = new Dictionary<int, List<int>>();
+            foreach (var piece in groupPieces)
+            {
+                if (piece == null)
+                {
+                    continue;
+                }
+
+                if (!rowMap.TryGetValue(piece.Y, out var rowList))
+                {
+                    rowList = new List<int>();
+                    rowMap.Add(piece.Y, rowList);
+                }
+
+                rowList.Add(piece.X);
+
+                if (!columnMap.TryGetValue(piece.X, out var columnList))
+                {
+                    columnList = new List<int>();
+                    columnMap.Add(piece.X, columnList);
+                }
+
+                columnList.Add(piece.Y);
+            }
+
+            foreach (var entry in rowMap)
+            {
+                var run = GetMaxConsecutiveLength(entry.Value);
+                if (run > maxRowRun)
+                {
+                    maxRowRun = run;
+                }
+            }
+
+            foreach (var entry in columnMap)
+            {
+                var run = GetMaxConsecutiveLength(entry.Value);
+                if (run > maxColumnRun)
+                {
+                    maxColumnRun = run;
+                }
+            }
+        }
+
+        // CODEX: SPECIAL_TILES
+        private int GetMaxConsecutiveLength(List<int> values)
+        {
+            if (values == null || values.Count == 0)
+            {
+                return 0;
+            }
+
+            values.Sort();
+            var best = 1;
+            var current = 1;
+            for (var i = 1; i < values.Count; i++)
+            {
+                if (values[i] == values[i - 1] + 1)
+                {
+                    current++;
+                }
+                else if (values[i] != values[i - 1])
+                {
+                    current = 1;
+                }
+
+                if (current > best)
+                {
+                    best = current;
+                }
+            }
+
+            return best;
+        }
+        // CODEX: SPECIAL_TILES
+
+        // CODEX: SPECIAL_TILES
+        private bool IsColorBombSwap(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            var firstIsBomb = first.Special == Piece.SpecialType.ColorBomb;
+            var secondIsBomb = second.Special == Piece.SpecialType.ColorBomb;
+            if (!firstIsBomb && !secondIsBomb)
+            {
+                return false;
+            }
+
+            if (firstIsBomb && second.Special == Piece.SpecialType.None)
+            {
+                return true;
+            }
+
+            if (secondIsBomb && first.Special == Piece.SpecialType.None)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        // CODEX: SPECIAL_TILES
+        private bool TryGetColorBombSwap(Piece first, Piece second, out Piece colorBombPiece, out int targetColor)
+        {
+            colorBombPiece = null;
+            targetColor = -1;
+
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (first.Special == Piece.SpecialType.ColorBomb && second.Special == Piece.SpecialType.None)
+            {
+                colorBombPiece = first;
+                targetColor = second.ColorIndex;
+                return true;
+            }
+
+            if (second.Special == Piece.SpecialType.ColorBomb && first.Special == Piece.SpecialType.None)
+            {
+                colorBombPiece = second;
+                targetColor = first.ColorIndex;
+                return true;
+            }
+
+            return false;
+        }
+
+        // CODEX: SPECIAL_TILES
+        private IEnumerator ResolveColorBombRoutine(Piece colorBombPiece, int targetColor)
+        {
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Resolving);
+            LogState("ResolveStart");
+            // CODEX: CASCADE_LOOP
+            CascadeCount = 0;
+            // CODEX: CASCADE_LOOP
+            TriggerSpecialActivation(colorBombPiece);
+            var matchGroups = BuildColorBombMatchGroups(colorBombPiece, targetColor);
+            while (matchGroups.Count > 0)
+            {
+                // CODEX: CASCADE_LOOP
+                CascadeCount++;
+                LogPipeline($"CascadeCount = {CascadeCount}");
+                TriggerMatchPunch(matchGroups);
+                yield return new WaitForSeconds(matchConfirmDelay);
+                var clearedCount = ClearMatches(matchGroups, new HashSet<Piece>());
+                if (clearedCount > 0)
+                {
+                    MatchesCleared?.Invoke(clearedCount, CascadeCount);
+                    PlayClip(matchClearClip);
+                }
+
+                yield return new WaitForSeconds(clearDelay);
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Refilling);
+                PlayClip(cascadeFallClip);
+                CollapseColumns();
+                yield return new WaitForSeconds(fallDelay);
+                RefillBoard();
+                yield return new WaitForSeconds(fallDelay);
+
+                matchGroups = FindMatchGroups();
+                if (matchGroups.Count == 0 && !HasAnyValidMoves())
+                {
+                    LogPipeline("NoMoves->Shuffle");
+                    yield return StartCoroutine(ReshuffleRoutine(true));
+                    matchGroups = FindMatchGroups();
+                }
+
+                if (matchGroups.Count > 0)
+                {
+                    // CODEX: CC_SWAP_RULES
+                    SetState(BoardState.Resolving);
+                }
+            }
+
+            LogState("ResolveComplete");
+        }
+
+        // CODEX: SPECIAL_TILES
+        private List<MatchGroup> BuildColorBombMatchGroups(Piece colorBombPiece, int targetColor)
+        {
+            var uniqueTargets = new HashSet<Piece>();
+            if (colorBombPiece != null)
+            {
+                uniqueTargets.Add(colorBombPiece);
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.ColorIndex == targetColor)
+                    {
+                        uniqueTargets.Add(piece);
+                    }
+                }
+            }
+
+            var targetList = new List<Piece>(uniqueTargets);
+            if (targetList.Count == 0)
+            {
+                return new List<MatchGroup>();
+            }
+
+            return new List<MatchGroup> { new MatchGroup(targetList) };
+        }
+        // CODEX: SPECIAL_TILES
 
         private void CollapseColumns()
         {

@@ -9,23 +9,38 @@ namespace GameCore
     {
         [SerializeField] private float size = 0.9f;
         // STAGE 6
-        [SerializeField] private Color rowClearTint = new Color(0.75f, 1f, 1f, 1f);
+        // CODEX: SPECIAL_TILES
+        [SerializeField] private Color lineClearRowTint = new Color(0.75f, 1f, 1f, 1f);
+        [SerializeField] private Color lineClearColumnTint = new Color(1f, 0.9f, 0.6f, 1f);
+        [SerializeField] private Color colorBombTint = new Color(0.9f, 0.6f, 1f, 1f);
+        // CODEX: SPECIAL_TILES
 
         public enum SpecialType
         {
             None,
             // STAGE 6
-            RowClear,
+            // CODEX: SPECIAL_TILES
+            LineClear,
+            ColorBomb,
+            // CODEX: SPECIAL_TILES
             Bomb,
             StrongBomb,
             MegaBomb,
             UltimateBomb
+        }
+        // CODEX: SPECIAL_TILES
+        public enum LineClearOrientation
+        {
+            Row,
+            Column
         }
 
         public int X { get; private set; }
         public int Y { get; private set; }
         public int ColorIndex { get; private set; }
         public SpecialType Special { get; private set; }
+        // CODEX: SPECIAL_TILES
+        public LineClearOrientation LineOrientation { get; private set; } = LineClearOrientation.Row;
 
         private SpriteRenderer spriteRenderer;
         private Coroutine moveRoutine;
@@ -50,6 +65,8 @@ namespace GameCore
             X = x;
             Y = y;
             Special = SpecialType.None;
+            // CODEX: SPECIAL_TILES
+            LineOrientation = LineClearOrientation.Row;
             SetColor(colorIndex, sprite);
             name = $"Piece_{x}_{y}";
         }
@@ -73,8 +90,32 @@ namespace GameCore
                 return;
             }
 
-            spriteRenderer.color = specialType == SpecialType.RowClear ? rowClearTint : baseTint;
+            // CODEX: SPECIAL_TILES
+            if (specialType == SpecialType.LineClear)
+            {
+                spriteRenderer.color = LineOrientation == LineClearOrientation.Column
+                    ? lineClearColumnTint
+                    : lineClearRowTint;
+                return;
+            }
+
+            if (specialType == SpecialType.ColorBomb)
+            {
+                spriteRenderer.color = colorBombTint;
+                return;
+            }
+            // CODEX: SPECIAL_TILES
+
+            spriteRenderer.color = baseTint;
         }
+
+        // CODEX: SPECIAL_TILES
+        public void SetLineClearSpecial(LineClearOrientation orientation)
+        {
+            LineOrientation = orientation;
+            SetSpecialType(SpecialType.LineClear);
+        }
+        // CODEX: SPECIAL_TILES
 
         public void SetPosition(int x, int y, Vector3 worldPosition)
         {
