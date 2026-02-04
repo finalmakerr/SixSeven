@@ -32,6 +32,10 @@ namespace GameCore
         [SerializeField] private Text bossLabelText;
         // CODEX BOSS PR4
         [SerializeField] private Text bossPowersText;
+        // CODEX BOSS PR5
+        [SerializeField] private GameObject bossPowerDiscardPanel;
+        // CODEX BOSS PR5
+        [SerializeField] private Button[] bossPowerDiscardButtons;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -68,6 +72,8 @@ namespace GameCore
         private Coroutine scoreRoutine;
         private Coroutine shakeRoutine;
         private int displayedScore;
+        // CODEX BOSS PR5
+        private bool awaitingBossPowerDiscard;
         // CODEX BOSS PR4
         [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
 
@@ -323,6 +329,8 @@ namespace GameCore
             hasEnded = true;
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, true);
+            // CODEX BOSS PR5
+            HandleBossPowerLoss();
             OnLose?.Invoke();
         }
 
@@ -531,6 +539,107 @@ namespace GameCore
             }
 
             bossPowersText.text = bossPowerInventory.BuildDisplayString();
+        }
+
+        // CODEX BOSS PR5
+        public bool HasBossPower(BossPower power)
+        {
+            return bossPowerInventory != null && bossPowerInventory.HasPower(power);
+        }
+
+        // CODEX BOSS PR5
+        private void HandleBossPowerLoss()
+        {
+            if (bossPowerInventory == null || bossPowerInventory.Count == 0)
+            {
+                return;
+            }
+
+            if (TryShowBossPowerDiscardPanel())
+            {
+                awaitingBossPowerDiscard = true;
+                return;
+            }
+
+            DiscardRandomBossPower();
+        }
+
+        // CODEX BOSS PR5
+        private bool TryShowBossPowerDiscardPanel()
+        {
+            if (bossPowerDiscardPanel == null || bossPowerDiscardButtons == null || bossPowerDiscardButtons.Length == 0)
+            {
+                return false;
+            }
+
+            bossPowerDiscardPanel.SetActive(true);
+            var powers = bossPowerInventory.Powers;
+            for (var i = 0; i < bossPowerDiscardButtons.Length; i++)
+            {
+                var button = bossPowerDiscardButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                if (i < powers.Count)
+                {
+                    var power = powers[i];
+                    button.gameObject.SetActive(true);
+                    button.onClick.RemoveAllListeners();
+                    var label = button.GetComponentInChildren<Text>();
+                    if (label != null)
+                    {
+                        label.text = power.ToString();
+                    }
+                    button.onClick.AddListener(() => ResolveBossPowerDiscard(power));
+                }
+                else
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.gameObject.SetActive(false);
+                }
+            }
+
+            return true;
+        }
+
+        // CODEX BOSS PR5
+        private void ResolveBossPowerDiscard(BossPower power)
+        {
+            if (!awaitingBossPowerDiscard)
+            {
+                return;
+            }
+
+            awaitingBossPowerDiscard = false;
+            if (bossPowerInventory != null)
+            {
+                bossPowerInventory.TryRemovePower(power);
+            }
+
+            if (bossPowerDiscardPanel != null)
+            {
+                bossPowerDiscardPanel.SetActive(false);
+            }
+
+            UpdateBossPowerUI();
+            Debug.Log($"Discarded boss power: {power}", this);
+        }
+
+        // CODEX BOSS PR5
+        private void DiscardRandomBossPower()
+        {
+            if (bossPowerInventory == null || bossPowerInventory.Count == 0)
+            {
+                return;
+            }
+
+            var index = UnityEngine.Random.Range(0, bossPowerInventory.Count);
+            var power = bossPowerInventory.Powers[index];
+            bossPowerInventory.TryRemovePower(power);
+            UpdateBossPowerUI();
+            Debug.Log($"Discarded boss power on loss: {power}", this);
         }
     }
 }
