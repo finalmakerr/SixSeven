@@ -37,6 +37,15 @@ namespace GameCore
                 return;
             }
 
+            // STAGE 7: Debug reshuffle hotkey.
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                board.DebugReshuffle();
+                selectedPiece = null;
+                pressedPiece = null;
+                return;
+            }
+
             if (Input.GetMouseButtonDown(0))
             {
                 startScreenPosition = Input.mousePosition;
