@@ -7,6 +7,12 @@ namespace GameCore
 {
     public class Board : MonoBehaviour
     {
+        // PIPELINE: MoveStart -> SwapAttempt -> Validate -> ResolveLoop -> MoveEnd
+        // MoveStart: TrySwap -> SwapAndResolveRoutine (MoveStart trace + state Swapping)
+        // SwapAttempt: SwapAndResolveRoutine -> SwapPieces
+        // Validate: IsSwapValid + FindMatchGroups
+        // ResolveLoop: ResolveBoardRoutine
+        // MoveEnd: SwapAndResolveRoutine (state Idle + MoveEnd trace)
         // STAGE 3: Matches cleared with cascade count for combo scoring.
         public event Action<int, int> MatchesCleared;
         public event Action ValidSwap;
@@ -50,6 +56,7 @@ namespace GameCore
         // STAGE 0: Debug toggle for state transition logging.
         [Header("Debug")]
         [SerializeField] private bool logStateTransitions;
+        [SerializeField] private bool debugMode;
 
         private Piece[,] pieces;
         private Sprite[] sprites;
@@ -276,15 +283,13 @@ namespace GameCore
 
             var isValid = IsSwapValid(first, second);
 
-            // CODEX: CC_SWAP_RULES
-            SetState(BoardState.Swapping);
             if (isValid)
             {
                 ValidSwap?.Invoke();
             }
 
-            // STAGE 1
-            StartCoroutine(SwapRoutine(first, second, _ => { }));
+            // CODEX DEDUPE: removed duplicate SwapRoutine wrapper because SwapAndResolveRoutine is the canonical pipeline.
+            StartCoroutine(SwapAndResolveRoutine(first, second, _ => { }));
             return isValid;
         }
 
@@ -311,17 +316,12 @@ namespace GameCore
             return hasMatch;
         }
 
-        // STAGE 1
-        private IEnumerator SwapRoutine(Piece first, Piece second, Action<bool> onComplete)
-        {
-            yield return StartCoroutine(SwapAndResolveRoutine(first, second, onComplete));
-        }
-
         // STAGE 0: Swap -> Detect -> Resolve -> Refill -> Detect cascades -> Unlock input.
         private IEnumerator SwapAndResolveRoutine(Piece first, Piece second, Action<bool> onComplete)
         {
             // CODEX: CC_SWAP_RULES
             SetState(BoardState.Swapping);
+            LogPipeline("MoveStart");
             LogState("SwapStart");
             SwapPieces(first, second, swapDuration);
             PlayClip(swapClip);
@@ -346,6 +346,7 @@ namespace GameCore
                 // CODEX: CC_SWAP_RULES
                 SetState(BoardState.Idle);
                 onComplete?.Invoke(true);
+                LogPipeline("MoveEnd");
                 LogState("Unlock");
                 yield break;
             }
@@ -355,6 +356,7 @@ namespace GameCore
             {
                 // STAGE 6
                 pendingSwapPositions = null;
+                // CODEX DEDUPE: removed duplicate InvalidSwapRoutine because invalid swap handling is centralized here.
                 // STAGE 1
                 SwapPieces(first, second, swapDuration);
                 PlayClip(invalidSwapClip);
@@ -363,6 +365,7 @@ namespace GameCore
                 // CODEX: CC_SWAP_RULES
                 SetState(BoardState.Idle);
                 onComplete?.Invoke(false);
+                LogPipeline("MoveEnd");
                 LogState("Unlock");
                 yield break;
             }
@@ -374,31 +377,7 @@ namespace GameCore
             // CODEX: CC_SWAP_RULES
             SetState(BoardState.Idle);
             onComplete?.Invoke(true);
-            LogState("Unlock");
-        }
-
-        private IEnumerator InvalidSwapRoutine(Piece first, Piece second)
-        {
-            if (isBusy)
-            {
-                yield break;
-            }
-
-            isBusy = true;
-            // STAGE 1
-            SwapPieces(first, second, swapDuration);
-            PlayClip(invalidSwapClip);
-            yield return new WaitForSeconds(swapDuration);
-            SwapPieces(first, second, swapDuration);
-            yield return new WaitForSeconds(swapDuration);
-            yield return StartCoroutine(MicroShakePieces(first, second));
-            LogState("InvalidSwap");
-            SwapPieces(first, second, invalidSwapDuration);
-            PlayClip(swapClip);
-            yield return new WaitForSeconds(invalidSwapDuration);
-            SwapPieces(first, second, invalidSwapDuration);
-            yield return new WaitForSeconds(invalidSwapDuration);
-            isBusy = false;
+            LogPipeline("MoveEnd");
             LogState("Unlock");
         }
 
@@ -637,6 +616,7 @@ namespace GameCore
             while (matchGroups.Count > 0)
             {
                 cascadeCount++;
+                LogPipeline($"CascadeCount = {cascadeCount}");
                 // STAGE 5: Punch-scale matched tiles before clearing.
                 TriggerMatchPunch(matchGroups);
                 yield return new WaitForSeconds(matchConfirmDelay);
@@ -664,6 +644,7 @@ namespace GameCore
                 // STAGE 7: Dead board detection after refills.
                 if (matchGroups.Count == 0 && CountValidMoves() < MinimumValidMoves)
                 {
+                    LogPipeline("NoMoves->Shuffle");
                     yield return StartCoroutine(ReshuffleRoutine(true));
                     matchGroups = FindMatchGroups();
                 }
@@ -1372,6 +1353,16 @@ namespace GameCore
             }
 
             Debug.Log($"[Board] State -> {state}", this);
+        }
+
+        private void LogPipeline(string message)
+        {
+            if (!debugMode)
+            {
+                return;
+            }
+
+            Debug.Log($"[Board] {message}", this);
         }
 
         // CODEX: CC_SWAP_RULES
