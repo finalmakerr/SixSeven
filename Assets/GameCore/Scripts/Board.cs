@@ -86,6 +86,9 @@ namespace GameCore
 
         // STAGE 0: Read-only busy state for input gating.
         public bool IsBusy => isBusy || state != BoardState.Idle;
+        // CODEX: CASCADE_LOOP
+        public int CascadeCount { get; private set; }
+        // CODEX: CASCADE_LOOP
 
         private class MatchGroup
         {
@@ -609,14 +612,16 @@ namespace GameCore
             SetState(BoardState.Resolving);
             LogState("ResolveStart");
             var matchGroups = FindMatchGroups();
-            var cascadeCount = 0;
+            // CODEX: CASCADE_LOOP
+            CascadeCount = 0;
             // STAGE 6: Only use the swap positions for the first resolve batch.
             var swapPositions = pendingSwapPositions;
             pendingSwapPositions = null;
             while (matchGroups.Count > 0)
             {
-                cascadeCount++;
-                LogPipeline($"CascadeCount = {cascadeCount}");
+                // CODEX: CASCADE_LOOP
+                CascadeCount++;
+                LogPipeline($"CascadeCount = {CascadeCount}");
                 // STAGE 5: Punch-scale matched tiles before clearing.
                 TriggerMatchPunch(matchGroups);
                 yield return new WaitForSeconds(matchConfirmDelay);
@@ -625,7 +630,7 @@ namespace GameCore
                 var clearedCount = ClearMatches(matchGroups, protectedPieces);
                 if (clearedCount > 0)
                 {
-                    MatchesCleared?.Invoke(clearedCount, cascadeCount);
+                    MatchesCleared?.Invoke(clearedCount, CascadeCount);
                     // STAGE 2: Play clear audio per clear batch.
                     PlayClip(matchClearClip);
                 }
