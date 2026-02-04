@@ -59,6 +59,16 @@ namespace GameCore
 
         // STAGE 0: Global busy gate for swap/resolve/refill.
         private bool isBusy;
+        // CODEX: CC_SWAP_RULES
+        private enum BoardState
+        {
+            Idle,
+            Swapping,
+            Resolving,
+            Refilling
+        }
+        // CODEX: CC_SWAP_RULES
+        private BoardState state = BoardState.Idle;
         private bool hasInitialized;
         private const int MegaBombIndex = 6;
         private const int UltimateBombIndex = 7;
@@ -68,7 +78,7 @@ namespace GameCore
         private const int ReshuffleAttemptLimit = 25;
 
         // STAGE 0: Read-only busy state for input gating.
-        public bool IsBusy => isBusy;
+        public bool IsBusy => isBusy || state != BoardState.Idle;
 
         private class MatchGroup
         {
@@ -118,7 +128,8 @@ namespace GameCore
         {
             StopAllCoroutines();
             // STAGE 0: Lock input during board reset/initial resolve.
-            isBusy = true;
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Refilling);
             ClearExistingPieces();
             pieces = new Piece[width, height];
             InitializeRng();
@@ -244,7 +255,7 @@ namespace GameCore
 
         public bool TrySwap(Piece first, Vector2Int direction)
         {
-            if (isBusy || first == null || pieces == null)
+            if (IsBusy || first == null || pieces == null)
             {
                 return false;
             }
@@ -263,21 +274,18 @@ namespace GameCore
                 return false;
             }
 
-            if (!IsSwapValid(first, second))
+            var isValid = IsSwapValid(first, second);
+
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Swapping);
+            if (isValid)
             {
-                // STAGE 0: Atomic invalid swap gate.
-                isBusy = true;
-                StartCoroutine(InvalidSwapRoutine(first, second));
-                return false;
+                ValidSwap?.Invoke();
             }
 
-            ValidSwap?.Invoke();
             // STAGE 1
             StartCoroutine(SwapRoutine(first, second, _ => { }));
-            // STAGE 0: Atomic swap gate + pipeline entry.
-            isBusy = true;
-            StartCoroutine(SwapAndResolveRoutine(first, second));
-            return true;
+            return isValid;
         }
 
         public bool IsSwapValid(Piece first, Piece second)
@@ -305,9 +313,15 @@ namespace GameCore
 
         // STAGE 1
         private IEnumerator SwapRoutine(Piece first, Piece second, Action<bool> onComplete)
-        // STAGE 0: Swap -> Detect -> Resolve -> Refill -> Detect cascades -> Unlock input.
-        private IEnumerator SwapAndResolveRoutine(Piece first, Piece second)
         {
+            yield return StartCoroutine(SwapAndResolveRoutine(first, second, onComplete));
+        }
+
+        // STAGE 0: Swap -> Detect -> Resolve -> Refill -> Detect cascades -> Unlock input.
+        private IEnumerator SwapAndResolveRoutine(Piece first, Piece second, Action<bool> onComplete)
+        {
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Swapping);
             LogState("SwapStart");
             SwapPieces(first, second, swapDuration);
             PlayClip(swapClip);
@@ -322,12 +336,15 @@ namespace GameCore
 
             if (IsMegaUltimateCombo(first, second))
             {
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Resolving);
                 ClearBoard();
                 SignalBoardCleared();
                 SignalLevelWin();
                 // STAGE 6
                 pendingSwapPositions = null;
-                isBusy = false;
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Idle);
                 onComplete?.Invoke(true);
                 LogState("Unlock");
                 yield break;
@@ -343,15 +360,19 @@ namespace GameCore
                 PlayClip(invalidSwapClip);
                 yield return new WaitForSeconds(swapDuration);
                 yield return StartCoroutine(MicroShakePieces(first, second));
-                isBusy = false;
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Idle);
                 onComplete?.Invoke(false);
                 LogState("Unlock");
                 yield break;
             }
 
             // STAGE 3: Reset cascade count per player move.
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Resolving);
             yield return StartCoroutine(ResolveBoardRoutine());
-            isBusy = false;
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Idle);
             onComplete?.Invoke(true);
             LogState("Unlock");
         }
@@ -605,6 +626,8 @@ namespace GameCore
         // STAGE 3: Cascade count increments per clear batch during resolve.
         private IEnumerator ResolveBoardRoutine()
         {
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Resolving);
             LogState("ResolveStart");
             var matchGroups = FindMatchGroups();
             var cascadeCount = 0;
@@ -629,6 +652,8 @@ namespace GameCore
 
                 yield return new WaitForSeconds(clearDelay);
                 // STAGE 2: Falling begins with a cascade clip.
+                // CODEX: CC_SWAP_RULES
+                SetState(BoardState.Refilling);
                 PlayClip(cascadeFallClip);
                 CollapseColumns();
                 yield return new WaitForSeconds(fallDelay);
@@ -641,6 +666,12 @@ namespace GameCore
                 {
                     yield return StartCoroutine(ReshuffleRoutine(true));
                     matchGroups = FindMatchGroups();
+                }
+
+                if (matchGroups.Count > 0)
+                {
+                    // CODEX: CC_SWAP_RULES
+                    SetState(BoardState.Resolving);
                 }
             }
 
@@ -1148,7 +1179,9 @@ namespace GameCore
         private IEnumerator InitialSetupRoutine()
         {
             yield return StartCoroutine(EnsureMinimumMovesRoutine(true));
-            StartCoroutine(ResolveBoardRoutine());
+            yield return StartCoroutine(ResolveBoardRoutine());
+            // CODEX: CC_SWAP_RULES
+            SetState(BoardState.Idle);
         }
 
         private IEnumerator EnsureMinimumMovesRoutine(bool avoidImmediateMatches)
@@ -1339,6 +1372,14 @@ namespace GameCore
             }
 
             Debug.Log($"[Board] State -> {state}", this);
+        }
+
+        // CODEX: CC_SWAP_RULES
+        private void SetState(BoardState nextState)
+        {
+            state = nextState;
+            isBusy = state != BoardState.Idle;
+            LogState(state.ToString());
         }
     }
 }
