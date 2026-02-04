@@ -718,7 +718,8 @@ namespace GameCore
 
                 matchGroups = FindMatchGroups();
                 // STAGE 7: Dead board detection after refills.
-                if (matchGroups.Count == 0 && CountValidMoves() < MinimumValidMoves)
+                // CODEX: NO_MOVES_RESHUFFLE
+                if (matchGroups.Count == 0 && !HasAnyValidMoves())
                 {
                     LogPipeline("NoMoves->Shuffle");
                     yield return StartCoroutine(ReshuffleRoutine(true));
@@ -949,9 +950,37 @@ namespace GameCore
         }
 
         // STAGE 7
+        // CODEX: NO_MOVES_RESHUFFLE
         public bool HasAnyValidMoves()
         {
-            return CountValidMoves() > 0;
+            if (pieces == null)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (x + 1 < width && IsSwapValid(piece, pieces[x + 1, y]))
+                    {
+                        return true;
+                    }
+
+                    if (y + 1 < height && IsSwapValid(piece, pieces[x, y + 1]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private int CountValidMoves()
@@ -1005,10 +1034,12 @@ namespace GameCore
         }
 
         // STAGE 7
+        // CODEX: NO_MOVES_RESHUFFLE
         private IEnumerator ReshuffleRoutine(bool avoidImmediateMatches)
         {
             var wasBusy = isBusy;
             isBusy = true;
+            Debug.Log("[Board] Shuffling...", this);
 
             var piecePool = new List<Piece>();
             var positions = new List<Vector2Int>();
