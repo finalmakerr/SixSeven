@@ -29,6 +29,8 @@ namespace GameCore
         public int movesLimit;
         public int targetScore;
         public Vector2Int gridSize;
+        // CODEX DIFFICULTY PR7
+        public int colorCount;
         // CODEX BOSS PR1
         public bool isBossLevel;
 
@@ -38,6 +40,8 @@ namespace GameCore
             movesLimit = 30,
             targetScore = 500,
             gridSize = new Vector2Int(7, 7),
+            // CODEX DIFFICULTY PR7
+            colorCount = 5,
             // CODEX BOSS PR1
             isBossLevel = false
         };
