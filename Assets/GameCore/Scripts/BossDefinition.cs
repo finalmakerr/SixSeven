@@ -15,5 +15,7 @@ namespace GameCore
         public Sprite icon;
         // CODEX BOSS PR1
         public Color color = Color.white;
+        // CODEX BONUS PR6
+        public BossPower associatedPower;
     }
 }
