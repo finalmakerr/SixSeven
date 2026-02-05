@@ -144,10 +144,16 @@ namespace GameCore
         private BossPower pendingBossPowerLossDiscard;
         // CODEX POWER PR5
         private bool awaitingBossPowerRewardChoice;
+        // CODEX BONUS PR6
+        private bool awaitingBonusBossPowerRewardChoice;
         // CODEX POWER PR5
         private bool pendingBossPowerRewardAfterDiscard;
+        // CODEX BONUS PR6
+        private bool pendingBonusBossPowerRewardChoice;
         // CODEX POWER PR5
         private readonly List<BossPower> bossPowerRewardOptions = new List<BossPower>();
+        // CODEX BONUS PR6
+        private readonly List<BossPower> bossPowersLostThisRun = new List<BossPower>();
         // CODEX BOSS PR2
         private bool awaitingBossChallengeChoice;
         // CODEX BOSS PR4
@@ -271,6 +277,12 @@ namespace GameCore
             // CODEX CHEST PR2
             crownsThisRun = 0;
             SaveCrownsIfNeeded();
+            // CODEX BONUS PR6
+            bossPowersLostThisRun.Clear();
+            if (bossManager != null)
+            {
+                bossManager.ResetRunPool();
+            }
             // CODEX: LEVEL_LOOP
             MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
             HasMetTarget = false;
@@ -771,7 +783,10 @@ namespace GameCore
 
             crownsThisRun = 0;
             SaveCrownsIfNeeded();
-            SetBoardInputLock(false);
+            if (!awaitingBossPowerRewardChoice && !awaitingBossPowerDiscard && !awaitingBossPowerLossDiscard && !awaitingBossPowerLossConfirm)
+            {
+                SetBoardInputLock(false);
+            }
         }
 
         // CODEX BONUS PR4
@@ -1271,6 +1286,10 @@ namespace GameCore
             }
 
             activeBonusMiniGame.Completed -= HandleBonusMiniGameCompleted;
+            if (success)
+            {
+                TryBeginBonusBossPowerRewardChoice();
+            }
 
             if (bonusMiniGameCleanupRoutine != null)
             {
@@ -1634,6 +1653,7 @@ namespace GameCore
 
             SaveBossPowerInventory();
             UpdateBossPowerUI();
+            RegisterBossPowerLostThisRun(pendingBossPowerLossDiscard);
             Debug.Log($"Discarded boss power on loss: {pendingBossPowerLossDiscard}", this);
             CompleteLoseFlow();
         }
@@ -1679,6 +1699,8 @@ namespace GameCore
             if (pendingBossPowerRewardAfterDiscard)
             {
                 pendingBossPowerRewardAfterDiscard = false;
+                awaitingBonusBossPowerRewardChoice = pendingBonusBossPowerRewardChoice;
+                pendingBonusBossPowerRewardChoice = false;
                 ShowBossPowerRewardPanel();
             }
             else
@@ -1704,7 +1726,144 @@ namespace GameCore
             bossPowerInventory.TryRemovePower(power);
             UpdateBossPowerUI();
             SaveBossPowerInventory();
+            RegisterBossPowerLostThisRun(power);
             Debug.Log($"Discarded boss power on loss: {power}", this);
+        }
+
+        // CODEX BONUS PR6
+        private void RegisterBossPowerLostThisRun(BossPower power)
+        {
+            if (!bossPowersLostThisRun.Contains(power))
+            {
+                bossPowersLostThisRun.Add(power);
+            }
+        }
+
+        // CODEX BONUS PR6
+        private bool TryBeginBonusBossPowerRewardChoice()
+        {
+            if (bossPowerRewardPanel == null || bossPowerRewardButtons == null || bossPowerRewardButtons.Length == 0)
+            {
+                Debug.LogWarning("Bonus boss power reward UI is not configured; skipping reward choices.", this);
+                return false;
+            }
+
+            bossPowerRewardOptions.Clear();
+            bossPowerRewardOptions.AddRange(BuildBonusBossPowerRewardOptions());
+
+            var optionsDebug = bossPowerRewardOptions.Count == 0
+                ? "(none)"
+                : string.Join(", ", bossPowerRewardOptions);
+            Debug.Log($"RewardOptions: {optionsDebug}", this);
+
+            if (bossPowerRewardOptions.Count == 0)
+            {
+                return false;
+            }
+
+            if (bossPowerInventory.Count >= bossPowerInventory.MaxSlots)
+            {
+                pendingBossPowerRewardAfterDiscard = true;
+                pendingBonusBossPowerRewardChoice = true;
+                if (TryShowBossPowerDiscardPanel(ResolveBossPowerDiscard))
+                {
+                    awaitingBossPowerDiscard = true;
+                    SetBoardInputLock(true);
+                }
+                else
+                {
+                    pendingBossPowerRewardAfterDiscard = false;
+                    pendingBonusBossPowerRewardChoice = false;
+                    Debug.LogWarning("Boss power inventory is full and discard UI is not configured.", this);
+                }
+
+                return true;
+            }
+
+            awaitingBonusBossPowerRewardChoice = true;
+            ShowBossPowerRewardPanel();
+            return true;
+        }
+
+        // CODEX BONUS PR6
+        private List<BossPower> BuildBonusBossPowerRewardOptions()
+        {
+            var options = new List<BossPower>();
+            var lostCandidates = new List<BossPower>();
+
+            for (var i = 0; i < bossPowersLostThisRun.Count; i++)
+            {
+                var power = bossPowersLostThisRun[i];
+                if (bossPowerInventory != null && bossPowerInventory.HasPower(power))
+                {
+                    continue;
+                }
+
+                if (!lostCandidates.Contains(power))
+                {
+                    lostCandidates.Add(power);
+                }
+            }
+
+            var randomSource = bonusStageRandom ?? new System.Random();
+            ShuffleList(lostCandidates, randomSource);
+
+            var desiredCount = 3;
+            for (var i = 0; i < lostCandidates.Count && options.Count < desiredCount; i++)
+            {
+                options.Add(lostCandidates[i]);
+            }
+
+            if (options.Count >= desiredCount)
+            {
+                return options;
+            }
+
+            var newCandidates = new List<BossPower>();
+            var powerValues = (BossPower[])Enum.GetValues(typeof(BossPower));
+            for (var i = 0; i < powerValues.Length; i++)
+            {
+                var power = powerValues[i];
+                if (bossPowerInventory != null && bossPowerInventory.HasPower(power))
+                {
+                    continue;
+                }
+
+                if (options.Contains(power) || bossPowersLostThisRun.Contains(power))
+                {
+                    continue;
+                }
+
+                newCandidates.Add(power);
+            }
+
+            ShuffleList(newCandidates, randomSource);
+
+            for (var i = 0; i < newCandidates.Count && options.Count < desiredCount; i++)
+            {
+                options.Add(newCandidates[i]);
+            }
+
+            return options;
+        }
+
+        // CODEX BONUS PR6
+        private void ShuffleList<T>(List<T> list, System.Random randomSource)
+        {
+            if (list == null || list.Count <= 1)
+            {
+                return;
+            }
+
+            for (var i = 0; i < list.Count; i++)
+            {
+                var swapIndex = randomSource != null
+                    ? randomSource.Next(i, list.Count)
+                    : UnityEngine.Random.Range(i, list.Count);
+                var temp = list[i];
+                list[i] = list[swapIndex];
+                list[swapIndex] = temp;
+            }
         }
 
         // CODEX POWER PR5
@@ -1837,6 +1996,8 @@ namespace GameCore
             }
 
             awaitingBossPowerRewardChoice = false;
+            var isBonusReward = awaitingBonusBossPowerRewardChoice;
+            awaitingBonusBossPowerRewardChoice = false;
             if (bossPowerRewardPanel != null)
             {
                 bossPowerRewardPanel.SetActive(false);
@@ -1852,6 +2013,15 @@ namespace GameCore
             SaveBossPowerInventory();
             UpdateBossPowerUI();
             Debug.Log($"Selected boss power: {power}", this);
+
+            if (isBonusReward)
+            {
+                Debug.Log($"RewardChosen: {power}", this);
+                if (bossManager != null)
+                {
+                    bossManager.RemoveBossFromRunPool(power);
+                }
+            }
         }
 
         // CODEX POWER PR5
