@@ -30,13 +30,13 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
-        // CODEX CHEST PR1
-        [SerializeField] private Sprite treasureChestOverlaySprite;
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
         [SerializeField] private int maxSpawnAttempts = 6; // CODEX VERIFY: cap retry attempts for spawn/refill.
         [SerializeField] private int maxShuffleAttempts = 10; // CODEX VERIFY: cap shuffle retries for dead boards.
         // CODEX CHEST PR1
-        [SerializeField] private int chestSpawnChancePercent = 5;
+        [SerializeField] [Range(1, 10)] private int chestSpawnChancePercent = 5; // CODEX CHEST PR1
+        [SerializeField] private int chestCooldownMovesRemaining; // CODEX CHEST PR1
+        [SerializeField] private bool chestPresent; // CODEX CHEST PR1
 
         private Piece[,] pieces;
         private Sprite[] sprites;
@@ -59,8 +59,7 @@ namespace GameCore
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
         // CODEX CHEST PR1
-        private int chestCooldownMovesRemaining;
-        private bool chestPresent;
+        private Sprite treasureChestSprite;
 
         // CODEX BOMB TIERS: sprite cache for bomb tiers (Resources.Load paths).
         private Sprite bomb4Sprite;
@@ -83,6 +82,7 @@ namespace GameCore
 
             sprites = GenerateSprites();
             LoadBombSprites(); // CODEX BOMB TIERS: cache special bomb sprites.
+            LoadTreasureChestSprite(); // CODEX CHEST PR1
         }
 
         private void Start()
@@ -429,6 +429,10 @@ namespace GameCore
 
             var clampedChance = Mathf.Clamp(chestSpawnChancePercent, 1, 10);
             var roll = RandomRange(1, 101);
+            if (debugMode) // CODEX CHEST PR1
+            {
+                Debug.Log($"ChestSpawnRoll chance={clampedChance} result={roll}", this); // CODEX CHEST PR1
+            }
             if (roll > clampedChance)
             {
                 return;
@@ -470,12 +474,28 @@ namespace GameCore
                 return;
             }
 
+            if (treasureChestSprite == null) // CODEX CHEST PR1
+            {
+                LoadTreasureChestSprite(); // CODEX CHEST PR1
+            }
+
             piece.SetSpecialType(SpecialType.TreasureChest);
-            piece.SetTreasureChestVisual(treasureChestOverlaySprite, debugMode);
+            if (treasureChestSprite == null) // CODEX CHEST PR1
+            {
+                if (debugMode) // CODEX CHEST PR1
+                {
+                    Debug.LogWarning("Treasure chest sprite missing at Resources path 'Tiles/Specials/Chest'.", this); // CODEX CHEST PR1
+                }
+                piece.SetTreasureChestVisual(null, false); // CODEX CHEST PR1
+            }
+            else // CODEX CHEST PR1
+            {
+                piece.SetTreasureChestVisual(treasureChestSprite, debugMode); // CODEX CHEST PR1
+            }
             chestPresent = true;
             if (debugMode)
             {
-                Debug.Log($"ChestSpawned({chosenPosition.x},{chosenPosition.y})", this);
+                Debug.Log($"ChestSpawned at ({chosenPosition.x},{chosenPosition.y})", this); // CODEX CHEST PR1
             }
         }
 
@@ -809,7 +829,7 @@ namespace GameCore
             chestCooldownMovesRemaining = RandomRange(6, 8);
             if (debugMode)
             {
-                Debug.Log($"ChestCooldownSet({chestCooldownMovesRemaining})", this);
+                Debug.Log($"ChestDestroyed -> cooldown set to {chestCooldownMovesRemaining}", this); // CODEX CHEST PR1
             }
         }
 
@@ -1363,6 +1383,12 @@ namespace GameCore
                 WarnIfMissingSprite(bomb6SpriteA, "Tiles/Specials/Crocodilio-Sixventilio");
                 WarnIfMissingSprite(bomb6SpriteB, "Tiles/Specials/Brainio-Sixventilio");
             }
+        }
+
+        // CODEX CHEST PR1
+        private void LoadTreasureChestSprite() // CODEX CHEST PR1
+        {
+            treasureChestSprite = Resources.Load<Sprite>("Tiles/Specials/Chest"); // CODEX CHEST PR1
         }
 
         // CODEX BOMB TIERS: sprite selection per tier with safe fallback.
