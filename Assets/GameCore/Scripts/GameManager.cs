@@ -125,6 +125,15 @@ namespace GameCore
         [SerializeField] private bool persistBossPowersToPlayerPrefs;
         // CODEX POWER PR5
         [SerializeField] private string bossPowerPrefsKey = "BossPowers";
+        // CODEX CHEST PR2
+        [SerializeField] private bool persistCrowns;
+        // CODEX CHEST PR2
+        [SerializeField] private string crownsPrefsKey = "CrownsThisRun";
+        // CODEX CHEST PR2
+        private int crownsThisRun;
+
+        // CODEX CHEST PR2
+        public int CrownsThisRun => crownsThisRun;
 
         private void Awake()
         {
@@ -154,6 +163,12 @@ namespace GameCore
             if (persistBossPowersToPlayerPrefs)
             {
                 LoadBossPowerInventory();
+            }
+
+            // CODEX CHEST PR2
+            if (persistCrowns)
+            {
+                LoadCrowns();
             }
 
             if (screenShakeTarget == null && Camera.main != null)
@@ -194,6 +209,9 @@ namespace GameCore
         public void ResetGame()
         {
             Score = 0;
+            // CODEX CHEST PR2
+            crownsThisRun = 0;
+            SaveCrownsIfNeeded();
             // CODEX: LEVEL_LOOP
             MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
             HasMetTarget = false;
@@ -313,6 +331,8 @@ namespace GameCore
 
             board.MatchesCleared += HandleMatchesCleared;
             board.ValidSwap += HandleValidSwap;
+            // CODEX CHEST PR2
+            board.OnPieceDestroyed += HandlePieceDestroyed;
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
         }
@@ -328,6 +348,8 @@ namespace GameCore
             SetBombDetonationSubscription(false);
             board.MatchesCleared -= HandleMatchesCleared;
             board.ValidSwap -= HandleValidSwap;
+            // CODEX CHEST PR2
+            board.OnPieceDestroyed -= HandlePieceDestroyed;
         }
 
         private void HandleMatchesCleared(int clearedCount, int cascadeCount)
@@ -363,6 +385,20 @@ namespace GameCore
             }
         }
 
+        // CODEX CHEST PR2
+        private void HandlePieceDestroyed(Piece piece, DestructionReason reason)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
+            {
+                GrantCrown();
+            }
+        }
+
         // CODEX BOSS PR3
         private void HandleBombDetonated(Vector2Int position)
         {
@@ -395,6 +431,36 @@ namespace GameCore
 
             TriggerInstantWin();
             TriggerWin();
+        }
+
+        // CODEX CHEST PR2
+        private void GrantCrown()
+        {
+            crownsThisRun++;
+            SaveCrownsIfNeeded();
+            if (debugMode)
+            {
+                Debug.Log("CrownGained", this);
+                Debug.Log($"crownsThisRun({crownsThisRun})", this);
+            }
+        }
+
+        // CODEX CHEST PR2
+        private void LoadCrowns()
+        {
+            crownsThisRun = PlayerPrefs.GetInt(crownsPrefsKey, 0);
+        }
+
+        // CODEX CHEST PR2
+        private void SaveCrownsIfNeeded()
+        {
+            if (!persistCrowns)
+            {
+                return;
+            }
+
+            PlayerPrefs.SetInt(crownsPrefsKey, crownsThisRun);
+            PlayerPrefs.Save();
         }
 
         private void TriggerWin()
