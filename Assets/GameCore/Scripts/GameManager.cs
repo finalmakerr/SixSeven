@@ -180,6 +180,12 @@ namespace GameCore
         private bool awaitingBonusStageBan;
         // CODEX BONUS PR4
         private bool bonusStageRouletteComplete;
+        // CODEX BONUS PR5
+        private readonly Dictionary<string, Func<BonusMiniGameBase>> bonusMiniGameFactories = new Dictionary<string, Func<BonusMiniGameBase>>();
+        // CODEX BONUS PR5
+        private BonusMiniGameBase activeBonusMiniGame;
+        // CODEX BONUS PR5
+        private Coroutine bonusMiniGameCleanupRoutine;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -228,6 +234,9 @@ namespace GameCore
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
             ConfigureBonusStageButton();
+
+            // CODEX BONUS PR5
+            RegisterBonusMiniGame("Memory", () => CreateBonusMiniGame<MemoryBonusGame>());
         }
 
         private void OnEnable()
@@ -747,6 +756,19 @@ namespace GameCore
                 bonusStagePanel.SetActive(false);
             }
 
+            // CODEX BONUS PR5
+            if (bonusMiniGameCleanupRoutine != null)
+            {
+                StopCoroutine(bonusMiniGameCleanupRoutine);
+                bonusMiniGameCleanupRoutine = null;
+            }
+
+            if (activeBonusMiniGame != null)
+            {
+                activeBonusMiniGame.StopGame();
+                activeBonusMiniGame = null;
+            }
+
             crownsThisRun = 0;
             SaveCrownsIfNeeded();
             SetBoardInputLock(false);
@@ -1171,6 +1193,8 @@ namespace GameCore
             if (bonusStageSelectedGame == "Memory")
             {
                 Debug.Log("BonusStageMemorySelected", this);
+                StartBonusMiniGame(bonusStageSelectedGame);
+                return;
             }
             else
             {
@@ -1178,6 +1202,90 @@ namespace GameCore
             }
 
             EndBonusStage();
+        }
+
+        // CODEX BONUS PR5
+        private void RegisterBonusMiniGame(string gameName, Func<BonusMiniGameBase> factory)
+        {
+            if (string.IsNullOrWhiteSpace(gameName) || factory == null)
+            {
+                return;
+            }
+
+            bonusMiniGameFactories[gameName] = factory;
+        }
+
+        // CODEX BONUS PR5
+        private void StartBonusMiniGame(string gameName)
+        {
+            if (!bonusMiniGameFactories.TryGetValue(gameName, out var factory))
+            {
+                EndBonusStage();
+                return;
+            }
+
+            var canvas = FindObjectOfType<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogWarning("BonusStageMemory missing Canvas.", this);
+                EndBonusStage();
+                return;
+            }
+
+            if (bonusStagePanel != null)
+            {
+                bonusStagePanel.SetActive(false);
+            }
+
+            if (activeBonusMiniGame != null)
+            {
+                activeBonusMiniGame.StopGame();
+                activeBonusMiniGame = null;
+            }
+
+            activeBonusMiniGame = factory.Invoke();
+            if (activeBonusMiniGame == null)
+            {
+                EndBonusStage();
+                return;
+            }
+
+            activeBonusMiniGame.Completed += HandleBonusMiniGameCompleted;
+            activeBonusMiniGame.Begin(canvas.transform, bonusStageRandom ?? CreateBonusStageRandom());
+        }
+
+        // CODEX BONUS PR5
+        private BonusMiniGameBase CreateBonusMiniGame<T>() where T : BonusMiniGameBase
+        {
+            var gameObject = new GameObject(typeof(T).Name);
+            return gameObject.AddComponent<T>();
+        }
+
+        // CODEX BONUS PR5
+        private void HandleBonusMiniGameCompleted(bool success)
+        {
+            if (activeBonusMiniGame == null)
+            {
+                EndBonusStage();
+                return;
+            }
+
+            activeBonusMiniGame.Completed -= HandleBonusMiniGameCompleted;
+
+            if (bonusMiniGameCleanupRoutine != null)
+            {
+                StopCoroutine(bonusMiniGameCleanupRoutine);
+            }
+
+            bonusMiniGameCleanupRoutine = StartCoroutine(BonusMiniGameCleanupRoutine());
+        }
+
+        // CODEX BONUS PR5
+        private IEnumerator BonusMiniGameCleanupRoutine()
+        {
+            yield return new WaitForSeconds(1.5f);
+            EndBonusStage();
+            bonusMiniGameCleanupRoutine = null;
         }
 
         // CODEX BONUS PR4
