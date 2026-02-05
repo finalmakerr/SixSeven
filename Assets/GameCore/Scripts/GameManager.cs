@@ -63,6 +63,12 @@ namespace GameCore
         [SerializeField] private Text bossPowerRewardPromptText;
         // CODEX POWER PR5
         [SerializeField] private Button[] bossPowerRewardButtons;
+        // CODEX BONUS PR3
+        [SerializeField] private GameObject bonusStagePanel;
+        // CODEX BONUS PR3
+        [SerializeField] private Text bonusStageText;
+        // CODEX BONUS PR3
+        [SerializeField] private Button bonusStageContinueButton;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -131,6 +137,8 @@ namespace GameCore
         [SerializeField] private string crownsPrefsKey = "CrownsThisRun";
         // CODEX CHEST PR2
         private int crownsThisRun;
+        // CODEX BONUS PR3
+        private bool isBonusStageActive;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -178,6 +186,7 @@ namespace GameCore
 
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
+            ConfigureBonusStageButton();
         }
 
         private void OnEnable()
@@ -443,6 +452,12 @@ namespace GameCore
                 Debug.Log("CrownGained", this);
                 Debug.Log($"crownsThisRun({crownsThisRun})", this);
             }
+
+            // CODEX BONUS PR3
+            if (crownsThisRun >= 3)
+            {
+                BeginBonusStage();
+            }
         }
 
         // CODEX CHEST PR2
@@ -580,6 +595,18 @@ namespace GameCore
             }
         }
 
+        // CODEX BONUS PR3
+        private void ConfigureBonusStageButton()
+        {
+            if (bonusStageContinueButton == null)
+            {
+                return;
+            }
+
+            bonusStageContinueButton.onClick.RemoveAllListeners();
+            bonusStageContinueButton.onClick.AddListener(EndBonusStage);
+        }
+
         // CODEX BOSS PR2
         private void BeginBossChallengeChoice()
         {
@@ -633,6 +660,50 @@ namespace GameCore
             UpdateBombDetonationSubscription();
             SetBoardInputLock(false);
             UpdateUI();
+        }
+
+        // CODEX BONUS PR3
+        private void BeginBonusStage()
+        {
+            if (isBonusStageActive)
+            {
+                return;
+            }
+
+            isBonusStageActive = true;
+            Debug.Log("BonusStageEnter", this);
+            SetBoardInputLock(true);
+
+            if (bonusStagePanel != null)
+            {
+                bonusStagePanel.SetActive(true);
+            }
+
+            if (bonusStageText != null)
+            {
+                bonusStageText.text = "BONUS STAGE!";
+            }
+        }
+
+        // CODEX BONUS PR3
+        private void EndBonusStage()
+        {
+            if (!isBonusStageActive)
+            {
+                return;
+            }
+
+            isBonusStageActive = false;
+            Debug.Log("BonusStageExit", this);
+
+            if (bonusStagePanel != null)
+            {
+                bonusStagePanel.SetActive(false);
+            }
+
+            crownsThisRun = 0;
+            SaveCrownsIfNeeded();
+            SetBoardInputLock(false);
         }
 
         // CODEX BOSS PR4
