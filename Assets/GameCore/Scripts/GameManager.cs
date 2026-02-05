@@ -49,6 +49,14 @@ namespace GameCore
         [SerializeField] private GameObject bossPowerDiscardPanel;
         // CODEX BOSS PR5
         [SerializeField] private Button[] bossPowerDiscardButtons;
+        // CODEX WIPE PR6
+        [SerializeField] private GameObject bossPowerDiscardConfirmPanel;
+        // CODEX WIPE PR6
+        [SerializeField] private Text bossPowerDiscardConfirmText;
+        // CODEX WIPE PR6
+        [SerializeField] private Button bossPowerDiscardConfirmYesButton;
+        // CODEX WIPE PR6
+        [SerializeField] private Button bossPowerDiscardConfirmNoButton;
         // CODEX POWER PR5
         [SerializeField] private GameObject bossPowerRewardPanel;
         // CODEX POWER PR5
@@ -97,6 +105,12 @@ namespace GameCore
         private int displayedScore;
         // CODEX BOSS PR5
         private bool awaitingBossPowerDiscard;
+        // CODEX WIPE PR6
+        private bool awaitingBossPowerLossDiscard;
+        // CODEX WIPE PR6
+        private bool awaitingBossPowerLossConfirm;
+        // CODEX WIPE PR6
+        private BossPower pendingBossPowerLossDiscard;
         // CODEX POWER PR5
         private bool awaitingBossPowerRewardChoice;
         // CODEX POWER PR5
@@ -148,6 +162,7 @@ namespace GameCore
             }
 
             ConfigureBossChallengeButtons();
+            ConfigureBossPowerDiscardConfirmButtons();
         }
 
         private void OnEnable()
@@ -401,11 +416,27 @@ namespace GameCore
                 return;
             }
 
-            hasEnded = true;
+            if (bossPowerInventory != null && bossPowerInventory.Count > 0)
+            {
+                hasEnded = true;
+                BeginBossPowerLossDiscard();
+                return;
+            }
+
+            CompleteLoseFlow();
+        }
+
+        // CODEX WIPE PR6
+        private void CompleteLoseFlow()
+        {
+            if (!hasEnded)
+            {
+                hasEnded = true;
+            }
+
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, true);
-            // CODEX BOSS PR5
-            HandleBossPowerLoss();
+            SetBoardInputLock(false);
             OnLose?.Invoke();
         }
 
@@ -461,6 +492,22 @@ namespace GameCore
             {
                 bossChallengeSkipButton.onClick.RemoveAllListeners();
                 bossChallengeSkipButton.onClick.AddListener(() => ResolveBossChallengeChoice(false));
+            }
+        }
+
+        // CODEX WIPE PR6
+        private void ConfigureBossPowerDiscardConfirmButtons()
+        {
+            if (bossPowerDiscardConfirmYesButton != null)
+            {
+                bossPowerDiscardConfirmYesButton.onClick.RemoveAllListeners();
+                bossPowerDiscardConfirmYesButton.onClick.AddListener(ConfirmBossPowerLossDiscard);
+            }
+
+            if (bossPowerDiscardConfirmNoButton != null)
+            {
+                bossPowerDiscardConfirmNoButton.onClick.RemoveAllListeners();
+                bossPowerDiscardConfirmNoButton.onClick.AddListener(CancelBossPowerLossDiscard);
             }
         }
 
@@ -738,25 +785,28 @@ namespace GameCore
             return bossPowerInventory != null && bossPowerInventory.HasPower(power);
         }
 
-        // CODEX BOSS PR5
-        private void HandleBossPowerLoss()
+        // CODEX WIPE PR6
+        private void BeginBossPowerLossDiscard()
         {
             if (bossPowerInventory == null || bossPowerInventory.Count == 0)
             {
+                CompleteLoseFlow();
                 return;
             }
 
-            if (TryShowBossPowerDiscardPanel())
+            if (TryShowBossPowerDiscardPanel(HandleBossPowerLossDiscardSelection))
             {
-                awaitingBossPowerDiscard = true;
+                awaitingBossPowerLossDiscard = true;
+                SetBoardInputLock(true);
                 return;
             }
 
-            DiscardRandomBossPower();
+            Debug.LogWarning("Boss power discard UI is not configured for loss flow.", this);
+            CompleteLoseFlow();
         }
 
         // CODEX BOSS PR5
-        private bool TryShowBossPowerDiscardPanel()
+        private bool TryShowBossPowerDiscardPanel(Action<BossPower> onSelect)
         {
             if (bossPowerDiscardPanel == null || bossPowerDiscardButtons == null || bossPowerDiscardButtons.Length == 0)
             {
@@ -783,7 +833,7 @@ namespace GameCore
                     {
                         label.text = power.ToString();
                     }
-                    button.onClick.AddListener(() => ResolveBossPowerDiscard(power));
+                    button.onClick.AddListener(() => onSelect?.Invoke(power));
                 }
                 else
                 {
@@ -793,6 +843,88 @@ namespace GameCore
             }
 
             return true;
+        }
+
+        // CODEX WIPE PR6
+        private void HandleBossPowerLossDiscardSelection(BossPower power)
+        {
+            if (!awaitingBossPowerLossDiscard)
+            {
+                return;
+            }
+
+            awaitingBossPowerLossDiscard = false;
+            pendingBossPowerLossDiscard = power;
+
+            if (bossPowerDiscardPanel != null)
+            {
+                bossPowerDiscardPanel.SetActive(false);
+            }
+
+            ShowBossPowerDiscardConfirm(power);
+        }
+
+        // CODEX WIPE PR6
+        private void ShowBossPowerDiscardConfirm(BossPower power)
+        {
+            if (bossPowerDiscardConfirmPanel == null)
+            {
+                Debug.LogWarning("Boss power discard confirmation UI is not configured.", this);
+                awaitingBossPowerLossConfirm = true;
+                ConfirmBossPowerLossDiscard();
+                return;
+            }
+
+            if (bossPowerDiscardConfirmText != null)
+            {
+                bossPowerDiscardConfirmText.text = $"Discard {power}?";
+            }
+
+            bossPowerDiscardConfirmPanel.SetActive(true);
+            awaitingBossPowerLossConfirm = true;
+        }
+
+        // CODEX WIPE PR6
+        private void ConfirmBossPowerLossDiscard()
+        {
+            if (!awaitingBossPowerLossConfirm)
+            {
+                return;
+            }
+
+            awaitingBossPowerLossConfirm = false;
+            if (bossPowerDiscardConfirmPanel != null)
+            {
+                bossPowerDiscardConfirmPanel.SetActive(false);
+            }
+
+            if (bossPowerInventory != null)
+            {
+                bossPowerInventory.TryRemovePower(pendingBossPowerLossDiscard);
+            }
+
+            SaveBossPowerInventory();
+            UpdateBossPowerUI();
+            Debug.Log($"Discarded boss power on loss: {pendingBossPowerLossDiscard}", this);
+            CompleteLoseFlow();
+        }
+
+        // CODEX WIPE PR6
+        private void CancelBossPowerLossDiscard()
+        {
+            if (!awaitingBossPowerLossConfirm)
+            {
+                return;
+            }
+
+            awaitingBossPowerLossConfirm = false;
+            if (bossPowerDiscardConfirmPanel != null)
+            {
+                bossPowerDiscardConfirmPanel.SetActive(false);
+            }
+
+            pendingBossPowerLossDiscard = default;
+            BeginBossPowerLossDiscard();
         }
 
         // CODEX BOSS PR5
@@ -865,11 +997,11 @@ namespace GameCore
             if (bossPowerInventory.Count >= bossPowerInventory.MaxSlots)
             {
                 pendingBossPowerRewardAfterDiscard = true;
-                if (TryShowBossPowerDiscardPanel())
-                {
-                    awaitingBossPowerDiscard = true;
-                    SetBoardInputLock(true);
-                }
+            if (TryShowBossPowerDiscardPanel(ResolveBossPowerDiscard))
+            {
+                awaitingBossPowerDiscard = true;
+                SetBoardInputLock(true);
+            }
                 else
                 {
                     pendingBossPowerRewardAfterDiscard = false;
