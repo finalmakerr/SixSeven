@@ -67,8 +67,33 @@ namespace GameCore
         [SerializeField] private GameObject bonusStagePanel;
         // CODEX BONUS PR3
         [SerializeField] private Text bonusStageText;
+        // CODEX BONUS PR4
+        [SerializeField] private Text bonusStageInstructionText;
+        // CODEX BONUS PR4
+        [SerializeField] private Text bonusStageRouletteText;
+        // CODEX BONUS PR4
+        [SerializeField] private Text bonusStageResultText;
+        // CODEX BONUS PR4
+        [SerializeField] private Transform bonusStageListRoot;
         // CODEX BONUS PR3
         [SerializeField] private Button bonusStageContinueButton;
+        // CODEX BONUS PR4
+        [SerializeField] private List<string> bonusStageGames = new List<string>
+        {
+            "Chess",
+            "Checkers",
+            "Memory",
+            "Sudoku",
+            "Simon",
+            "Minesweeper",
+            "Wordle",
+            "SlidingPuzzle",
+            "MatchPairs"
+        };
+        // CODEX BONUS PR4
+        [SerializeField] private float bonusStageRouletteDuration = 2.5f;
+        // CODEX BONUS PR4
+        [SerializeField] private float bonusStageRouletteStep = 0.08f;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -139,6 +164,22 @@ namespace GameCore
         private int crownsThisRun;
         // CODEX BONUS PR3
         private bool isBonusStageActive;
+        // CODEX BONUS PR4
+        private readonly List<Button> bonusStageBanButtons = new List<Button>();
+        // CODEX BONUS PR4
+        private readonly List<string> bonusStageRemainingGames = new List<string>();
+        // CODEX BONUS PR4
+        private Coroutine bonusStageRouletteRoutine;
+        // CODEX BONUS PR4
+        private System.Random bonusStageRandom;
+        // CODEX BONUS PR4
+        private string bonusStageBannedGame;
+        // CODEX BONUS PR4
+        private string bonusStageSelectedGame;
+        // CODEX BONUS PR4
+        private bool awaitingBonusStageBan;
+        // CODEX BONUS PR4
+        private bool bonusStageRouletteComplete;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -604,7 +645,7 @@ namespace GameCore
             }
 
             bonusStageContinueButton.onClick.RemoveAllListeners();
-            bonusStageContinueButton.onClick.AddListener(EndBonusStage);
+            bonusStageContinueButton.onClick.AddListener(HandleBonusStageContinue);
         }
 
         // CODEX BOSS PR2
@@ -670,19 +711,18 @@ namespace GameCore
                 return;
             }
 
+            BuildBonusStageUIIfNeeded();
+            if (bonusStagePanel == null)
+            {
+                return;
+            }
+
             isBonusStageActive = true;
             Debug.Log("BonusStageEnter", this);
             SetBoardInputLock(true);
 
-            if (bonusStagePanel != null)
-            {
-                bonusStagePanel.SetActive(true);
-            }
-
-            if (bonusStageText != null)
-            {
-                bonusStageText.text = "BONUS STAGE!";
-            }
+            bonusStagePanel.SetActive(true);
+            PrepareBonusStageSelection();
         }
 
         // CODEX BONUS PR3
@@ -696,6 +736,12 @@ namespace GameCore
             isBonusStageActive = false;
             Debug.Log("BonusStageExit", this);
 
+            if (bonusStageRouletteRoutine != null)
+            {
+                StopCoroutine(bonusStageRouletteRoutine);
+                bonusStageRouletteRoutine = null;
+            }
+
             if (bonusStagePanel != null)
             {
                 bonusStagePanel.SetActive(false);
@@ -704,6 +750,441 @@ namespace GameCore
             crownsThisRun = 0;
             SaveCrownsIfNeeded();
             SetBoardInputLock(false);
+        }
+
+        // CODEX BONUS PR4
+        private void BuildBonusStageUIIfNeeded()
+        {
+            if (bonusStagePanel != null)
+            {
+                return;
+            }
+
+            var canvas = FindObjectOfType<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogWarning("BonusStageUI missing Canvas.", this);
+                return;
+            }
+
+            bonusStagePanel = new GameObject("BonusStagePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            bonusStagePanel.transform.SetParent(canvas.transform, false);
+            var panelRect = bonusStagePanel.GetComponent<RectTransform>();
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = Vector2.zero;
+            panelRect.offsetMax = Vector2.zero;
+
+            var panelImage = bonusStagePanel.GetComponent<Image>();
+            panelImage.color = new Color(0f, 0f, 0f, 0.75f);
+
+            bonusStageText = CreateBonusStageText(
+                bonusStagePanel.transform,
+                "BonusStageHeader",
+                48,
+                TextAnchor.UpperCenter,
+                new Vector2(0f, -40f),
+                new Vector2(900f, 80f));
+            bonusStageInstructionText = CreateBonusStageText(
+                bonusStagePanel.transform,
+                "BonusStageInstruction",
+                28,
+                TextAnchor.UpperCenter,
+                new Vector2(0f, -130f),
+                new Vector2(900f, 120f));
+
+            var listRoot = new GameObject(
+                "BonusStageList",
+                typeof(RectTransform),
+                typeof(VerticalLayoutGroup),
+                typeof(ContentSizeFitter));
+            listRoot.transform.SetParent(bonusStagePanel.transform, false);
+            bonusStageListRoot = listRoot.transform;
+            var listRect = listRoot.GetComponent<RectTransform>();
+            listRect.anchorMin = new Vector2(0.5f, 0.5f);
+            listRect.anchorMax = new Vector2(0.5f, 0.5f);
+            listRect.pivot = new Vector2(0.5f, 0.5f);
+            listRect.anchoredPosition = new Vector2(0f, -60f);
+            listRect.sizeDelta = new Vector2(700f, 620f);
+
+            var layout = listRoot.GetComponent<VerticalLayoutGroup>();
+            layout.childAlignment = TextAnchor.UpperCenter;
+            layout.spacing = 8f;
+            layout.childControlHeight = true;
+            layout.childControlWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childForceExpandWidth = true;
+
+            var fitter = listRoot.GetComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            bonusStageRouletteText = CreateBonusStageText(
+                bonusStagePanel.transform,
+                "BonusStageRoulette",
+                32,
+                TextAnchor.MiddleCenter,
+                new Vector2(0f, 260f),
+                new Vector2(900f, 60f));
+            bonusStageResultText = CreateBonusStageText(
+                bonusStagePanel.transform,
+                "BonusStageResult",
+                32,
+                TextAnchor.MiddleCenter,
+                new Vector2(0f, 190f),
+                new Vector2(900f, 90f));
+
+            bonusStageContinueButton = CreateBonusStageButton(
+                bonusStagePanel.transform,
+                "BonusStageContinue",
+                "Continue",
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0f, 80f),
+                new Vector2(320f, 70f));
+            ConfigureBonusStageButton();
+
+            bonusStagePanel.SetActive(false);
+        }
+
+        // CODEX BONUS PR4
+        private Text CreateBonusStageText(
+            Transform parent,
+            string name,
+            int fontSize,
+            TextAnchor alignment,
+            Vector2 anchoredPosition,
+            Vector2 size)
+        {
+            var textObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            textObject.transform.SetParent(parent, false);
+            var rectTransform = textObject.GetComponent<RectTransform>();
+            rectTransform.anchorMin = new Vector2(0.5f, 1f);
+            rectTransform.anchorMax = new Vector2(0.5f, 1f);
+            rectTransform.pivot = new Vector2(0.5f, 1f);
+            rectTransform.anchoredPosition = anchoredPosition;
+            rectTransform.sizeDelta = size;
+
+            var text = textObject.GetComponent<Text>();
+            text.text = string.Empty;
+            text.fontSize = fontSize;
+            text.alignment = alignment;
+            text.color = Color.white;
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            return text;
+        }
+
+        // CODEX BONUS PR4
+        private Button CreateBonusStageButton(
+            Transform parent,
+            string name,
+            string label,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 pivot,
+            Vector2 anchoredPosition,
+            Vector2 size)
+        {
+            var buttonObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            buttonObject.transform.SetParent(parent, false);
+            var rectTransform = buttonObject.GetComponent<RectTransform>();
+            rectTransform.anchorMin = anchorMin;
+            rectTransform.anchorMax = anchorMax;
+            rectTransform.pivot = pivot;
+            rectTransform.anchoredPosition = anchoredPosition;
+            rectTransform.sizeDelta = size;
+
+            var image = buttonObject.GetComponent<Image>();
+            image.color = new Color(1f, 1f, 1f, 0.9f);
+
+            var button = buttonObject.GetComponent<Button>();
+            var text = CreateBonusStageLabel(buttonObject.transform, "Label", label);
+            text.color = Color.black;
+            return button;
+        }
+
+        // CODEX BONUS PR4
+        private Text CreateBonusStageLabel(Transform parent, string name, string label)
+        {
+            var textObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            textObject.transform.SetParent(parent, false);
+            var rectTransform = textObject.GetComponent<RectTransform>();
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+
+            var text = textObject.GetComponent<Text>();
+            text.text = label;
+            text.fontSize = 26;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Color.black;
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            return text;
+        }
+
+        // CODEX BONUS PR4
+        private void PrepareBonusStageSelection()
+        {
+            bonusStageRandom = CreateBonusStageRandom();
+            bonusStageBannedGame = null;
+            bonusStageSelectedGame = null;
+            awaitingBonusStageBan = true;
+            bonusStageRouletteComplete = false;
+
+            if (bonusStageText != null)
+            {
+                bonusStageText.text = "BONUS STAGE";
+            }
+
+            if (bonusStageInstructionText != null)
+            {
+                bonusStageInstructionText.text = "Choose ONE game to ban.";
+            }
+
+            if (bonusStageRouletteText != null)
+            {
+                bonusStageRouletteText.text = string.Empty;
+            }
+
+            if (bonusStageResultText != null)
+            {
+                bonusStageResultText.text = string.Empty;
+            }
+
+            if (bonusStageContinueButton != null)
+            {
+                bonusStageContinueButton.interactable = false;
+                UpdateBonusStageButtonLabel("Continue");
+            }
+
+            if (bonusStageListRoot != null)
+            {
+                bonusStageListRoot.gameObject.SetActive(true);
+            }
+
+            RebuildBonusStageBanButtons();
+        }
+
+        // CODEX BONUS PR4
+        private void RebuildBonusStageBanButtons()
+        {
+            foreach (var button in bonusStageBanButtons)
+            {
+                if (button != null)
+                {
+                    Destroy(button.gameObject);
+                }
+            }
+
+            bonusStageBanButtons.Clear();
+
+            if (bonusStageListRoot == null)
+            {
+                return;
+            }
+
+            foreach (var game in GetBonusStageGamePool())
+            {
+                var button = CreateBonusStageButton(
+                    bonusStageListRoot,
+                    $"Ban{game}Button",
+                    $"BAN {game}",
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0.5f, 1f),
+                    Vector2.zero,
+                    new Vector2(480f, 60f));
+                var gameName = game;
+                button.onClick.AddListener(() => HandleBonusStageBanSelected(gameName));
+                bonusStageBanButtons.Add(button);
+            }
+        }
+
+        // CODEX BONUS PR4
+        private List<string> GetBonusStageGamePool()
+        {
+            if (bonusStageGames != null && bonusStageGames.Count > 0)
+            {
+                return bonusStageGames;
+            }
+
+            return new List<string>
+            {
+                "Chess",
+                "Checkers",
+                "Memory",
+                "Sudoku",
+                "Simon",
+                "Minesweeper",
+                "Wordle",
+                "SlidingPuzzle",
+                "MatchPairs"
+            };
+        }
+
+        // CODEX BONUS PR4
+        private void HandleBonusStageBanSelected(string gameName)
+        {
+            if (!awaitingBonusStageBan)
+            {
+                return;
+            }
+
+            awaitingBonusStageBan = false;
+            bonusStageBannedGame = gameName;
+
+            foreach (var button in bonusStageBanButtons)
+            {
+                if (button != null)
+                {
+                    button.interactable = false;
+                }
+            }
+
+            if (bonusStageInstructionText != null)
+            {
+                bonusStageInstructionText.text = $"BANNED: {bonusStageBannedGame}";
+            }
+
+            bonusStageRemainingGames.Clear();
+            foreach (var game in GetBonusStageGamePool())
+            {
+                if (!string.Equals(game, bonusStageBannedGame, StringComparison.OrdinalIgnoreCase))
+                {
+                    bonusStageRemainingGames.Add(game);
+                }
+            }
+
+            if (bonusStageListRoot != null)
+            {
+                bonusStageListRoot.gameObject.SetActive(false);
+            }
+
+            if (bonusStageRouletteRoutine != null)
+            {
+                StopCoroutine(bonusStageRouletteRoutine);
+            }
+
+            bonusStageRouletteRoutine = StartCoroutine(BonusStageRouletteRoutine());
+        }
+
+        // CODEX BONUS PR4
+        private IEnumerator BonusStageRouletteRoutine()
+        {
+            if (bonusStageRemainingGames.Count == 0)
+            {
+                yield break;
+            }
+
+            var duration = Mathf.Max(0.5f, bonusStageRouletteDuration);
+            var step = Mathf.Max(0.04f, bonusStageRouletteStep);
+            var elapsed = 0f;
+            var index = bonusStageRandom != null
+                ? bonusStageRandom.Next(bonusStageRemainingGames.Count)
+                : UnityEngine.Random.Range(0, bonusStageRemainingGames.Count);
+
+            while (elapsed < duration)
+            {
+                elapsed += step;
+                index = (index + 1) % bonusStageRemainingGames.Count;
+                if (bonusStageRouletteText != null)
+                {
+                    bonusStageRouletteText.text = $"Roulette: {bonusStageRemainingGames[index]}";
+                }
+
+                yield return new WaitForSeconds(step);
+            }
+
+            bonusStageSelectedGame = SelectBonusStageGame();
+            bonusStageRouletteComplete = true;
+
+            if (bonusStageRouletteText != null)
+            {
+                bonusStageRouletteText.text = $"Roulette Stopped";
+            }
+
+            UpdateBonusStageResult();
+            bonusStageRouletteRoutine = null;
+        }
+
+        // CODEX BONUS PR4
+        private string SelectBonusStageGame()
+        {
+            if (bonusStageRemainingGames.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var selectionIndex = bonusStageRandom != null
+                ? bonusStageRandom.Next(bonusStageRemainingGames.Count)
+                : UnityEngine.Random.Range(0, bonusStageRemainingGames.Count);
+            return bonusStageRemainingGames[selectionIndex];
+        }
+
+        // CODEX BONUS PR4
+        private void UpdateBonusStageResult()
+        {
+            if (bonusStageResultText != null)
+            {
+                bonusStageResultText.text = $"Selected: {bonusStageSelectedGame}";
+            }
+
+            if (bonusStageInstructionText != null)
+            {
+                bonusStageInstructionText.text = bonusStageSelectedGame == "Memory"
+                    ? "Memory will launch next!"
+                    : $"{bonusStageSelectedGame} is coming soon.";
+            }
+
+            if (bonusStageContinueButton != null)
+            {
+                bonusStageContinueButton.interactable = true;
+                UpdateBonusStageButtonLabel(bonusStageSelectedGame == "Memory" ? "Play Memory" : "Continue");
+            }
+        }
+
+        // CODEX BONUS PR4
+        private void UpdateBonusStageButtonLabel(string label)
+        {
+            if (bonusStageContinueButton == null)
+            {
+                return;
+            }
+
+            var text = bonusStageContinueButton.GetComponentInChildren<Text>();
+            if (text != null)
+            {
+                text.text = label;
+            }
+        }
+
+        // CODEX BONUS PR4
+        private void HandleBonusStageContinue()
+        {
+            if (!isBonusStageActive || !bonusStageRouletteComplete)
+            {
+                return;
+            }
+
+            if (bonusStageSelectedGame == "Memory")
+            {
+                Debug.Log("BonusStageMemorySelected", this);
+            }
+            else
+            {
+                Debug.Log($"BonusStage{bonusStageSelectedGame}ComingSoon", this);
+            }
+
+            EndBonusStage();
+        }
+
+        // CODEX BONUS PR4
+        private System.Random CreateBonusStageRandom()
+        {
+            var seed = board != null ? board.RandomSeed : 0;
+            return seed != 0 ? new System.Random(seed + 131) : new System.Random();
         }
 
         // CODEX BOSS PR4
