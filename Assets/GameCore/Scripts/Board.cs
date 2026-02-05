@@ -718,7 +718,7 @@ namespace GameCore
             }
 
             CreateBombAt(bombPosition, 99);
-            RemovePiece(second);
+            RemovePiece(second, DestructionReason.NormalMatch); // CODEX CHEST PR2
             QueueForcedClear(bombPosition);
             return true;
         }
@@ -800,13 +800,14 @@ namespace GameCore
         }
 
         // CODEX BOMB TIERS: remove a piece cleanly from the grid.
-        private void RemovePiece(Piece piece)
+        private void RemovePiece(Piece piece, DestructionReason reason) // CODEX CHEST PR2
         {
             if (piece == null)
             {
                 return;
             }
 
+            OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
             HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
 
             if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)

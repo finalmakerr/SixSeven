@@ -485,6 +485,15 @@ namespace GameCore
             if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
             {
                 GrantCrown();
+                return;
+            }
+
+            if (piece.SpecialType == SpecialType.TreasureChest)
+            {
+                if (debugMode)
+                {
+                    Debug.Log("CrownIgnored", this); // CODEX CHEST PR2
+                }
             }
         }
 
@@ -529,15 +538,20 @@ namespace GameCore
             SaveCrownsIfNeeded();
             if (debugMode)
             {
-                Debug.Log("CrownGained", this);
-                Debug.Log($"crownsThisRun({crownsThisRun})", this);
+                Debug.Log($"CrownGained -> crownsThisRun = {crownsThisRun}", this); // CODEX CHEST PR2
             }
 
             // CODEX BONUS PR3
             if (crownsThisRun >= 3)
             {
-                BeginBonusStage();
+                EnterBonusStage(); // CODEX CHEST PR2
             }
+        }
+
+        // CODEX CHEST PR2
+        private void EnterBonusStage()
+        {
+            BeginBonusStage();
         }
 
         // CODEX CHEST PR2
