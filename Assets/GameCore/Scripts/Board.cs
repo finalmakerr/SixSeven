@@ -28,9 +28,13 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Piece piecePrefab;
+        // CODEX CHEST PR1
+        [SerializeField] private Sprite treasureChestOverlaySprite;
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
         [SerializeField] private int maxSpawnAttempts = 6; // CODEX VERIFY: cap retry attempts for spawn/refill.
         [SerializeField] private int maxShuffleAttempts = 10; // CODEX VERIFY: cap shuffle retries for dead boards.
+        // CODEX CHEST PR1
+        [SerializeField] private int chestSpawnChancePercent = 5;
 
         private Piece[,] pieces;
         private Sprite[] sprites;
@@ -52,6 +56,9 @@ namespace GameCore
         private readonly HashSet<Vector2Int> pendingSpecialClearPositions = new HashSet<Vector2Int>(); // CODEX BOMB TIERS: force clears for bomb mixes.
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
+        // CODEX CHEST PR1
+        private int chestCooldownMovesRemaining;
+        private bool chestPresent;
 
         // CODEX BOMB TIERS: sprite cache for bomb tiers (Resources.Load paths).
         private Sprite bomb4Sprite;
@@ -127,6 +134,8 @@ namespace GameCore
             ResetRandomGenerator();
             colorBag.Clear();
             pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
+            chestCooldownMovesRemaining = 0; // CODEX CHEST PR1
+            chestPresent = false; // CODEX CHEST PR1
             CreateBoard();
             StartCoroutine(ClearMatchesRoutine());
         }
@@ -360,6 +369,7 @@ namespace GameCore
                 Debug.Log($"MoveStart({activeMoveId}): ({first.X},{first.Y}) -> ({second.X},{second.Y})", this); // CODEX VERIFY 2: move start log once per accepted swap.
             }
             ValidSwap?.Invoke();
+            HandleTreasureChestSwap(); // CODEX CHEST PR1
             yield return StartCoroutine(ClearMatchesRoutine());
             if (debugMode)
             {
@@ -400,6 +410,71 @@ namespace GameCore
 
             first.SetPosition(second.X, second.Y, first.transform.position);
             second.SetPosition(firstX, firstY, second.transform.position);
+        }
+
+        // CODEX CHEST PR1
+        private void HandleTreasureChestSwap()
+        {
+            if (chestCooldownMovesRemaining > 0)
+            {
+                chestCooldownMovesRemaining--;
+            }
+
+            if (chestPresent || chestCooldownMovesRemaining > 0)
+            {
+                return;
+            }
+
+            var clampedChance = Mathf.Clamp(chestSpawnChancePercent, 1, 10);
+            var roll = RandomRange(1, 101);
+            if (roll > clampedChance)
+            {
+                return;
+            }
+
+            SpawnTreasureChest();
+        }
+
+        // CODEX CHEST PR1
+        private void SpawnTreasureChest()
+        {
+            if (pieces == null)
+            {
+                return;
+            }
+
+            var candidates = new List<Vector2Int>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (pieces[x, y] != null)
+                    {
+                        candidates.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return;
+            }
+
+            var chosenIndex = RandomRange(0, candidates.Count);
+            var chosenPosition = candidates[chosenIndex];
+            var piece = pieces[chosenPosition.x, chosenPosition.y];
+            if (piece == null)
+            {
+                return;
+            }
+
+            piece.SetSpecialType(SpecialType.TreasureChest);
+            piece.SetTreasureChestVisual(treasureChestOverlaySprite, debugMode);
+            chestPresent = true;
+            if (debugMode)
+            {
+                Debug.Log($"ChestSpawned({chosenPosition.x},{chosenPosition.y})", this);
+            }
         }
 
         private bool HasMatchAt(int x, int y)
@@ -710,12 +785,30 @@ namespace GameCore
                 return;
             }
 
+            HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
+
             if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)
             {
                 pieces[piece.X, piece.Y] = null;
             }
 
             Destroy(piece.gameObject);
+        }
+
+        // CODEX CHEST PR1
+        private void HandleTreasureChestDestroyed(Piece piece)
+        {
+            if (piece == null || piece.SpecialType != SpecialType.TreasureChest)
+            {
+                return;
+            }
+
+            chestPresent = false;
+            chestCooldownMovesRemaining = RandomRange(6, 8);
+            if (debugMode)
+            {
+                Debug.Log($"ChestCooldownSet({chestCooldownMovesRemaining})", this);
+            }
         }
 
         private IEnumerator ClearMatchesRoutine()
@@ -795,6 +888,7 @@ namespace GameCore
                     continue;
                 }
 
+                HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
