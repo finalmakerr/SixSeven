@@ -188,6 +188,8 @@ namespace GameCore
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
                 bossAlive = IsBossLevel
             };
+            // CODEX BOSS PR4
+            UpdateBombDetonationSubscription();
 
             if (board != null)
             {
@@ -270,8 +272,8 @@ namespace GameCore
 
             board.MatchesCleared += HandleMatchesCleared;
             board.ValidSwap += HandleValidSwap;
-            // CODEX BOSS PR3
-            board.OnBombDetonated += HandleBombDetonated;
+            // CODEX BOSS PR4
+            UpdateBombDetonationSubscription();
         }
 
         private void UnregisterBoardEvents()
@@ -281,10 +283,10 @@ namespace GameCore
                 return;
             }
 
+            // CODEX BOSS PR4
+            SetBombDetonationSubscription(false);
             board.MatchesCleared -= HandleMatchesCleared;
             board.ValidSwap -= HandleValidSwap;
-            // CODEX BOSS PR3
-            board.OnBombDetonated -= HandleBombDetonated;
         }
 
         private void HandleMatchesCleared(int clearedCount, int cascadeCount)
@@ -340,13 +342,15 @@ namespace GameCore
                 return;
             }
 
+            Debug.Log(
+                $"BossHit bomb at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
+                this); // CODEX BOSS PR4
             bossState.bossAlive = false;
             CurrentBossState = bossState;
 
-            if (debugMode)
-            {
-                Debug.Log($"BossDefeated by bomb at {position.x},{position.y}", this);
-            }
+            Debug.Log(
+                $"BossDefeated bomb at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
+                this); // CODEX BOSS PR4
 
             TriggerInstantWin();
             TriggerWin();
@@ -486,8 +490,48 @@ namespace GameCore
                 EnsureBossSelected();
             }
 
+            // CODEX BOSS PR4
+            UpdateBombDetonationSubscription();
             SetBoardInputLock(false);
             UpdateUI();
+        }
+
+        // CODEX BOSS PR4
+        private void UpdateBombDetonationSubscription()
+        {
+            SetBombDetonationSubscription(IsBossLevel);
+        }
+
+        // CODEX BOSS PR4
+        private void SetBombDetonationSubscription(bool shouldSubscribe)
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            if (shouldSubscribe)
+            {
+                board.OnBombDetonated -= HandleBombDetonated;
+                board.OnBombDetonated += HandleBombDetonated;
+                return;
+            }
+
+            board.OnBombDetonated -= HandleBombDetonated;
+        }
+
+        // CODEX BOSS PR4
+        private void OnDrawGizmos()
+        {
+            if (board == null || !IsBossLevel)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            var bossWorld = board.GridToWorld(bossState.bossPosition.x, bossState.bossPosition.y);
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireSphere(bossWorld, 0.35f);
         }
 
         // CODEX BOSS PR2
