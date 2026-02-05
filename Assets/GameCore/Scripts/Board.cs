@@ -49,8 +49,16 @@ namespace GameCore
         private readonly HashSet<Vector2Int> bombCreationPositions = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> bombDetonationsThisStep = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> specialRecipeBombPositions = new HashSet<Vector2Int>(); // CODEX BOMB PR3: prevent double recipe bombs per swap.
+        private readonly HashSet<Vector2Int> pendingSpecialClearPositions = new HashSet<Vector2Int>(); // CODEX BOMB TIERS: force clears for bomb mixes.
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
+
+        // CODEX BOMB TIERS: sprite cache for bomb tiers (Resources.Load paths).
+        private Sprite bomb4Sprite;
+        private Sprite bomb7Sprite;
+        private Sprite bombXXSprite;
+        private Sprite bomb6SpriteA;
+        private Sprite bomb6SpriteB;
 
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
         // CODEX BOSS PR1
@@ -65,6 +73,7 @@ namespace GameCore
             }
 
             sprites = GenerateSprites();
+            LoadBombSprites(); // CODEX BOMB TIERS: cache special bomb sprites.
         }
 
         private void Start()
@@ -117,6 +126,7 @@ namespace GameCore
             // CODEX: RNG_BAG
             ResetRandomGenerator();
             colorBag.Clear();
+            pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
             CreateBoard();
             StartCoroutine(ClearMatchesRoutine());
         }
@@ -321,7 +331,7 @@ namespace GameCore
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
             SwapPiecesInGrid(first, second);
-            return hasMatch || IsSpecialRecipePair(first.SpecialType, second.SpecialType);
+            return hasMatch || IsSpecialRecipePair(first.SpecialType, second.SpecialType) || IsBombMixPair(first, second);
         }
 
         private IEnumerator SwapRoutine(Piece first, Piece second)
@@ -501,7 +511,7 @@ namespace GameCore
 
             // CODEX BOSS PR2
             Vector2Int? bombPosition = null;
-            if (runLength >= 5 && ShouldAllowBombCreation())
+            if ((runLength == 4 || runLength == 7) && ShouldAllowBombCreation())
             {
                 var candidatePosition = new Vector2Int(endX, endY);
                 var candidatePiece = pieces[endX, endY];
@@ -509,7 +519,8 @@ namespace GameCore
                     && candidatePiece.SpecialType == SpecialType.None
                     && bombCreationPositions.Add(candidatePosition))
                 {
-                    candidatePiece.SetSpecialType(SpecialType.Bomb);
+                    var bombTier = runLength == 4 ? 4 : 7;
+                    CreateBombAt(candidatePosition, bombTier); // CODEX BOMB TIERS: match-4 and match-7 bomb creation.
                     bombPosition = candidatePosition;
                 }
             }
@@ -554,6 +565,11 @@ namespace GameCore
                 return false;
             }
 
+            if (TryApplyBombMix(first, second))
+            {
+                return true;
+            }
+
             if (first.SpecialType == SpecialType.None || second.SpecialType == SpecialType.None)
             {
                 return false;
@@ -571,6 +587,42 @@ namespace GameCore
             }
 
             CreateBombFromRecipe(first, second, bombPosition);
+            return true;
+        }
+
+        // CODEX BOMB TIERS: allow Bomb7 + Bomb6 mix into BombXX (ultra).
+        private bool IsBombMixPair(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (first.SpecialType != SpecialType.Bomb || second.SpecialType != SpecialType.Bomb)
+            {
+                return false;
+            }
+
+            return (first.BombTier == 7 && second.BombTier == 6) || (first.BombTier == 6 && second.BombTier == 7);
+        }
+
+        // CODEX BOMB TIERS: trigger BombXX immediately in the current resolve step.
+        private bool TryApplyBombMix(Piece first, Piece second)
+        {
+            if (!IsBombMixPair(first, second))
+            {
+                return false;
+            }
+
+            var bombPosition = new Vector2Int(first.X, first.Y);
+            if (!IsInBounds(bombPosition.x, bombPosition.y))
+            {
+                return false;
+            }
+
+            CreateBombAt(bombPosition, 99);
+            RemovePiece(second);
+            QueueForcedClear(bombPosition);
             return true;
         }
 
@@ -617,8 +669,53 @@ namespace GameCore
             var bombPiece = pieces[bombPosition.x, bombPosition.y];
             if (bombPiece != null)
             {
-                bombPiece.SetSpecialType(SpecialType.Bomb);
+                CreateBombAt(bombPosition, 6); // CODEX BOMB TIERS: default recipe bomb to tier-6.
             }
+        }
+
+        // CODEX BOMB TIERS: create a bomb special with tier-specific sprite.
+        private void CreateBombAt(Vector2Int position, int bombTier)
+        {
+            if (!IsInBounds(position.x, position.y))
+            {
+                return;
+            }
+
+            var piece = pieces[position.x, position.y];
+            if (piece == null)
+            {
+                return;
+            }
+
+            var sprite = GetBombSpriteForTier(bombTier);
+            if (sprite == null && debugMode)
+            {
+                Debug.LogWarning($"Missing bomb sprite for tier {bombTier} at ({position.x},{position.y}).", this);
+            }
+
+            piece.SetBombTier(bombTier, sprite);
+        }
+
+        // CODEX BOMB TIERS: enqueue a forced clear (used for bomb mixing).
+        private void QueueForcedClear(Vector2Int position)
+        {
+            pendingSpecialClearPositions.Add(position);
+        }
+
+        // CODEX BOMB TIERS: remove a piece cleanly from the grid.
+        private void RemovePiece(Piece piece)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)
+            {
+                pieces[piece.X, piece.Y] = null;
+            }
+
+            Destroy(piece.gameObject);
         }
 
         private IEnumerator ClearMatchesRoutine()
@@ -626,16 +723,17 @@ namespace GameCore
             isBusy = true;
             var matches = FindMatches();
             var cascadeCount = 0;
-            while (matches.Count > 0)
+            while (matches.Count > 0 || pendingSpecialClearPositions.Count > 0)
             {
                 cascadeCount++;
                 if (debugMode)
                 {
                     Debug.Log($"CascadeCount({activeMoveId}): {cascadeCount}", this); // CODEX VERIFY 2: cascade instrumentation with move id.
                 }
+                AppendPendingSpecialClears(matches);
+                var clearedCount = ClearMatches(matches);
                 // CODEX: LEVEL_LOOP
-                MatchesCleared?.Invoke(matches.Count, cascadeCount);
-                ClearMatches(matches);
+                MatchesCleared?.Invoke(clearedCount, cascadeCount);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
                 yield return new WaitForSeconds(refillDelay);
@@ -649,7 +747,7 @@ namespace GameCore
             isBusy = false;
         }
 
-        private void ClearMatches(List<Piece> matches)
+        private int ClearMatches(List<Piece> matches)
         {
             var clearedPositions = new HashSet<Vector2Int>();
             bombDetonationsThisStep.Clear();
@@ -683,6 +781,7 @@ namespace GameCore
                 }
             }
 
+            var clearedCount = clearedPositions.Count;
             foreach (var position in clearedPositions)
             {
                 if (!IsInBounds(position.x, position.y))
@@ -699,6 +798,33 @@ namespace GameCore
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
+
+            return clearedCount;
+        }
+
+        // CODEX BOMB TIERS: merge forced clear positions into the current match list.
+        private void AppendPendingSpecialClears(List<Piece> matches)
+        {
+            if (pendingSpecialClearPositions.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var position in pendingSpecialClearPositions)
+            {
+                if (!IsInBounds(position.x, position.y))
+                {
+                    continue;
+                }
+
+                var piece = pieces[position.x, position.y];
+                if (piece != null && !matches.Contains(piece))
+                {
+                    matches.Add(piece);
+                }
+            }
+
+            pendingSpecialClearPositions.Clear();
         }
 
         // CODEX BOSS PR2
@@ -709,32 +835,85 @@ namespace GameCore
                 return;
             }
 
-            OnBombDetonated?.Invoke(position);
-
-            for (var dx = -1; dx <= 1; dx++)
+            if (!IsInBounds(position.x, position.y))
             {
-                for (var dy = -1; dy <= 1; dy++)
+                return;
+            }
+
+            var sourcePiece = pieces[position.x, position.y];
+            if (sourcePiece == null || sourcePiece.SpecialType != SpecialType.Bomb)
+            {
+                if (debugMode)
                 {
-                    var x = position.x + dx;
-                    var y = position.y + dy;
-                    if (!IsInBounds(x, y))
-                    {
-                        continue;
-                    }
+                    Debug.LogWarning($"Bomb detonation skipped at ({position.x},{position.y}) due to missing bomb piece.", this);
+                }
+                return;
+            }
 
-                    var piece = pieces[x, y];
-                    if (piece == null)
-                    {
-                        continue;
-                    }
+            var bombTier = sourcePiece.BombTier;
+            if (bombTier == 0 && debugMode)
+            {
+                Debug.LogWarning($"Bomb detonation missing tier at ({position.x},{position.y}), defaulting to tier 4.", this);
+            }
 
-                    var targetPosition = new Vector2Int(x, y);
-                    clearedPositions.Add(targetPosition);
-                    if (piece.SpecialType == SpecialType.Bomb)
+            OnBombDetonated?.Invoke(position);
+            clearedPositions.Add(position);
+
+            var resolvedTier = bombTier == 0 ? 4 : bombTier;
+            if (resolvedTier == 6 || resolvedTier == 7 || resolvedTier == 99)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    for (var y = 0; y < height; y++)
                     {
-                        DetonateBomb(targetPosition, clearedPositions);
+                        AddBombClearTarget(new Vector2Int(x, y), clearedPositions);
                     }
                 }
+
+                return;
+            }
+
+            var directions = resolvedTier == 5
+                ? new[]
+                {
+                    Vector2Int.up,
+                    Vector2Int.right,
+                    Vector2Int.down,
+                    Vector2Int.left,
+                    new Vector2Int(1, 1)
+                }
+                : new[]
+                {
+                    Vector2Int.up,
+                    Vector2Int.right,
+                    Vector2Int.down,
+                    Vector2Int.left
+                };
+
+            foreach (var direction in directions)
+            {
+                AddBombClearTarget(position + direction, clearedPositions);
+            }
+        }
+
+        // CODEX BOMB TIERS: add a target tile to clear list and trigger chained bombs once.
+        private void AddBombClearTarget(Vector2Int targetPosition, HashSet<Vector2Int> clearedPositions)
+        {
+            if (!IsInBounds(targetPosition.x, targetPosition.y))
+            {
+                return;
+            }
+
+            var piece = pieces[targetPosition.x, targetPosition.y];
+            if (piece == null)
+            {
+                return;
+            }
+
+            clearedPositions.Add(targetPosition);
+            if (piece.SpecialType == SpecialType.Bomb)
+            {
+                DetonateBomb(targetPosition, clearedPositions);
             }
         }
 
@@ -1029,6 +1208,54 @@ namespace GameCore
             }
 
             return spriteList.ToArray();
+        }
+
+        // CODEX BOMB TIERS: load bomb sprites from Resources.
+        private void LoadBombSprites()
+        {
+            bomb4Sprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-X4");
+            bomb7Sprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-X7");
+            bombXXSprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-XX");
+            bomb6SpriteA = Resources.Load<Sprite>("Tiles/Specials/Crocodilio-Sixventilio");
+            bomb6SpriteB = Resources.Load<Sprite>("Tiles/Specials/Brainio-Sixventilio");
+
+            if (debugMode)
+            {
+                WarnIfMissingSprite(bomb4Sprite, "Tiles/Specials/Svinino-Bombondino-X4");
+                WarnIfMissingSprite(bomb7Sprite, "Tiles/Specials/Svinino-Bombondino-X7");
+                WarnIfMissingSprite(bombXXSprite, "Tiles/Specials/Svinino-Bombondino-XX");
+                WarnIfMissingSprite(bomb6SpriteA, "Tiles/Specials/Crocodilio-Sixventilio");
+                WarnIfMissingSprite(bomb6SpriteB, "Tiles/Specials/Brainio-Sixventilio");
+            }
+        }
+
+        // CODEX BOMB TIERS: sprite selection per tier with safe fallback.
+        private Sprite GetBombSpriteForTier(int bombTier)
+        {
+            switch (bombTier)
+            {
+                case 4:
+                    return bomb4Sprite;
+                case 6:
+                    return RandomRange(0, 2) == 0 ? bomb6SpriteA : bomb6SpriteB;
+                case 7:
+                    return bomb7Sprite;
+                case 99:
+                    return bombXXSprite;
+                case 5:
+                    return bomb4Sprite;
+                default:
+                    return bomb4Sprite;
+            }
+        }
+
+        // CODEX BOMB TIERS: debug warning for missing sprite paths.
+        private void WarnIfMissingSprite(Sprite sprite, string resourcePath)
+        {
+            if (sprite == null)
+            {
+                Debug.LogWarning($"Missing bomb sprite at Resources path '{resourcePath}'.", this);
+            }
         }
 
         private bool ValidateConfiguration()

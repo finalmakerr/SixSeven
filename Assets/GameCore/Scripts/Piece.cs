@@ -12,8 +12,11 @@ namespace GameCore
         public int Y { get; private set; }
         public int ColorIndex { get; private set; }
         public SpecialType SpecialType { get; private set; }
+        public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
 
         private SpriteRenderer spriteRenderer;
+        private Sprite baseSprite;
+        private Sprite bombSprite;
 
         private void Awake()
         {
@@ -34,17 +37,28 @@ namespace GameCore
         public void SetColor(int colorIndex, Sprite sprite)
         {
             ColorIndex = colorIndex;
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.sprite = sprite;
-                ApplySpecialVisual();
-            }
+            baseSprite = sprite;
+            ApplySpecialVisual();
         }
 
         // CODEX BOSS PR2
         public void SetSpecialType(SpecialType type)
         {
             SpecialType = type;
+            if (type != SpecialType.Bomb)
+            {
+                BombTier = 0;
+                bombSprite = null;
+            }
+            ApplySpecialVisual();
+        }
+
+        // CODEX BOMB TIERS: assign bomb tier + sprite when creating a bomb special.
+        public void SetBombTier(int tier, Sprite sprite)
+        {
+            SpecialType = SpecialType.Bomb;
+            BombTier = tier;
+            bombSprite = sprite;
             ApplySpecialVisual();
         }
 
@@ -55,9 +69,16 @@ namespace GameCore
                 return;
             }
 
-            spriteRenderer.color = SpecialType == SpecialType.Bomb
-                ? new Color(0.25f, 0.25f, 0.25f)
-                : Color.white;
+            if (SpecialType == SpecialType.Bomb && bombSprite != null)
+            {
+                spriteRenderer.sprite = bombSprite;
+            }
+            else if (baseSprite != null)
+            {
+                spriteRenderer.sprite = baseSprite;
+            }
+
+            spriteRenderer.color = Color.white;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)
