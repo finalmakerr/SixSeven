@@ -17,6 +17,9 @@ namespace GameCore
         private SpriteRenderer spriteRenderer;
         private Sprite baseSprite;
         private Sprite bombSprite;
+        // CODEX CHEST PR1
+        private SpriteRenderer treasureOverlayRenderer;
+        private TextMesh treasureDebugText;
 
         private void Awake()
         {
@@ -50,6 +53,10 @@ namespace GameCore
                 BombTier = 0;
                 bombSprite = null;
             }
+            if (type != SpecialType.TreasureChest)
+            {
+                ClearTreasureChestVisual();
+            }
             ApplySpecialVisual();
         }
 
@@ -79,6 +86,85 @@ namespace GameCore
             }
 
             spriteRenderer.color = Color.white;
+        }
+
+        // CODEX CHEST PR1
+        public void SetTreasureChestVisual(Sprite overlaySprite, bool debugMarker)
+        {
+            if (overlaySprite != null)
+            {
+                var overlay = EnsureTreasureOverlayRenderer();
+                overlay.sprite = overlaySprite;
+                overlay.enabled = true;
+                if (treasureDebugText != null)
+                {
+                    treasureDebugText.gameObject.SetActive(false);
+                }
+                return;
+            }
+
+            if (debugMarker)
+            {
+                var text = EnsureTreasureDebugText();
+                text.text = "CHEST";
+                text.gameObject.SetActive(true);
+                if (treasureOverlayRenderer != null)
+                {
+                    treasureOverlayRenderer.enabled = false;
+                }
+                return;
+            }
+
+            ClearTreasureChestVisual();
+        }
+
+        // CODEX CHEST PR1
+        private void ClearTreasureChestVisual()
+        {
+            if (treasureOverlayRenderer != null)
+            {
+                treasureOverlayRenderer.enabled = false;
+            }
+
+            if (treasureDebugText != null)
+            {
+                treasureDebugText.gameObject.SetActive(false);
+            }
+        }
+
+        // CODEX CHEST PR1
+        private SpriteRenderer EnsureTreasureOverlayRenderer()
+        {
+            if (treasureOverlayRenderer != null)
+            {
+                return treasureOverlayRenderer;
+            }
+
+            var overlayObject = new GameObject("TreasureOverlay");
+            overlayObject.transform.SetParent(transform, false);
+            treasureOverlayRenderer = overlayObject.AddComponent<SpriteRenderer>();
+            treasureOverlayRenderer.sortingLayerID = spriteRenderer.sortingLayerID;
+            treasureOverlayRenderer.sortingOrder = spriteRenderer.sortingOrder + 1;
+            return treasureOverlayRenderer;
+        }
+
+        // CODEX CHEST PR1
+        private TextMesh EnsureTreasureDebugText()
+        {
+            if (treasureDebugText != null)
+            {
+                return treasureDebugText;
+            }
+
+            var textObject = new GameObject("TreasureDebugText");
+            textObject.transform.SetParent(transform, false);
+            treasureDebugText = textObject.AddComponent<TextMesh>();
+            treasureDebugText.anchor = TextAnchor.MiddleCenter;
+            treasureDebugText.alignment = TextAlignment.Center;
+            treasureDebugText.characterSize = 0.15f;
+            treasureDebugText.fontSize = 50;
+            treasureDebugText.color = Color.yellow;
+            return treasureDebugText;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)
