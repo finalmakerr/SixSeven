@@ -48,6 +48,7 @@ namespace GameCore
         // CODEX BOSS PR2
         private readonly HashSet<Vector2Int> bombCreationPositions = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> bombDetonationsThisStep = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> specialRecipeBombPositions = new HashSet<Vector2Int>(); // CODEX BOMB PR3: prevent double recipe bombs per swap.
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
 
@@ -308,7 +309,7 @@ namespace GameCore
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
             SwapPiecesInGrid(first, second);
-            return hasMatch;
+            return hasMatch || IsSpecialRecipePair(first.SpecialType, second.SpecialType);
         }
 
         private IEnumerator SwapRoutine(Piece first, Piece second)
@@ -319,8 +320,10 @@ namespace GameCore
             yield return new WaitForSeconds(0.05f);
 
             activeMoveId = moveId + 1; // CODEX VERIFY 2: stage upcoming move id for match diagnostics.
+            specialRecipeBombPositions.Clear(); // CODEX BOMB PR3: reset per swap to avoid double-trigger.
+            var specialRecipeApplied = TryApplySpecialRecipe(first, second);
             var matches = FindMatches();
-            if (matches.Count == 0)
+            if (matches.Count == 0 && !specialRecipeApplied)
             {
                 SwapPieces(first, second);
                 activeMoveId = moveId; // CODEX VERIFY 2: restore current move id on invalid swaps.
@@ -525,6 +528,84 @@ namespace GameCore
                 {
                     matchBuffer.Add(piece);
                 }
+            }
+        }
+
+        // CODEX BOMB PR3: SpecialRecipe system for mixing special tiles.
+        // Recipes (deterministic):
+        // - RowClear + ColumnClear => Bomb
+        // - ColorBomb + any special => Bomb
+        private bool TryApplySpecialRecipe(Piece first, Piece second)
+        {
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (first.SpecialType == SpecialType.None || second.SpecialType == SpecialType.None)
+            {
+                return false;
+            }
+
+            if (!IsSpecialRecipePair(first.SpecialType, second.SpecialType))
+            {
+                return false;
+            }
+
+            var bombPosition = new Vector2Int(first.X, first.Y);
+            if (!specialRecipeBombPositions.Add(bombPosition))
+            {
+                return true;
+            }
+
+            CreateBombFromRecipe(first, second, bombPosition);
+            return true;
+        }
+
+        // CODEX BOMB PR3
+        private bool IsSpecialRecipePair(SpecialType first, SpecialType second)
+        {
+            if (first == SpecialType.None || second == SpecialType.None)
+            {
+                return false;
+            }
+
+            if ((first == SpecialType.RowClear && second == SpecialType.ColumnClear)
+                || (first == SpecialType.ColumnClear && second == SpecialType.RowClear))
+            {
+                return true;
+            }
+
+            if (first == SpecialType.ColorBomb || second == SpecialType.ColorBomb)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        // CODEX BOMB PR3
+        private void CreateBombFromRecipe(Piece first, Piece second, Vector2Int bombPosition)
+        {
+            if (first != null)
+            {
+                first.SetSpecialType(SpecialType.None);
+            }
+
+            if (second != null)
+            {
+                second.SetSpecialType(SpecialType.None);
+            }
+
+            if (!IsInBounds(bombPosition.x, bombPosition.y))
+            {
+                return;
+            }
+
+            var bombPiece = pieces[bombPosition.x, bombPosition.y];
+            if (bombPiece != null)
+            {
+                bombPiece.SetSpecialType(SpecialType.Bomb);
             }
         }
 
