@@ -282,6 +282,8 @@ namespace GameCore
             if (bossManager != null)
             {
                 bossManager.ResetRunPool();
+                // CODEX BOSS PR7
+                ApplyBossPowerRunPoolExclusions();
             }
             // CODEX: LEVEL_LOOP
             MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
@@ -304,9 +306,10 @@ namespace GameCore
             MovesLimit = level.movesLimit > 0 ? level.movesLimit : startingMoves;
             TargetScore = level.targetScore > 0 ? level.targetScore : fallbackTargetScore;
             var gridSize = level.gridSize == Vector2Int.zero ? fallbackGridSize : level.gridSize;
-            // CODEX BOSS PR1
-            var isBossLevel = levelIndex == 5;
-            var isOptionalBossLevel = levelIndex == 6;
+            // CODEX BOSS PR7
+            var levelIndexMod = Mathf.Abs(levelIndex) % 10;
+            var isBossLevel = levelIndexMod == 6;
+            var isOptionalBossLevel = levelIndexMod == 7;
             IsOptionalBossLevel = isOptionalBossLevel;
             IsBossLevel = isBossLevel;
             level.isBossLevel = IsBossLevel;
@@ -358,6 +361,21 @@ namespace GameCore
 
             var seed = board != null ? board.RandomSeed : 0;
             bossManager.SelectBossForRun(seed, debugMode);
+        }
+
+        // CODEX BOSS PR7
+        private void ApplyBossPowerRunPoolExclusions()
+        {
+            if (bossManager == null || bossPowerInventory == null || bossPowerInventory.Count == 0)
+            {
+                return;
+            }
+
+            var powers = bossPowerInventory.Powers;
+            for (var i = 0; i < powers.Count; i++)
+            {
+                bossManager.RemoveBossFromRunPool(powers[i]);
+            }
         }
 
         // STAGE 3: Apply cascade multiplier to match scoring.
@@ -687,7 +705,7 @@ namespace GameCore
 
             if (bossChallengeWarningText != null)
             {
-                bossChallengeWarningText.text = "If you wipe, you must discard 1 boss power (confirmed).";
+                bossChallengeWarningText.text = "If you wipe, you must discard ONE boss power (confirm required)";
             }
 
             SetBoardInputLock(true);
