@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -48,6 +49,12 @@ namespace GameCore
         [SerializeField] private GameObject bossPowerDiscardPanel;
         // CODEX BOSS PR5
         [SerializeField] private Button[] bossPowerDiscardButtons;
+        // CODEX POWER PR5
+        [SerializeField] private GameObject bossPowerRewardPanel;
+        // CODEX POWER PR5
+        [SerializeField] private Text bossPowerRewardPromptText;
+        // CODEX POWER PR5
+        [SerializeField] private Button[] bossPowerRewardButtons;
         // STAGE 3: Assign a Text element for combo callouts (e.g., "COMBO x2") in the Inspector.
         [SerializeField] private Text comboText;
         // STAGE 5: Optional camera transform for screen shake.
@@ -90,10 +97,20 @@ namespace GameCore
         private int displayedScore;
         // CODEX BOSS PR5
         private bool awaitingBossPowerDiscard;
+        // CODEX POWER PR5
+        private bool awaitingBossPowerRewardChoice;
+        // CODEX POWER PR5
+        private bool pendingBossPowerRewardAfterDiscard;
+        // CODEX POWER PR5
+        private readonly List<BossPower> bossPowerRewardOptions = new List<BossPower>();
         // CODEX BOSS PR2
         private bool awaitingBossChallengeChoice;
         // CODEX BOSS PR4
         [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
+        // CODEX POWER PR5
+        [SerializeField] private bool persistBossPowersToPlayerPrefs;
+        // CODEX POWER PR5
+        [SerializeField] private string bossPowerPrefsKey = "BossPowers";
 
         private void Awake()
         {
@@ -117,6 +134,12 @@ namespace GameCore
             if (bossPowerInventory == null)
             {
                 bossPowerInventory = new BossPowerInventory(3);
+            }
+
+            // CODEX POWER PR5
+            if (persistBossPowersToPlayerPrefs)
+            {
+                LoadBossPowerInventory();
             }
 
             if (screenShakeTarget == null && Camera.main != null)
@@ -691,15 +714,11 @@ namespace GameCore
                 bossPowerInventory = new BossPowerInventory(3);
             }
 
-            var powerValues = (BossPower[])Enum.GetValues(typeof(BossPower));
-            if (powerValues.Length == 0)
+            // CODEX POWER PR5
+            if (!TryBeginBossPowerRewardChoice())
             {
                 return;
             }
-
-            var randomPower = powerValues[UnityEngine.Random.Range(0, powerValues.Length)];
-            bossPowerInventory.TryAddPower(randomPower);
-            UpdateBossPowerUI();
         }
 
         // CODEX BOSS PR4
@@ -795,6 +814,18 @@ namespace GameCore
                 bossPowerDiscardPanel.SetActive(false);
             }
 
+            // CODEX POWER PR5
+            if (pendingBossPowerRewardAfterDiscard)
+            {
+                pendingBossPowerRewardAfterDiscard = false;
+                ShowBossPowerRewardPanel();
+            }
+            else
+            {
+                SetBoardInputLock(false);
+            }
+
+            SaveBossPowerInventory();
             UpdateBossPowerUI();
             Debug.Log($"Discarded boss power: {power}", this);
         }
@@ -811,7 +842,206 @@ namespace GameCore
             var power = bossPowerInventory.Powers[index];
             bossPowerInventory.TryRemovePower(power);
             UpdateBossPowerUI();
+            SaveBossPowerInventory();
             Debug.Log($"Discarded boss power on loss: {power}", this);
+        }
+
+        // CODEX POWER PR5
+        private bool TryBeginBossPowerRewardChoice()
+        {
+            if (bossPowerRewardPanel == null || bossPowerRewardButtons == null || bossPowerRewardButtons.Length == 0)
+            {
+                Debug.LogWarning("Boss power reward UI is not configured; skipping reward choices.", this);
+                return false;
+            }
+
+            bossPowerRewardOptions.Clear();
+            bossPowerRewardOptions.AddRange(BuildBossPowerRewardOptions());
+            if (bossPowerRewardOptions.Count == 0)
+            {
+                return false;
+            }
+
+            if (bossPowerInventory.Count >= bossPowerInventory.MaxSlots)
+            {
+                pendingBossPowerRewardAfterDiscard = true;
+                if (TryShowBossPowerDiscardPanel())
+                {
+                    awaitingBossPowerDiscard = true;
+                    SetBoardInputLock(true);
+                }
+                else
+                {
+                    pendingBossPowerRewardAfterDiscard = false;
+                    Debug.LogWarning("Boss power inventory is full and discard UI is not configured.", this);
+                }
+
+                return true;
+            }
+
+            ShowBossPowerRewardPanel();
+            return true;
+        }
+
+        // CODEX POWER PR5
+        private List<BossPower> BuildBossPowerRewardOptions()
+        {
+            var availablePowers = new List<BossPower>();
+            var powerValues = (BossPower[])Enum.GetValues(typeof(BossPower));
+            for (var i = 0; i < powerValues.Length; i++)
+            {
+                if (bossPowerInventory != null && bossPowerInventory.HasPower(powerValues[i]))
+                {
+                    continue;
+                }
+
+                availablePowers.Add(powerValues[i]);
+            }
+
+            if (availablePowers.Count == 0)
+            {
+                return availablePowers;
+            }
+
+            var desiredCount = Mathf.Clamp(UnityEngine.Random.Range(2, 4), 2, 3);
+            var optionCount = Mathf.Min(desiredCount, availablePowers.Count);
+
+            for (var i = 0; i < availablePowers.Count; i++)
+            {
+                var swapIndex = UnityEngine.Random.Range(i, availablePowers.Count);
+                var temp = availablePowers[i];
+                availablePowers[i] = availablePowers[swapIndex];
+                availablePowers[swapIndex] = temp;
+            }
+
+            return availablePowers.GetRange(0, optionCount);
+        }
+
+        // CODEX POWER PR5
+        private void ShowBossPowerRewardPanel()
+        {
+            if (bossPowerRewardPanel == null || bossPowerRewardButtons == null)
+            {
+                return;
+            }
+
+            awaitingBossPowerRewardChoice = true;
+            bossPowerRewardPanel.SetActive(true);
+
+            if (bossPowerRewardPromptText != null)
+            {
+                var isFull = bossPowerInventory != null && bossPowerInventory.Count >= bossPowerInventory.MaxSlots;
+                bossPowerRewardPromptText.text = isFull
+                    ? "Inventory full! Discard a power first."
+                    : "Choose a boss power.";
+            }
+
+            for (var i = 0; i < bossPowerRewardButtons.Length; i++)
+            {
+                var button = bossPowerRewardButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                if (i < bossPowerRewardOptions.Count)
+                {
+                    var power = bossPowerRewardOptions[i];
+                    button.gameObject.SetActive(true);
+                    button.onClick.RemoveAllListeners();
+                    var label = button.GetComponentInChildren<Text>();
+                    if (label != null)
+                    {
+                        label.text = power.ToString();
+                    }
+
+                    button.onClick.AddListener(() => ResolveBossPowerRewardChoice(power));
+                }
+                else
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.gameObject.SetActive(false);
+                }
+            }
+
+            SetBoardInputLock(true);
+        }
+
+        // CODEX POWER PR5
+        private void ResolveBossPowerRewardChoice(BossPower power)
+        {
+            if (!awaitingBossPowerRewardChoice)
+            {
+                return;
+            }
+
+            awaitingBossPowerRewardChoice = false;
+            if (bossPowerRewardPanel != null)
+            {
+                bossPowerRewardPanel.SetActive(false);
+            }
+
+            var added = bossPowerInventory != null && bossPowerInventory.TryAddPower(power);
+            if (!added)
+            {
+                Debug.LogWarning($"Failed to add boss power {power}; inventory may be full.", this);
+            }
+
+            SetBoardInputLock(false);
+            SaveBossPowerInventory();
+            UpdateBossPowerUI();
+            Debug.Log($"Selected boss power: {power}", this);
+        }
+
+        // CODEX POWER PR5
+        private void SaveBossPowerInventory()
+        {
+            if (!persistBossPowersToPlayerPrefs || bossPowerInventory == null)
+            {
+                return;
+            }
+
+            var powerNames = bossPowerInventory.Powers;
+            var serialized = string.Empty;
+            for (var i = 0; i < powerNames.Count; i++)
+            {
+                serialized += powerNames[i];
+                if (i < powerNames.Count - 1)
+                {
+                    serialized += ",";
+                }
+            }
+
+            PlayerPrefs.SetString(bossPowerPrefsKey, serialized);
+            PlayerPrefs.Save();
+        }
+
+        // CODEX POWER PR5
+        private void LoadBossPowerInventory()
+        {
+            if (!PlayerPrefs.HasKey(bossPowerPrefsKey) || bossPowerInventory == null)
+            {
+                return;
+            }
+
+            var saved = PlayerPrefs.GetString(bossPowerPrefsKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(saved))
+            {
+                bossPowerInventory.Clear();
+                return;
+            }
+
+            var parts = saved.Split(',');
+            var parsed = new List<BossPower>();
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (Enum.TryParse(parts[i], out BossPower power))
+                {
+                    parsed.Add(power);
+                }
+            }
+
+            bossPowerInventory.ReplacePowers(parsed);
         }
     }
 }

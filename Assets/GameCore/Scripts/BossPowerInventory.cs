@@ -47,6 +47,32 @@ namespace GameCore
             return powers.Contains(power);
         }
 
+        // CODEX POWER PR5
+        public void Clear()
+        {
+            powers.Clear();
+        }
+
+        // CODEX POWER PR5
+        public void ReplacePowers(IEnumerable<BossPower> newPowers)
+        {
+            powers.Clear();
+            if (newPowers == null)
+            {
+                return;
+            }
+
+            foreach (var power in newPowers)
+            {
+                if (powers.Count >= maxSlots)
+                {
+                    return;
+                }
+
+                powers.Add(power);
+            }
+        }
+
         public string BuildDisplayString()
         {
             if (powers.Count == 0)
