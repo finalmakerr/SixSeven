@@ -208,7 +208,8 @@ namespace GameCore
         public void LoadLevel(int levelIndex)
         {
             CurrentLevelIndex = levelIndex;
-            var level = levelDatabase != null ? levelDatabase.GetLevel(levelIndex) : LevelDefinition.Default;
+            // CODEX DIFFICULTY PR7
+            var level = DifficultyScaling.GenerateLevelDefinition(levelIndex, fallbackGridSize);
 
             // CODEX: LEVEL_LOOP
             MovesLimit = level.movesLimit > 0 ? level.movesLimit : startingMoves;
@@ -231,6 +232,8 @@ namespace GameCore
 
             if (board != null)
             {
+                // CODEX DIFFICULTY PR7
+                board.ConfigureColorCount(level.colorCount);
                 board.InitializeBoard(gridSize.x, gridSize.y);
             }
 

@@ -94,6 +94,18 @@ namespace GameCore
             ResetBoardState();
         }
 
+        // CODEX DIFFICULTY PR7
+        public void ConfigureColorCount(int newColorCount)
+        {
+            if (newColorCount <= 0)
+            {
+                return;
+            }
+
+            colorCount = newColorCount;
+            sprites = GenerateSprites();
+        }
+
         private void ResetBoardState()
         {
             StopAllCoroutines();
