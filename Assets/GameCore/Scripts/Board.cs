@@ -12,6 +12,8 @@ namespace GameCore
         public event Action ValidSwap;
         // CODEX BOSS PR2
         public event Action<Vector2Int> OnBombDetonated;
+        // CODEX CHEST PR2
+        public event Action<Piece, DestructionReason> OnPieceDestroyed;
 
         [Header("Board Settings")]
         [SerializeField] private int width = 7;
@@ -843,6 +845,7 @@ namespace GameCore
         private int ClearMatches(List<Piece> matches)
         {
             var clearedPositions = new HashSet<Vector2Int>();
+            var clearedReasons = new Dictionary<Vector2Int, DestructionReason>();
             bombDetonationsThisStep.Clear();
 
             foreach (var piece in matches)
@@ -864,13 +867,14 @@ namespace GameCore
                 var position = new Vector2Int(piece.X, piece.Y);
                 if (piece.SpecialType == SpecialType.Bomb)
                 {
-                    DetonateBomb(position, clearedPositions);
+                    DetonateBomb(position, clearedPositions, clearedReasons);
                     continue;
                 }
 
                 if (IsInBounds(piece.X, piece.Y))
                 {
                     clearedPositions.Add(position);
+                    SetClearReason(clearedReasons, position, DestructionReason.NormalMatch);
                 }
             }
 
@@ -888,6 +892,8 @@ namespace GameCore
                     continue;
                 }
 
+                var reason = GetClearReason(clearedReasons, position);
+                OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
                 HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
@@ -922,7 +928,10 @@ namespace GameCore
         }
 
         // CODEX BOSS PR2
-        private void DetonateBomb(Vector2Int position, HashSet<Vector2Int> clearedPositions)
+        private void DetonateBomb(
+            Vector2Int position,
+            HashSet<Vector2Int> clearedPositions,
+            Dictionary<Vector2Int, DestructionReason> clearedReasons)
         {
             if (!bombDetonationsThisStep.Add(position))
             {
@@ -952,6 +961,7 @@ namespace GameCore
 
             OnBombDetonated?.Invoke(position);
             clearedPositions.Add(position);
+            SetClearReason(clearedReasons, position, DestructionReason.BombExplosion);
 
             var resolvedTier = bombTier == 0 ? 4 : bombTier;
             if (resolvedTier == 6 || resolvedTier == 7 || resolvedTier == 99)
@@ -960,7 +970,7 @@ namespace GameCore
                 {
                     for (var y = 0; y < height; y++)
                     {
-                        AddBombClearTarget(new Vector2Int(x, y), clearedPositions);
+                        AddBombClearTarget(new Vector2Int(x, y), clearedPositions, clearedReasons);
                     }
                 }
 
@@ -986,12 +996,15 @@ namespace GameCore
 
             foreach (var direction in directions)
             {
-                AddBombClearTarget(position + direction, clearedPositions);
+                AddBombClearTarget(position + direction, clearedPositions, clearedReasons);
             }
         }
 
         // CODEX BOMB TIERS: add a target tile to clear list and trigger chained bombs once.
-        private void AddBombClearTarget(Vector2Int targetPosition, HashSet<Vector2Int> clearedPositions)
+        private void AddBombClearTarget(
+            Vector2Int targetPosition,
+            HashSet<Vector2Int> clearedPositions,
+            Dictionary<Vector2Int, DestructionReason> clearedReasons)
         {
             if (!IsInBounds(targetPosition.x, targetPosition.y))
             {
@@ -1005,10 +1018,39 @@ namespace GameCore
             }
 
             clearedPositions.Add(targetPosition);
+            SetClearReason(clearedReasons, targetPosition, DestructionReason.BombExplosion);
             if (piece.SpecialType == SpecialType.Bomb)
             {
-                DetonateBomb(targetPosition, clearedPositions);
+                DetonateBomb(targetPosition, clearedPositions, clearedReasons);
             }
+        }
+
+        // CODEX CHEST PR2
+        private void SetClearReason(
+            Dictionary<Vector2Int, DestructionReason> clearedReasons,
+            Vector2Int position,
+            DestructionReason reason)
+        {
+            if (reason == DestructionReason.BombExplosion)
+            {
+                clearedReasons[position] = reason;
+                return;
+            }
+
+            if (!clearedReasons.ContainsKey(position))
+            {
+                clearedReasons[position] = reason;
+            }
+        }
+
+        // CODEX CHEST PR2
+        private DestructionReason GetClearReason(
+            Dictionary<Vector2Int, DestructionReason> clearedReasons,
+            Vector2Int position)
+        {
+            return clearedReasons.TryGetValue(position, out var reason)
+                ? reason
+                : DestructionReason.NormalMatch;
         }
 
         // CODEX BOSS PR2
