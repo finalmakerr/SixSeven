@@ -5,23 +5,32 @@ namespace GameCore
     public class MonsterAttackTelegraph : MonoBehaviour
     {
         [SerializeField] private Color iconColor = new Color(1f, 0.2f, 0.2f, 0.9f);
-        [SerializeField] private Color countdownColor = new Color(1f, 0.9f, 0.3f, 1f);
-        [SerializeField] private float pulseSpeed = 5f;
+        [SerializeField] private Color twoTurnsColor = new Color(1f, 0.6f, 0.2f, 0.9f);
+        [SerializeField] private Color oneTurnColor = new Color(1f, 0.2f, 0.2f, 0.95f);
+        [SerializeField] private float slowPulseSpeed = 2.2f;
+        [SerializeField] private float fastPulseSpeed = 5.5f;
         [SerializeField] private float pulseScale = 0.08f;
         [SerializeField] private float urgentPulseScale = 0.14f;
         [SerializeField] private Vector3 countdownOffset = new Vector3(0f, -0.15f, 0f);
+        [SerializeField] private float outlineRadius = 0.42f;
+        [SerializeField] private int outlineSegments = 32;
+        [SerializeField] private float thinOutlineWidth = 0.035f;
+        [SerializeField] private float thickOutlineWidth = 0.075f;
 
         private TextMesh iconText;
         private TextMesh countdownText;
+        private LineRenderer outlineRenderer;
         private int turnsRemaining;
         private Vector3 baseScale;
+        private float currentPulseSpeed;
 
         private void Awake()
         {
             baseScale = transform.localScale == Vector3.zero ? Vector3.one : transform.localScale;
             EnsureTextMeshes();
             ApplyColors();
-            UpdateCountdownText();
+            EnsureOutlineRenderer();
+            UpdateTelegraphState();
         }
 
         private void Update()
@@ -32,7 +41,7 @@ namespace GameCore
             }
 
             var pulseAmount = turnsRemaining <= 1 ? urgentPulseScale : pulseScale;
-            var pulse = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseAmount;
+            var pulse = 1f + Mathf.Sin(Time.time * currentPulseSpeed) * pulseAmount;
             transform.localScale = baseScale * pulse;
         }
 
@@ -40,7 +49,8 @@ namespace GameCore
         {
             turnsRemaining = Mathf.Max(0, turns);
             EnsureTextMeshes();
-            UpdateCountdownText();
+            EnsureOutlineRenderer();
+            UpdateTelegraphState();
         }
 
         public void SetWorldPosition(Vector3 position)
@@ -81,6 +91,11 @@ namespace GameCore
             }
 
             countdownText.transform.localPosition = countdownOffset;
+            countdownText.text = string.Empty;
+            if (countdownText.gameObject.activeSelf)
+            {
+                countdownText.gameObject.SetActive(false);
+            }
         }
 
         private TextMesh CreateTextMesh(string name, Vector3 localPosition, int fontSize, string text)
@@ -108,21 +123,75 @@ namespace GameCore
             {
                 iconText.color = iconColor;
             }
-
-            if (countdownText != null)
-            {
-                countdownText.color = countdownColor;
-            }
         }
 
-        private void UpdateCountdownText()
+        private void EnsureOutlineRenderer()
         {
-            if (countdownText == null)
+            if (outlineRenderer != null)
             {
                 return;
             }
 
-            countdownText.text = turnsRemaining > 0 ? turnsRemaining.ToString() : string.Empty;
+            var outlineObject = new GameObject("AttackOutline");
+            outlineObject.transform.SetParent(transform, false);
+            outlineObject.transform.localPosition = Vector3.zero;
+            outlineRenderer = outlineObject.AddComponent<LineRenderer>();
+            outlineRenderer.loop = true;
+            outlineRenderer.useWorldSpace = false;
+            outlineRenderer.positionCount = outlineSegments + 1;
+            outlineRenderer.material = new Material(Shader.Find("Sprites/Default"));
+            outlineRenderer.sortingOrder = 10;
+            UpdateOutlinePositions();
+        }
+
+        private void UpdateOutlinePositions()
+        {
+            if (outlineRenderer == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i <= outlineSegments; i++)
+            {
+                var angle = Mathf.PI * 2f * i / outlineSegments;
+                var position = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * outlineRadius;
+                outlineRenderer.SetPosition(i, position);
+            }
+        }
+
+        private void UpdateTelegraphState()
+        {
+            if (turnsRemaining <= 0)
+            {
+                if (outlineRenderer != null)
+                {
+                    outlineRenderer.enabled = false;
+                }
+                return;
+            }
+
+            if (outlineRenderer != null)
+            {
+                outlineRenderer.enabled = true;
+            }
+
+            var isUrgent = turnsRemaining <= 1;
+            currentPulseSpeed = isUrgent ? fastPulseSpeed : slowPulseSpeed;
+            var tint = isUrgent ? oneTurnColor : twoTurnsColor;
+            var width = isUrgent ? thickOutlineWidth : thinOutlineWidth;
+
+            if (iconText != null)
+            {
+                iconText.color = tint;
+            }
+
+            if (outlineRenderer != null)
+            {
+                outlineRenderer.startColor = tint;
+                outlineRenderer.endColor = tint;
+                outlineRenderer.startWidth = width;
+                outlineRenderer.endWidth = width;
+            }
         }
     }
 }
