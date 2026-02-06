@@ -528,12 +528,17 @@ namespace GameCore
                 return false;
             }
 
+            if (energy < 0)
+            {
+                energy = 0;
+            }
+
             if (energy < amount)
             {
                 return false;
             }
 
-            energy -= amount;
+            energy = Mathf.Max(0, energy - amount);
             if (energy > 0)
             {
                 hasGainedEnergy = true;
@@ -658,6 +663,10 @@ namespace GameCore
         private int AddEnergyFromMatches(IReadOnlyList<int> matchRunLengths, out bool reachedMaxEnergy)
         {
             reachedMaxEnergy = false;
+            if (energy < 0)
+            {
+                energy = 0;
+            }
             if (matchRunLengths == null || matchRunLengths.Count == 0 || energy >= maxEnergy)
             {
                 return 0;
@@ -743,8 +752,15 @@ namespace GameCore
 
             if (isMeditating && meditationTurnsRemaining > 0)
             {
-                meditationTurnsRemaining -= 1;
-                board.TryMovePlayerUp();
+                if (board != null && board.CanMovePlayerUp())
+                {
+                    meditationTurnsRemaining -= 1;
+                    board.TryMovePlayerUp();
+                }
+                else
+                {
+                    CancelMeditation();
+                }
 
                 if (meditationTurnsRemaining <= 0)
                 {
@@ -811,6 +827,11 @@ namespace GameCore
             if (amount <= 0)
             {
                 return;
+            }
+
+            if (energy < 0)
+            {
+                energy = 0;
             }
 
             energy = Mathf.Max(0, energy - amount);

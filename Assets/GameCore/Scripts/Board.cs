@@ -463,6 +463,34 @@ namespace GameCore
             return true;
         }
 
+        public bool CanMovePlayerUp()
+        {
+            if (pieces == null)
+            {
+                return false;
+            }
+
+            if (!TryGetPlayerPosition(out var playerPosition))
+            {
+                return false;
+            }
+
+            var targetY = playerPosition.y + 1;
+            if (!IsInBounds(playerPosition.x, targetY))
+            {
+                return false;
+            }
+
+            var playerPiece = pieces[playerPosition.x, playerPosition.y];
+            var targetPiece = pieces[playerPosition.x, targetY];
+            if (playerPiece == null || targetPiece == null)
+            {
+                return false;
+            }
+
+            return IsSwappable(targetPiece);
+        }
+
         public bool IsSwapValid(Piece first, Piece second)
         {
             if (first == null || second == null || pieces == null)
@@ -609,6 +637,15 @@ namespace GameCore
                 return;
             }
 
+            if (!IsInBounds(first.X, first.Y) || !IsInBounds(second.X, second.Y))
+            {
+                if (debugMode)
+                {
+                    Debug.LogWarning("Swap aborted due to out-of-bounds piece coordinates.", this);
+                }
+                return;
+            }
+
             pieces[first.X, first.Y] = second;
             pieces[second.X, second.Y] = first;
 
@@ -623,6 +660,15 @@ namespace GameCore
         {
             if (first == null || second == null)
             {
+                return;
+            }
+
+            if (!IsInBounds(first.X, first.Y) || !IsInBounds(second.X, second.Y))
+            {
+                if (debugMode)
+                {
+                    Debug.LogWarning("Swap grid aborted due to out-of-bounds piece coordinates.", this);
+                }
                 return;
             }
 
@@ -1365,10 +1411,15 @@ namespace GameCore
                 return;
             }
 
-            var validMovesAfterShuffle = ShuffleBoard();
+            var resolved = ShuffleBoard();
+            if (!resolved)
+            {
+                resolved = RegenerateBoardForSolvableState();
+            }
+
             if (debugMode)
             {
-                Debug.Log($"ShuffleTriggered({activeMoveId}): validMoves={validMovesAfterShuffle}", this); // CODEX VERIFY 2: shuffle instrumentation with move id.
+                Debug.Log($"ShuffleTriggered({activeMoveId}): validMoves={resolved}", this); // CODEX VERIFY 2: shuffle instrumentation with move id.
             }
         }
 
@@ -1424,6 +1475,101 @@ namespace GameCore
             }
 
             return FindMatches().Count == 0 && HasAnyValidMoves();
+        }
+
+        private bool RegenerateBoardForSolvableState()
+        {
+            var piecesList = new List<Piece>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (!IsMatchable(piece))
+                    {
+                        continue;
+                    }
+
+                    piecesList.Add(piece);
+                }
+            }
+
+            if (piecesList.Count == 0)
+            {
+                return false;
+            }
+
+            var attempts = Mathf.Max(1, maxShuffleAttempts * 2);
+            for (var attempt = 0; attempt < attempts; attempt++)
+            {
+                ResetRandomGenerator();
+                colorBag.Clear();
+                for (var i = 0; i < piecesList.Count; i++)
+                {
+                    var piece = piecesList[i];
+                    var colorIndex = GetRandomColorIndexAvoidingMatch(piece.X, piece.Y);
+                    piece.SetColor(colorIndex, sprites[colorIndex]);
+                }
+
+                if (FindMatches().Count == 0 && HasAnyValidMoves())
+                {
+                    return true;
+                }
+            }
+
+            return ForceCreateValidMove();
+        }
+
+        private bool ForceCreateValidMove()
+        {
+            for (var x = 0; x < width - 2; x++)
+            {
+                for (var y = 0; y < height - 1; y++)
+                {
+                    var left = pieces[x, y];
+                    var middle = pieces[x + 1, y];
+                    var right = pieces[x + 2, y];
+                    var aboveMiddle = pieces[x + 1, y + 1];
+
+                    if (!IsRegularMatchable(left) || !IsRegularMatchable(middle) || !IsRegularMatchable(right) || !IsRegularMatchable(aboveMiddle))
+                    {
+                        continue;
+                    }
+
+                    var originalLeft = left.ColorIndex;
+                    var originalMiddle = middle.ColorIndex;
+                    var originalRight = right.ColorIndex;
+                    var originalAbove = aboveMiddle.ColorIndex;
+
+                    for (var colorA = 0; colorA < colorCount; colorA++)
+                    {
+                        for (var colorB = 0; colorB < colorCount; colorB++)
+                        {
+                            if (colorA == colorB)
+                            {
+                                continue;
+                            }
+
+                            left.SetColor(colorA, sprites[colorA]);
+                            middle.SetColor(colorB, sprites[colorB]);
+                            right.SetColor(colorA, sprites[colorA]);
+                            aboveMiddle.SetColor(colorA, sprites[colorA]);
+
+                            if (FindMatches().Count == 0 && HasAnyValidMoves())
+                            {
+                                return true;
+                            }
+                        }
+                    }
+
+                    left.SetColor(originalLeft, sprites[originalLeft]);
+                    middle.SetColor(originalMiddle, sprites[originalMiddle]);
+                    right.SetColor(originalRight, sprites[originalRight]);
+                    aboveMiddle.SetColor(originalAbove, sprites[originalAbove]);
+                }
+            }
+
+            return false;
         }
 
         private void ShuffleColors(List<int> colors)
@@ -1581,6 +1727,11 @@ namespace GameCore
         private static bool IsSwappable(Piece piece)
         {
             return piece != null && !piece.IsPlayer;
+        }
+
+        private static bool IsRegularMatchable(Piece piece)
+        {
+            return piece != null && !piece.IsPlayer && piece.SpecialType == SpecialType.None;
         }
 
         private Sprite[] GenerateSprites()
