@@ -357,6 +357,40 @@ namespace GameCore
             return IsSwappable(target);
         }
 
+        public bool CanJetpackDouble(Piece playerPiece, Vector2Int direction)
+        {
+            if (isBusy || playerPiece == null || pieces == null)
+            {
+                return false;
+            }
+
+            if (!playerPiece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (direction != Vector2Int.up)
+            {
+                return false;
+            }
+
+            var middleY = playerPiece.Y + 1;
+            var targetY = playerPiece.Y + 2;
+            if (!IsInBounds(playerPiece.X, middleY) || !IsInBounds(playerPiece.X, targetY))
+            {
+                return false;
+            }
+
+            var middle = pieces[playerPiece.X, middleY];
+            var target = pieces[playerPiece.X, targetY];
+            if (middle == null || target == null)
+            {
+                return false;
+            }
+
+            return IsSwappable(middle) && IsSwappable(target);
+        }
+
         public bool TryJetpackSwap(Piece playerPiece, Vector2Int direction)
         {
             if (!CanJetpackSwap(playerPiece, direction))
@@ -373,6 +407,24 @@ namespace GameCore
             }
 
             StartCoroutine(JetpackSwapRoutine(playerPiece, target));
+            return true;
+        }
+
+        public bool TryJetpackDouble(Piece playerPiece, Vector2Int direction)
+        {
+            if (!CanJetpackDouble(playerPiece, direction))
+            {
+                return false;
+            }
+
+            var targetY = playerPiece.Y + 2;
+            var target = pieces[playerPiece.X, targetY];
+            if (target == null)
+            {
+                return false;
+            }
+
+            StartCoroutine(JetpackMoveRoutine(playerPiece, target));
             return true;
         }
 
@@ -435,6 +487,11 @@ namespace GameCore
         }
 
         private IEnumerator JetpackSwapRoutine(Piece first, Piece second)
+        {
+            yield return JetpackMoveRoutine(first, second);
+        }
+
+        private IEnumerator JetpackMoveRoutine(Piece first, Piece second)
         {
             isBusy = true;
             SwapPieces(first, second);
