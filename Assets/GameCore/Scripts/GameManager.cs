@@ -220,6 +220,9 @@ namespace GameCore
         private bool hasGainedEnergy;
         private int stunnedTurnsRemaining;
         private GameObject monsterAttackMarkerInstance;
+        private MonsterAttackTelegraph monsterAttackTelegraph;
+        private Piece monsterEnragePiece;
+        private MonsterEnrageIndicator monsterEnrageIndicator;
         private const int ToxicGraceStacks = 2;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
 
@@ -788,6 +791,7 @@ namespace GameCore
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
+            UpdateMonsterEnrageVisuals();
             TickMonsterAttackMarker();
             TryTriggerMonsterEnrage();
         }
@@ -800,6 +804,9 @@ namespace GameCore
             bossState.TurnsUntilAttack = 0;
             CurrentBossState = bossState;
             DestroyMonsterAttackMarker();
+            ClearMonsterEnrageIndicator();
+            UpdateWorriedState();
+            UpdatePlayerAnimationFlags();
         }
 
         private void TickMonsterAttackMarker()
@@ -817,14 +824,14 @@ namespace GameCore
             }
 
             bossState.TurnsUntilAttack = Mathf.Max(0, bossState.TurnsUntilAttack - 1);
+            CurrentBossState = bossState;
+            UpdateMonsterAttackTelegraph();
             if (bossState.TurnsUntilAttack > 0)
             {
-                CurrentBossState = bossState;
                 return;
             }
 
             var targetPosition = bossState.AttackTarget;
-            CurrentBossState = bossState;
             ResolveMonsterAttack(targetPosition);
             ResetMonsterAttackState();
         }
@@ -868,6 +875,10 @@ namespace GameCore
             bossState.TurnsUntilAttack = 2;
             CurrentBossState = bossState;
             SpawnMonsterAttackMarker(targetPosition);
+            UpdateMonsterAttackTelegraph();
+            UpdateMonsterEnrageVisuals();
+            UpdateWorriedState();
+            UpdatePlayerAnimationFlags();
         }
 
         private void ResolveMonsterAttack(Vector2Int targetPosition)
@@ -913,6 +924,11 @@ namespace GameCore
                     worldPosition,
                     Quaternion.identity,
                     parent);
+                monsterAttackTelegraph = monsterAttackMarkerInstance.GetComponent<MonsterAttackTelegraph>();
+                if (monsterAttackTelegraph == null)
+                {
+                    monsterAttackTelegraph = monsterAttackMarkerInstance.AddComponent<MonsterAttackTelegraph>();
+                }
                 return;
             }
 
@@ -932,6 +948,7 @@ namespace GameCore
                 renderer.sortingOrder = 10;
             }
             monsterAttackMarkerInstance = markerObject;
+            monsterAttackTelegraph = markerObject.AddComponent<MonsterAttackTelegraph>();
         }
 
         private void DestroyMonsterAttackMarker()
@@ -943,6 +960,7 @@ namespace GameCore
 
             Destroy(monsterAttackMarkerInstance);
             monsterAttackMarkerInstance = null;
+            monsterAttackTelegraph = null;
         }
 
         public bool CanUseManualAbility()
@@ -1239,7 +1257,82 @@ namespace GameCore
         private void UpdateWorriedState()
         {
             var isBombAdjacent = board != null && board.IsPlayerAdjacentToBomb();
-            isWorried = toxicStacks == 1 || isBombAdjacent;
+            var isMonsterThreat = false;
+            if (board != null && CurrentBossState.IsEnraged && CurrentBossState.bossAlive)
+            {
+                if (board.TryGetPlayerPosition(out var playerPosition))
+                {
+                    isMonsterThreat = playerPosition == CurrentBossState.AttackTarget;
+                }
+            }
+            isWorried = toxicStacks == 1 || isBombAdjacent || isMonsterThreat;
+        }
+
+        private void UpdateMonsterAttackTelegraph()
+        {
+            var bossState = CurrentBossState;
+            if (!bossState.IsEnraged || !bossState.bossAlive || board == null)
+            {
+                return;
+            }
+
+            if (monsterAttackMarkerInstance == null)
+            {
+                SpawnMonsterAttackMarker(bossState.AttackTarget);
+            }
+
+            if (monsterAttackTelegraph != null)
+            {
+                var worldPosition = board.GridToWorld(bossState.AttackTarget.x, bossState.AttackTarget.y);
+                monsterAttackTelegraph.SetWorldPosition(worldPosition);
+                monsterAttackTelegraph.SetTurnsRemaining(bossState.TurnsUntilAttack);
+            }
+        }
+
+        private void UpdateMonsterEnrageVisuals()
+        {
+            if (board == null || !IsBossLevel)
+            {
+                ClearMonsterEnrageIndicator();
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive || !bossState.IsEnraged)
+            {
+                ClearMonsterEnrageIndicator();
+                return;
+            }
+
+            if (!board.TryGetPieceAt(bossState.bossPosition, out var bossPiece))
+            {
+                ClearMonsterEnrageIndicator();
+                return;
+            }
+
+            if (monsterEnragePiece != bossPiece)
+            {
+                ClearMonsterEnrageIndicator();
+                monsterEnragePiece = bossPiece;
+                monsterEnrageIndicator = bossPiece.GetComponent<MonsterEnrageIndicator>();
+                if (monsterEnrageIndicator == null)
+                {
+                    monsterEnrageIndicator = bossPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
+                }
+            }
+
+            monsterEnrageIndicator.SetEnraged(true);
+        }
+
+        private void ClearMonsterEnrageIndicator()
+        {
+            if (monsterEnrageIndicator != null)
+            {
+                monsterEnrageIndicator.SetEnraged(false);
+            }
+
+            monsterEnrageIndicator = null;
+            monsterEnragePiece = null;
         }
 
         private void UpdateTiredState()
