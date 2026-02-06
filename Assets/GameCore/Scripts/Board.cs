@@ -334,6 +334,11 @@ namespace GameCore
                 return false;
             }
 
+            if (!IsSwappable(first) || !IsSwappable(second))
+            {
+                return false;
+            }
+
             if (Mathf.Abs(first.X - second.X) + Mathf.Abs(first.Y - second.Y) != 1)
             {
                 return false;
@@ -502,7 +507,7 @@ namespace GameCore
         private bool HasMatchAt(int x, int y)
         {
             var piece = pieces[x, y];
-            if (piece == null)
+            if (!IsMatchable(piece))
             {
                 return false;
             }
@@ -531,7 +536,7 @@ namespace GameCore
             while (IsInBounds(x, y))
             {
                 var candidate = pieces[x, y];
-                if (candidate == null || candidate.ColorIndex != colorIndex)
+                if (!IsMatchable(candidate) || candidate.ColorIndex != colorIndex)
                 {
                     break;
                 }
@@ -555,19 +560,19 @@ namespace GameCore
             // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
             {
-                var runLength = 1;
+                var runLength = IsMatchable(pieces[0, y]) ? 1 : 0;
                 for (var x = 1; x < width; x++)
                 {
                     var current = pieces[x, y];
                     var previous = pieces[x - 1, y];
-                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    if (IsMatchable(current) && IsMatchable(previous) && current.ColorIndex == previous.ColorIndex)
                     {
                         runLength++;
                     }
                     else
                     {
                         AddRunMatches(x - 1, y, runLength, Vector2Int.right);
-                        runLength = 1;
+                        runLength = IsMatchable(current) ? 1 : 0;
                     }
                 }
 
@@ -577,19 +582,19 @@ namespace GameCore
             // Scan vertically for runs of 3+ matching pieces.
             for (var x = 0; x < width; x++)
             {
-                var runLength = 1;
+                var runLength = IsMatchable(pieces[x, 0]) ? 1 : 0;
                 for (var y = 1; y < height; y++)
                 {
                     var current = pieces[x, y];
                     var previous = pieces[x, y - 1];
-                    if (current != null && previous != null && current.ColorIndex == previous.ColorIndex)
+                    if (IsMatchable(current) && IsMatchable(previous) && current.ColorIndex == previous.ColorIndex)
                     {
                         runLength++;
                     }
                     else
                     {
                         AddRunMatches(x, y - 1, runLength, Vector2Int.up);
-                        runLength = 1;
+                        runLength = IsMatchable(current) ? 1 : 0;
                     }
                 }
 
@@ -1150,7 +1155,7 @@ namespace GameCore
                 for (var y = 0; y < height; y++)
                 {
                     var piece = pieces[x, y];
-                    if (piece == null)
+                    if (!IsMatchable(piece))
                     {
                         continue;
                     }
@@ -1211,7 +1216,7 @@ namespace GameCore
             {
                 for (var y = 0; y < height; y++)
                 {
-                    if (pieces[x, y] == null)
+                    if (!IsSwappable(pieces[x, y]))
                     {
                         continue;
                     }
@@ -1236,6 +1241,11 @@ namespace GameCore
             var first = pieces[x1, y1];
             var second = pieces[x2, y2];
             if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (!IsSwappable(first) || !IsSwappable(second))
             {
                 return false;
             }
@@ -1300,15 +1310,18 @@ namespace GameCore
         {
             if (x == swapX1 && y == swapY1)
             {
-                return pieces[swapX2, swapY2] != null ? pieces[swapX2, swapY2].ColorIndex : -1;
+                var swappedPiece = pieces[swapX2, swapY2];
+                return IsMatchable(swappedPiece) ? swappedPiece.ColorIndex : -1;
             }
 
             if (x == swapX2 && y == swapY2)
             {
-                return pieces[swapX1, swapY1] != null ? pieces[swapX1, swapY1].ColorIndex : -1;
+                var swappedPiece = pieces[swapX1, swapY1];
+                return IsMatchable(swappedPiece) ? swappedPiece.ColorIndex : -1;
             }
 
-            return pieces[x, y] != null ? pieces[x, y].ColorIndex : -1;
+            var piece = pieces[x, y];
+            return IsMatchable(piece) ? piece.ColorIndex : -1;
         }
 
         private bool WouldFormMatch(int x, int y, int colorIndex)
@@ -1331,6 +1344,16 @@ namespace GameCore
         private bool IsInBounds(int x, int y)
         {
             return x >= 0 && x < width && y >= 0 && y < height;
+        }
+
+        private static bool IsMatchable(Piece piece)
+        {
+            return piece != null && piece.SpecialType != SpecialType.Player;
+        }
+
+        private static bool IsSwappable(Piece piece)
+        {
+            return piece != null && piece.SpecialType != SpecialType.Player;
         }
 
         private Sprite[] GenerateSprites()

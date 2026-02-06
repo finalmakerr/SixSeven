@@ -13,6 +13,7 @@ namespace GameCore
         public int ColorIndex { get; private set; }
         public SpecialType SpecialType { get; private set; }
         public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
+        public bool IsPlayer => SpecialType == SpecialType.Player;
 
         private SpriteRenderer spriteRenderer;
         private Sprite baseSprite;
