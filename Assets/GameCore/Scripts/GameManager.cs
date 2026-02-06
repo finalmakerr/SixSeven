@@ -199,9 +199,11 @@ namespace GameCore
         private int energy;
         private bool isShieldActive;
         private bool isMeditating;
+        private bool manualAbilityUsedThisTurn;
         private int meditationTurnsRemaining;
         private int toxicStacks;
         private const int ToxicGraceStacks = 2;
+        public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -307,6 +309,7 @@ namespace GameCore
             hasEnded = false;
             energy = 0;
             toxicStacks = 0;
+            manualAbilityUsedThisTurn = false;
             SetShieldActive(false);
             CancelMeditation();
             HideComboText();
@@ -501,6 +504,11 @@ namespace GameCore
 
         public bool TryActivateShield()
         {
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
             if (isShieldActive)
             {
                 return false;
@@ -514,11 +522,17 @@ namespace GameCore
 
             CancelMeditation();
             SetShieldActive(true);
+            RegisterManualAbilityUse();
             return true;
         }
 
         public bool TryActivateMeditation()
         {
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
             if (isMeditating)
             {
                 return false;
@@ -531,6 +545,7 @@ namespace GameCore
             }
 
             BeginMeditation(3);
+            RegisterManualAbilityUse();
             return true;
         }
 
@@ -663,6 +678,8 @@ namespace GameCore
                 return;
             }
 
+            manualAbilityUsedThisTurn = false;
+
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             if (!hasPlayerPosition || playerPosition.y > 0)
             {
@@ -688,6 +705,36 @@ namespace GameCore
                     UpdateMeditationAnimationState();
                 }
             }
+        }
+
+        public bool CanUseManualAbility()
+        {
+            if (hasEnded)
+            {
+                return false;
+            }
+
+            if (board != null && board.IsBusy)
+            {
+                return false;
+            }
+
+            if (IsPlayerStunned)
+            {
+                return false;
+            }
+
+            if (isMeditating)
+            {
+                return false;
+            }
+
+            return !manualAbilityUsedThisTurn;
+        }
+
+        public void RegisterManualAbilityUse()
+        {
+            manualAbilityUsedThisTurn = true;
         }
 
         private void ClearToxicStacks()
