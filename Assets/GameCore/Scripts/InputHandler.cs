@@ -4,8 +4,11 @@ namespace GameCore
 {
     public class InputHandler : MonoBehaviour
     {
+        private const int JetpackEnergyCost = 1;
+
         [SerializeField] private Camera mainCamera;
         [SerializeField] private Board board;
+        [SerializeField] private GameManager gameManager;
         [SerializeField] private float swipeThreshold = 0.2f;
 
         private Piece selectedPiece;
@@ -16,6 +19,14 @@ namespace GameCore
             if (mainCamera == null)
             {
                 mainCamera = Camera.main;
+            }
+        }
+
+        private void Start()
+        {
+            if (gameManager == null)
+            {
+                gameManager = GameManager.Instance;
             }
         }
 
@@ -46,7 +57,21 @@ namespace GameCore
                 {
                     // Only attempt a swap once the pointer has moved far enough.
                     var direction = GetDirection(delta);
-                    board.TrySwap(selectedPiece, direction);
+                    if (selectedPiece.IsPlayer)
+                    {
+                        var manager = gameManager != null ? gameManager : GameManager.Instance;
+                        if (manager != null && board.CanJetpackSwap(selectedPiece, direction))
+                        {
+                            if (manager.TrySpendEnergy(JetpackEnergyCost))
+                            {
+                                board.TryJetpackSwap(selectedPiece, direction);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        board.TrySwap(selectedPiece, direction);
+                    }
                 }
 
                 selectedPiece = null;
