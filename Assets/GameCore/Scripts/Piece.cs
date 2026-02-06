@@ -36,16 +36,42 @@ namespace GameCore
             X = x;
             Y = y;
 
+            isPlayerPiece = false;
             SetColor(colorIndex, sprite);
-            if (!hasInitializedSpecialType && SpecialType == SpecialType.None)
+            if (!hasInitializedSpecialType)
             {
                 SetSpecialType(SpecialType.None);
             }
             name = $"Piece_{x}_{y}";
         }
 
+        public void InitializeAsPlayer(int x, int y)
+        {
+            X = x;
+            Y = y;
+
+            isPlayerPiece = true;
+            SpecialType = SpecialType.Player;
+            ColorIndex = -1;
+            BombTier = 0;
+            baseSprite = null;
+            bombSprite = null;
+            hasInitializedSpecialType = true;
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.sprite = null;
+            }
+            ApplySpecialVisual();
+            name = $"Piece_{x}_{y}";
+        }
+
         public void SetColor(int colorIndex, Sprite sprite)
         {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
             ColorIndex = colorIndex;
             baseSprite = sprite;
             ApplySpecialVisual();
@@ -54,17 +80,18 @@ namespace GameCore
         // CODEX BOSS PR2
         public void SetSpecialType(SpecialType type)
         {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
             if (type == SpecialType.None && hasInitializedSpecialType)
             {
                 return;
             }
 
             SpecialType = type;
-            isPlayerPiece = type == SpecialType.Player;
-            if (type == SpecialType.None)
-            {
-                hasInitializedSpecialType = true;
-            }
+            hasInitializedSpecialType = true;
             if (type != SpecialType.Bomb)
             {
                 BombTier = 0;
@@ -74,23 +101,19 @@ namespace GameCore
             {
                 ClearTreasureChestVisual();
             }
-            if (type == SpecialType.Player)
-            {
-                ColorIndex = -1;
-                baseSprite = null;
-                if (spriteRenderer != null)
-                {
-                    spriteRenderer.sprite = null;
-                }
-            }
             ApplySpecialVisual();
         }
 
         // CODEX BOMB TIERS: assign bomb tier + sprite when creating a bomb special.
         public void SetBombTier(int tier, Sprite sprite)
         {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
             SpecialType = SpecialType.Bomb;
-            isPlayerPiece = false;
+            hasInitializedSpecialType = true;
             BombTier = tier;
             bombSprite = sprite;
             ApplySpecialVisual();
@@ -100,6 +123,13 @@ namespace GameCore
         {
             if (spriteRenderer == null)
             {
+                return;
+            }
+
+            if (isPlayerPiece)
+            {
+                spriteRenderer.sprite = null;
+                spriteRenderer.color = Color.white;
                 return;
             }
 
