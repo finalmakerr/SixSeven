@@ -24,6 +24,7 @@ namespace GameCore
         [SerializeField] private Board board;
         // CODEX BOSS PR1
         [SerializeField] private BossManager bossManager;
+        [SerializeField] private PlayerAnimationStateController playerAnimationStateController;
 
         [Header("UI")]
         [SerializeField] private Text scoreText;
@@ -196,6 +197,7 @@ namespace GameCore
         // CODEX BONUS PR5
         private Coroutine bonusMiniGameCleanupRoutine;
         private int energy;
+        private bool isShieldActive;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -217,6 +219,11 @@ namespace GameCore
             if (bossManager == null)
             {
                 bossManager = FindObjectOfType<BossManager>();
+            }
+
+            if (playerAnimationStateController == null)
+            {
+                playerAnimationStateController = FindObjectOfType<PlayerAnimationStateController>();
             }
 
             if (bossPowerInventory == null)
@@ -257,6 +264,7 @@ namespace GameCore
             }
 
             RegisterBoardEvents();
+            UpdateShieldAnimationState();
         }
 
         private void OnDisable()
@@ -294,6 +302,7 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             energy = 0;
+            SetShieldActive(false);
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -480,6 +489,63 @@ namespace GameCore
 
             energy -= amount;
             return true;
+        }
+
+        public bool TryActivateShield()
+        {
+            if (isShieldActive)
+            {
+                return false;
+            }
+
+            const int shieldEnergyCost = 2;
+            if (!TrySpendEnergy(shieldEnergyCost))
+            {
+                return false;
+            }
+
+            SetShieldActive(true);
+            return true;
+        }
+
+        public bool TryBlockPlayerDamage(PlayerDamageType damageType)
+        {
+            if (damageType == PlayerDamageType.ToxicDrain)
+            {
+                return false;
+            }
+
+            if (!isShieldActive)
+            {
+                return false;
+            }
+
+            if (damageType == PlayerDamageType.HeavyHit || damageType == PlayerDamageType.Explosion)
+            {
+                SetShieldActive(false);
+                return true;
+            }
+
+            return false;
+        }
+
+        private void SetShieldActive(bool active)
+        {
+            if (isShieldActive == active)
+            {
+                return;
+            }
+
+            isShieldActive = active;
+            UpdateShieldAnimationState();
+        }
+
+        private void UpdateShieldAnimationState()
+        {
+            if (playerAnimationStateController != null)
+            {
+                playerAnimationStateController.IsShielded = isShieldActive;
+            }
         }
 
         private void AddEnergyFromMatches(IReadOnlyList<int> matchRunLengths)
