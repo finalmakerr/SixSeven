@@ -202,6 +202,14 @@ namespace GameCore
         private bool manualAbilityUsedThisTurn;
         private int meditationTurnsRemaining;
         private int toxicStacks;
+        private bool toxicDrainActive;
+        private bool isHappy;
+        private bool isExcited;
+        private bool isStunned;
+        private bool isWorried;
+        private bool isTired;
+        private bool hasGainedEnergy;
+        private int stunnedTurnsRemaining;
         private const int ToxicGraceStacks = 2;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
 
@@ -309,14 +317,24 @@ namespace GameCore
             hasEnded = false;
             energy = 0;
             toxicStacks = 0;
+            toxicDrainActive = false;
             manualAbilityUsedThisTurn = false;
             SetShieldActive(false);
             CancelMeditation();
+            ClearTransientEmotionFlags();
+            isStunned = false;
+            isWorried = false;
+            isTired = false;
+            hasGainedEnergy = false;
+            stunnedTurnsRemaining = 0;
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, false);
             UpdateUI();
+            UpdateWorriedState();
+            UpdateTiredState();
+            UpdatePlayerAnimationFlags();
         }
 
         public void LoadLevel(int levelIndex)
@@ -474,7 +492,20 @@ namespace GameCore
             }
 
             AddScore(clearedCount, cascadeCount);
-            AddEnergyFromMatches(matchRunLengths);
+            var energyGain = AddEnergyFromMatches(matchRunLengths, out var reachedMaxEnergy);
+            var hasMatchFourPlus = HasMatchRunAtLeast(matchRunLengths, 4);
+            var hasMatchFivePlus = HasMatchRunAtLeast(matchRunLengths, 5);
+            if (energyGain >= 2 && hasMatchFourPlus)
+            {
+                TriggerHappyAnimation();
+            }
+
+            if (hasMatchFivePlus || reachedMaxEnergy)
+            {
+                TriggerExcitedAnimation();
+            }
+
+            UpdateTiredState();
             if (cascadeCount >= 2)
             {
                 ShowComboText(cascadeCount);
@@ -499,6 +530,11 @@ namespace GameCore
             }
 
             energy -= amount;
+            if (energy > 0)
+            {
+                hasGainedEnergy = true;
+            }
+            UpdateTiredState();
             return true;
         }
 
@@ -583,10 +619,7 @@ namespace GameCore
 
         private void UpdateShieldAnimationState()
         {
-            if (playerAnimationStateController != null)
-            {
-                playerAnimationStateController.IsShielded = isShieldActive;
-            }
+            UpdatePlayerAnimationFlags();
         }
 
         private void BeginMeditation(int turns)
@@ -615,17 +648,15 @@ namespace GameCore
 
         private void UpdateMeditationAnimationState()
         {
-            if (playerAnimationStateController != null)
-            {
-                playerAnimationStateController.IsMeditating = isMeditating;
-            }
+            UpdatePlayerAnimationFlags();
         }
 
-        private void AddEnergyFromMatches(IReadOnlyList<int> matchRunLengths)
+        private int AddEnergyFromMatches(IReadOnlyList<int> matchRunLengths, out bool reachedMaxEnergy)
         {
+            reachedMaxEnergy = false;
             if (matchRunLengths == null || matchRunLengths.Count == 0 || energy >= maxEnergy)
             {
-                return;
+                return 0;
             }
 
             var energyGain = 0;
@@ -636,10 +667,15 @@ namespace GameCore
 
             if (energyGain <= 0)
             {
-                return;
+                return 0;
             }
 
+            var previousEnergy = energy;
             energy = Mathf.Min(maxEnergy, energy + energyGain);
+            reachedMaxEnergy = energy >= maxEnergy && previousEnergy < maxEnergy;
+            hasGainedEnergy = hasGainedEnergy || energy > 0;
+            UpdateTiredState();
+            return energyGain;
         }
 
         private int GetEnergyGainForRun(int runLength)
@@ -664,6 +700,8 @@ namespace GameCore
                 return;
             }
 
+            ClearTransientEmotionFlags();
+            UpdatePlayerAnimationFlags();
             TryUseMove();
             if (MovesRemaining <= 0 && !HasMetTarget)
             {
@@ -690,7 +728,12 @@ namespace GameCore
                 toxicStacks += 1;
                 if (toxicStacks >= ToxicGraceStacks)
                 {
+                    toxicDrainActive = true;
                     ApplyEnergyDrain(1);
+                }
+                else
+                {
+                    toxicDrainActive = false;
                 }
             }
 
@@ -705,6 +748,19 @@ namespace GameCore
                     UpdateMeditationAnimationState();
                 }
             }
+
+            if (stunnedTurnsRemaining > 0)
+            {
+                stunnedTurnsRemaining -= 1;
+                if (stunnedTurnsRemaining <= 0)
+                {
+                    isStunned = false;
+                }
+            }
+
+            UpdateWorriedState();
+            UpdateTiredState();
+            UpdatePlayerAnimationFlags();
         }
 
         public bool CanUseManualAbility()
@@ -740,6 +796,10 @@ namespace GameCore
         private void ClearToxicStacks()
         {
             toxicStacks = 0;
+            toxicDrainActive = false;
+            UpdateWorriedState();
+            UpdateTiredState();
+            UpdatePlayerAnimationFlags();
         }
 
         private void ApplyEnergyDrain(int amount)
@@ -750,6 +810,11 @@ namespace GameCore
             }
 
             energy = Mathf.Max(0, energy - amount);
+            if (energy > 0)
+            {
+                hasGainedEnergy = true;
+            }
+            UpdateTiredState();
         }
 
         // CODEX CHEST PR2
@@ -781,6 +846,14 @@ namespace GameCore
             if (hasEnded || !IsBossLevel)
             {
                 return;
+            }
+
+            if (board != null && board.TryGetPlayerPosition(out var playerPosition))
+            {
+                if (DistanceManhattan(position, playerPosition) <= 1)
+                {
+                    TriggerStunnedAnimation();
+                }
             }
 
             var bossState = CurrentBossState;
@@ -900,6 +973,86 @@ namespace GameCore
         private static int DistanceManhattan(Vector2Int a, Vector2Int b)
         {
             return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
+        }
+
+        public void TriggerJetpackDoubleSuccess()
+        {
+            TriggerExcitedAnimation();
+        }
+
+        private void TriggerHappyAnimation()
+        {
+            isHappy = true;
+            UpdatePlayerAnimationFlags();
+        }
+
+        private void TriggerExcitedAnimation()
+        {
+            isExcited = true;
+            UpdatePlayerAnimationFlags();
+        }
+
+        private void TriggerStunnedAnimation()
+        {
+            if (!isStunned)
+            {
+                isStunned = true;
+            }
+
+            stunnedTurnsRemaining = Mathf.Max(stunnedTurnsRemaining, 1);
+            UpdatePlayerAnimationFlags();
+        }
+
+        private void ClearTransientEmotionFlags()
+        {
+            isHappy = false;
+            isExcited = false;
+        }
+
+        private void UpdateWorriedState()
+        {
+            var isBombAdjacent = board != null && board.IsPlayerAdjacentToBomb();
+            isWorried = toxicStacks == 1 || isBombAdjacent;
+        }
+
+        private void UpdateTiredState()
+        {
+            isTired = toxicDrainActive || (hasGainedEnergy && energy == 0);
+        }
+
+        private void UpdatePlayerAnimationFlags()
+        {
+            if (playerAnimationStateController == null)
+            {
+                return;
+            }
+
+            playerAnimationStateController.SetStateFlags(
+                isHappy,
+                isExcited,
+                isStunned,
+                isWorried,
+                isMeditating,
+                isShieldActive,
+                isTired);
+        }
+
+        private static bool HasMatchRunAtLeast(IReadOnlyList<int> matchRunLengths, int length)
+        {
+            if (matchRunLengths == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < matchRunLengths.Count; i++)
+            {
+                if (matchRunLengths[i] >= length)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public void TriggerInstantWin()

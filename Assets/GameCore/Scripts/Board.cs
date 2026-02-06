@@ -510,6 +510,30 @@ namespace GameCore
             return false;
         }
 
+        public bool IsPlayerAdjacentToBomb()
+        {
+            if (!TryGetPlayerPosition(out var playerPosition))
+            {
+                return false;
+            }
+
+            return IsBombAt(playerPosition.x + 1, playerPosition.y)
+                || IsBombAt(playerPosition.x - 1, playerPosition.y)
+                || IsBombAt(playerPosition.x, playerPosition.y + 1)
+                || IsBombAt(playerPosition.x, playerPosition.y - 1);
+        }
+
+        private bool IsBombAt(int x, int y)
+        {
+            if (!IsInBounds(x, y) || pieces == null)
+            {
+                return false;
+            }
+
+            var piece = pieces[x, y];
+            return piece != null && piece.SpecialType == SpecialType.Bomb;
+        }
+
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
