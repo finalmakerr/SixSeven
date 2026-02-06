@@ -10,6 +10,7 @@ namespace GameCore
         // CODEX: LEVEL_LOOP
         public event Action<int, int, IReadOnlyList<int>> MatchesCleared;
         public event Action ValidSwap;
+        public event Action TurnEnded;
         // CODEX BOSS PR2
         public event Action<Vector2Int> OnBombDetonated;
         // CODEX CHEST PR2
@@ -451,6 +452,30 @@ namespace GameCore
             return hasMatch || IsSpecialRecipePair(first.SpecialType, second.SpecialType) || IsBombMixPair(first, second);
         }
 
+        public bool TryGetPlayerPosition(out Vector2Int position)
+        {
+            position = default;
+            if (pieces == null)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < pieces.GetLength(0); x++)
+            {
+                for (var y = 0; y < pieces.GetLength(1); y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece != null && piece.IsPlayer)
+                    {
+                        position = new Vector2Int(x, y);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private IEnumerator SwapRoutine(Piece first, Piece second)
         {
             isBusy = true;
@@ -483,6 +508,7 @@ namespace GameCore
             {
                 Debug.Log($"MoveEnd({activeMoveId}): resolve complete.", this); // CODEX VERIFY 2: move end log once per accepted swap.
             }
+            TurnEnded?.Invoke();
             isBusy = false;
         }
 
@@ -514,6 +540,7 @@ namespace GameCore
             {
                 Debug.Log($"MoveEnd({activeMoveId}): resolve complete.", this); // CODEX VERIFY 2: move end log once per accepted swap.
             }
+            TurnEnded?.Invoke();
             isBusy = false;
         }
 
