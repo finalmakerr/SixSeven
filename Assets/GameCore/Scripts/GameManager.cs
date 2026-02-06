@@ -114,6 +114,9 @@ namespace GameCore
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
+        [Header("Monster Attack")]
+        [SerializeField] private int monsterReachDistance = 2;
+        [SerializeField] private GameObject monsterAttackMarkerPrefab;
 
         public static GameManager Instance { get; private set; }
 
@@ -214,6 +217,10 @@ namespace GameCore
         private bool isTired;
         private bool hasGainedEnergy;
         private int stunnedTurnsRemaining;
+        private int monsterAttackTurnsRemaining;
+        private bool hasMonsterAttackTarget;
+        private Vector2Int monsterAttackTarget;
+        private GameObject monsterAttackMarkerInstance;
         private const int ToxicGraceStacks = 2;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
 
@@ -331,6 +338,7 @@ namespace GameCore
             isTired = false;
             hasGainedEnergy = false;
             stunnedTurnsRemaining = 0;
+            ResetMonsterAttackState();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -781,6 +789,122 @@ namespace GameCore
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
+            TickMonsterAttackMarker();
+            TryTriggerMonsterEnrage();
+        }
+
+        private void ResetMonsterAttackState()
+        {
+            monsterAttackTurnsRemaining = 0;
+            hasMonsterAttackTarget = false;
+            monsterAttackTarget = default;
+            DestroyMonsterAttackMarker();
+        }
+
+        private void TickMonsterAttackMarker()
+        {
+            if (monsterAttackTurnsRemaining <= 0)
+            {
+                return;
+            }
+
+            monsterAttackTurnsRemaining -= 1;
+            if (monsterAttackTurnsRemaining > 0)
+            {
+                return;
+            }
+
+            hasMonsterAttackTarget = false;
+            monsterAttackTarget = default;
+            DestroyMonsterAttackMarker();
+        }
+
+        private void TryTriggerMonsterEnrage()
+        {
+            if (!IsBossLevel || board == null || monsterAttackTurnsRemaining > 0)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive)
+            {
+                return;
+            }
+
+            if (!board.TryGetPlayerPosition(out var playerPosition))
+            {
+                return;
+            }
+
+            if (!CanMonsterReachPlayer(bossState.bossPosition, playerPosition))
+            {
+                return;
+            }
+
+            ActivateMonsterAttack(playerPosition);
+        }
+
+        private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
+        {
+            return DistanceManhattan(monsterPosition, playerPosition) <= monsterReachDistance;
+        }
+
+        private void ActivateMonsterAttack(Vector2Int targetPosition)
+        {
+            hasMonsterAttackTarget = true;
+            monsterAttackTarget = targetPosition;
+            monsterAttackTurnsRemaining = 2;
+            SpawnMonsterAttackMarker(targetPosition);
+        }
+
+        private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
+        {
+            DestroyMonsterAttackMarker();
+            if (board == null)
+            {
+                return;
+            }
+
+            var worldPosition = board.GridToWorld(targetPosition.x, targetPosition.y);
+            var parent = board.transform;
+            if (monsterAttackMarkerPrefab != null)
+            {
+                monsterAttackMarkerInstance = Instantiate(
+                    monsterAttackMarkerPrefab,
+                    worldPosition,
+                    Quaternion.identity,
+                    parent);
+                return;
+            }
+
+            var markerObject = new GameObject("MonsterAttackMarker");
+            markerObject.transform.SetParent(parent);
+            markerObject.transform.position = worldPosition;
+            var text = markerObject.AddComponent<TextMesh>();
+            text.text = "!";
+            text.fontSize = 64;
+            text.characterSize = 0.1f;
+            text.alignment = TextAlignment.Center;
+            text.anchor = TextAnchor.MiddleCenter;
+            text.color = new Color(1f, 0.2f, 0.2f, 0.9f);
+            var renderer = markerObject.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                renderer.sortingOrder = 10;
+            }
+            monsterAttackMarkerInstance = markerObject;
+        }
+
+        private void DestroyMonsterAttackMarker()
+        {
+            if (monsterAttackMarkerInstance == null)
+            {
+                return;
+            }
+
+            Destroy(monsterAttackMarkerInstance);
+            monsterAttackMarkerInstance = null;
         }
 
         public bool CanUseManualAbility()
