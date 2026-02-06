@@ -87,7 +87,17 @@ namespace GameCore
             }
         }
 
+        private void OnEnable()
+        {
+            UpdateAnimatorState();
+        }
+
         private void Update()
+        {
+            UpdateAnimatorState();
+        }
+
+        private void UpdateAnimatorState()
         {
             var nextState = ResolveStateFromFlags();
             if (nextState == CurrentState)
