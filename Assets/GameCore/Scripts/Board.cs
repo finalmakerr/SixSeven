@@ -1348,12 +1348,12 @@ namespace GameCore
 
         private static bool IsMatchable(Piece piece)
         {
-            return piece != null && piece.SpecialType != SpecialType.Player;
+            return piece != null && !piece.IsPlayer;
         }
 
         private static bool IsSwappable(Piece piece)
         {
-            return piece != null && piece.SpecialType != SpecialType.Player;
+            return piece != null && !piece.IsPlayer;
         }
 
         private Sprite[] GenerateSprites()

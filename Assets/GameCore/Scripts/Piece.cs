@@ -33,6 +33,11 @@ namespace GameCore
 
         public void Initialize(int x, int y, int colorIndex, Sprite sprite)
         {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
             X = x;
             Y = y;
 
@@ -57,6 +62,7 @@ namespace GameCore
             baseSprite = null;
             bombSprite = null;
             hasInitializedSpecialType = true;
+            ClearTreasureChestVisual();
             if (spriteRenderer != null)
             {
                 spriteRenderer.sprite = null;
@@ -148,6 +154,11 @@ namespace GameCore
         // CODEX CHEST PR1
         public void SetTreasureChestVisual(Sprite overlaySprite, bool debugMarker)
         {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
             if (overlaySprite != null)
             {
                 var overlay = EnsureTreasureOverlayRenderer();
