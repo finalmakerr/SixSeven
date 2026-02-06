@@ -107,6 +107,8 @@ namespace GameCore
         [SerializeField] private float bigClearShakeDuration = 0.1f;
         [SerializeField] private float bigClearShakeMagnitude = 0.08f;
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
+        [Header("Energy")]
+        [SerializeField] private int maxEnergy = 3;
 
         public static GameManager Instance { get; private set; }
 
@@ -115,6 +117,7 @@ namespace GameCore
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
         public bool HasMetTarget { get; private set; }
+        public int Energy => energy;
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
         // CODEX BOSS PR1
@@ -192,6 +195,7 @@ namespace GameCore
         private BonusMiniGameBase activeBonusMiniGame;
         // CODEX BONUS PR5
         private Coroutine bonusMiniGameCleanupRoutine;
+        private int energy;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -289,6 +293,7 @@ namespace GameCore
             MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
             HasMetTarget = false;
             hasEnded = false;
+            energy = 0;
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -441,7 +446,7 @@ namespace GameCore
             board.OnPieceDestroyed -= HandlePieceDestroyed;
         }
 
-        private void HandleMatchesCleared(int clearedCount, int cascadeCount)
+        private void HandleMatchesCleared(int clearedCount, int cascadeCount, IReadOnlyList<int> matchRunLengths)
         {
             if (hasEnded)
             {
@@ -449,6 +454,7 @@ namespace GameCore
             }
 
             AddScore(clearedCount, cascadeCount);
+            AddEnergyFromMatches(matchRunLengths);
             if (cascadeCount >= 2)
             {
                 ShowComboText(cascadeCount);
@@ -458,6 +464,58 @@ namespace GameCore
             {
                 TriggerScreenShake();
             }
+        }
+
+        public bool TrySpendEnergy(int amount)
+        {
+            if (amount <= 0)
+            {
+                return false;
+            }
+
+            if (energy < amount)
+            {
+                return false;
+            }
+
+            energy -= amount;
+            return true;
+        }
+
+        private void AddEnergyFromMatches(IReadOnlyList<int> matchRunLengths)
+        {
+            if (matchRunLengths == null || matchRunLengths.Count == 0 || energy >= maxEnergy)
+            {
+                return;
+            }
+
+            var energyGain = 0;
+            foreach (var runLength in matchRunLengths)
+            {
+                energyGain += GetEnergyGainForRun(runLength);
+            }
+
+            if (energyGain <= 0)
+            {
+                return;
+            }
+
+            energy = Mathf.Min(maxEnergy, energy + energyGain);
+        }
+
+        private int GetEnergyGainForRun(int runLength)
+        {
+            if (runLength >= 5)
+            {
+                return 3;
+            }
+
+            if (runLength == 4)
+            {
+                return 2;
+            }
+
+            return runLength == 3 ? 1 : 0;
         }
 
         private void HandleValidSwap()
