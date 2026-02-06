@@ -60,11 +60,11 @@ namespace GameCore
                     if (selectedPiece.IsPlayer)
                     {
                         var manager = gameManager != null ? gameManager : GameManager.Instance;
-                        if (manager != null && board.CanJetpackSwap(selectedPiece, direction))
+                        if (manager != null && board.CanJetpackDouble(selectedPiece, direction))
                         {
                             if (manager.TrySpendEnergy(JetpackEnergyCost))
                             {
-                                board.TryJetpackSwap(selectedPiece, direction);
+                                board.TryJetpackDouble(selectedPiece, direction);
                             }
                         }
                     }
