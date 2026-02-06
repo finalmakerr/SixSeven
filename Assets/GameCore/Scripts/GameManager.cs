@@ -198,6 +198,8 @@ namespace GameCore
         private Coroutine bonusMiniGameCleanupRoutine;
         private int energy;
         private bool isShieldActive;
+        private int toxicStacks;
+        private const int ToxicGraceStacks = 2;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -302,6 +304,7 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             energy = 0;
+            toxicStacks = 0;
             SetShieldActive(false);
             HideComboText();
             displayedScore = Score;
@@ -434,6 +437,7 @@ namespace GameCore
 
             board.MatchesCleared += HandleMatchesCleared;
             board.ValidSwap += HandleValidSwap;
+            board.TurnEnded += HandleTurnEnded;
             // CODEX CHEST PR2
             board.OnPieceDestroyed += HandlePieceDestroyed;
             // CODEX BOSS PR4
@@ -451,6 +455,7 @@ namespace GameCore
             SetBombDetonationSubscription(false);
             board.MatchesCleared -= HandleMatchesCleared;
             board.ValidSwap -= HandleValidSwap;
+            board.TurnEnded -= HandleTurnEnded;
             // CODEX CHEST PR2
             board.OnPieceDestroyed -= HandlePieceDestroyed;
         }
@@ -596,6 +601,48 @@ namespace GameCore
             {
                 TriggerLose();
             }
+        }
+
+        private void HandleTurnEnded()
+        {
+            if (hasEnded || board == null)
+            {
+                return;
+            }
+
+            if (!board.TryGetPlayerPosition(out var playerPosition))
+            {
+                ClearToxicStacks();
+                return;
+            }
+
+            if (playerPosition.y > 0)
+            {
+                ClearToxicStacks();
+                return;
+            }
+
+            toxicStacks += 1;
+
+            if (toxicStacks >= ToxicGraceStacks)
+            {
+                ApplyEnergyDrain(1);
+            }
+        }
+
+        private void ClearToxicStacks()
+        {
+            toxicStacks = 0;
+        }
+
+        private void ApplyEnergyDrain(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            energy = Mathf.Max(0, energy - amount);
         }
 
         // CODEX CHEST PR2
