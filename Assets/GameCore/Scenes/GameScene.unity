@@ -190,6 +190,10 @@ MonoBehaviour:
   scorePerPiece: 10
   scoreText: {fileID: 5002}
   movesText: {fileID: 6002}
+  energyText: {fileID: 8002}
+  shieldIconText: {fileID: 9002}
+  toxicWarningIconText: {fileID: 10002}
+  meditationText: {fileID: 11002}
 --- !u!1 &3000
 GameObject:
   m_ObjectHideFlags: 0
@@ -280,6 +284,10 @@ RectTransform:
   m_Children:
   - {fileID: 5001}
   - {fileID: 6001}
+  - {fileID: 8001}
+  - {fileID: 9001}
+  - {fileID: 10001}
+  - {fileID: 11001}
 --- !u!223 &4002
 Canvas:
   m_ObjectHideFlags: 0
@@ -434,6 +442,230 @@ MonoBehaviour:
   m_FontData:
     m_Font: {fileID: 0}
     m_FontSize: 36
+    m_FontStyle: 0
+    m_Alignment: 5
+    m_RichText: 1
+    m_LineSpacing: 1
+    m_AlignByGeometry: 0
+    m_AlignByGeometry: 0
+    m_FontSizeMin: 10
+    m_FontSizeMax: 40
+    m_HorizontalOverflow: 0
+    m_VerticalOverflow: 0
+    m_BestFit: 0
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+--- !u!1 &8000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Name: EnergyText
+  m_TagString: Untagged
+  m_Layer: 5
+  m_IsActive: 1
+--- !u!224 &8001
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8000}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 90, y: -100}
+  m_SizeDelta: {x: 300, y: 60}
+  m_Pivot: {x: 0, y: 1}
+  m_Children: []
+--- !u!114 &8002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29b42f357c214f2ca8c7e59d3f91fa7f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Text: Energy: 0/3
+  m_FontData:
+    m_Font: {fileID: 0}
+    m_FontSize: 28
+    m_FontStyle: 0
+    m_Alignment: 3
+    m_RichText: 1
+    m_LineSpacing: 1
+    m_AlignByGeometry: 0
+    m_AlignByGeometry: 0
+    m_FontSizeMin: 10
+    m_FontSizeMax: 40
+    m_HorizontalOverflow: 0
+    m_VerticalOverflow: 0
+    m_BestFit: 0
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+--- !u!1 &9000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Name: ShieldIcon
+  m_TagString: Untagged
+  m_Layer: 5
+  m_IsActive: 1
+--- !u!224 &9001
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9000}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_AnchorMin: {x: 0.5, y: 1}
+  m_AnchorMax: {x: 0.5, y: 1}
+  m_AnchoredPosition: {x: -40, y: -50}
+  m_SizeDelta: {x: 60, y: 60}
+  m_Pivot: {x: 0.5, y: 1}
+  m_Children: []
+--- !u!114 &9002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29b42f357c214f2ca8c7e59d3f91fa7f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Text: "🛡"
+  m_FontData:
+    m_Font: {fileID: 0}
+    m_FontSize: 40
+    m_FontStyle: 0
+    m_Alignment: 4
+    m_RichText: 1
+    m_LineSpacing: 1
+    m_AlignByGeometry: 0
+    m_AlignByGeometry: 0
+    m_FontSizeMin: 10
+    m_FontSizeMax: 40
+    m_HorizontalOverflow: 0
+    m_VerticalOverflow: 0
+    m_BestFit: 0
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+--- !u!1 &10000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Name: ToxicIcon
+  m_TagString: Untagged
+  m_Layer: 5
+  m_IsActive: 1
+--- !u!224 &10001
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 10000}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_AnchorMin: {x: 0.5, y: 1}
+  m_AnchorMax: {x: 0.5, y: 1}
+  m_AnchoredPosition: {x: 40, y: -50}
+  m_SizeDelta: {x: 60, y: 60}
+  m_Pivot: {x: 0.5, y: 1}
+  m_Children: []
+--- !u!114 &10002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 10000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29b42f357c214f2ca8c7e59d3f91fa7f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Text: "☠"
+  m_FontData:
+    m_Font: {fileID: 0}
+    m_FontSize: 40
+    m_FontStyle: 0
+    m_Alignment: 4
+    m_RichText: 1
+    m_LineSpacing: 1
+    m_AlignByGeometry: 0
+    m_AlignByGeometry: 0
+    m_FontSizeMin: 10
+    m_FontSizeMax: 40
+    m_HorizontalOverflow: 0
+    m_VerticalOverflow: 0
+    m_BestFit: 0
+  m_Color: {r: 1, g: 0.8, b: 0.2, a: 1}
+--- !u!1 &11000
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Name: MeditationText
+  m_TagString: Untagged
+  m_Layer: 5
+  m_IsActive: 1
+--- !u!224 &11001
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 11000}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_AnchorMin: {x: 1, y: 1}
+  m_AnchorMax: {x: 1, y: 1}
+  m_AnchoredPosition: {x: -90, y: -100}
+  m_SizeDelta: {x: 300, y: 60}
+  m_Pivot: {x: 1, y: 1}
+  m_Children: []
+--- !u!114 &11002
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 11000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29b42f357c214f2ca8c7e59d3f91fa7f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Text: Meditation: 0
+  m_FontData:
+    m_Font: {fileID: 0}
+    m_FontSize: 28
     m_FontStyle: 0
     m_Alignment: 5
     m_RichText: 1

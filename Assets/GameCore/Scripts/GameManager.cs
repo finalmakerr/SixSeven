@@ -29,6 +29,10 @@ namespace GameCore
         [Header("UI")]
         [SerializeField] private Text scoreText;
         [SerializeField] private Text movesText;
+        [SerializeField] private Text energyText;
+        [SerializeField] private Text shieldIconText;
+        [SerializeField] private Text toxicWarningIconText;
+        [SerializeField] private Text meditationText;
         // CODEX: LEVEL_LOOP
         [SerializeField] private GameObject winPanel;
         [SerializeField] private GameObject losePanel;
@@ -1086,6 +1090,31 @@ namespace GameCore
 
             // CODEX BOSS PR4
             UpdateBossPowerUI();
+
+            if (energyText != null)
+            {
+                energyText.text = $"Energy: {energy}/{maxEnergy}";
+            }
+
+            if (shieldIconText != null)
+            {
+                shieldIconText.enabled = isShieldActive;
+            }
+
+            if (toxicWarningIconText != null)
+            {
+                toxicWarningIconText.enabled = toxicStacks > 0 || toxicDrainActive;
+            }
+
+            if (meditationText != null)
+            {
+                var showMeditation = meditationTurnsRemaining > 0;
+                meditationText.enabled = showMeditation;
+                if (showMeditation)
+                {
+                    meditationText.text = $"Meditation: {meditationTurnsRemaining}";
+                }
+            }
         }
 
         // CODEX BOSS PR2
