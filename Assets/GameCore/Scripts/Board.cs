@@ -8,7 +8,7 @@ namespace GameCore
     public class Board : MonoBehaviour
     {
         // CODEX: LEVEL_LOOP
-        public event Action<int, int> MatchesCleared;
+        public event Action<int, int, IReadOnlyList<int>> MatchesCleared;
         public event Action ValidSwap;
         // CODEX BOSS PR2
         public event Action<Vector2Int> OnBombDetonated;
@@ -49,6 +49,7 @@ namespace GameCore
         private System.Random randomGenerator;
 
         private readonly List<Piece> matchBuffer = new List<Piece>();
+        private readonly List<int> matchRunLengths = new List<int>();
         private readonly HashSet<Vector2Int> specialCreationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: track special creation logs once per run.
         private readonly HashSet<Vector2Int> specialActivationLogged = new HashSet<Vector2Int>(); // CODEX VERIFY 2: prevent double activation logs per resolve step.
         // CODEX BOSS PR2
@@ -552,6 +553,7 @@ namespace GameCore
         private List<Piece> FindMatches()
         {
             matchBuffer.Clear();
+            matchRunLengths.Clear();
             specialCreationLogged.Clear(); // CODEX VERIFY 2: reset special creation logs per scan.
             specialActivationLogged.Clear(); // CODEX VERIFY 2: reset special activation logs per scan.
             // CODEX BOSS PR2
@@ -611,6 +613,8 @@ namespace GameCore
                 return;
             }
 
+            matchRunLengths.Add(runLength);
+
             // CODEX BOSS PR2
             Vector2Int? bombPosition = null;
             if ((runLength == 4 || runLength == 7) && ShouldAllowBombCreation())
@@ -654,6 +658,11 @@ namespace GameCore
                     matchBuffer.Add(piece);
                 }
             }
+        }
+
+        private IReadOnlyList<int> GetMatchRunLengthsSnapshot()
+        {
+            return new List<int>(matchRunLengths);
         }
 
         // CODEX BOMB PR3: SpecialRecipe system for mixing special tiles.
@@ -843,6 +852,7 @@ namespace GameCore
         {
             isBusy = true;
             var matches = FindMatches();
+            var matchRunLengthsSnapshot = GetMatchRunLengthsSnapshot();
             var cascadeCount = 0;
             while (matches.Count > 0 || pendingSpecialClearPositions.Count > 0)
             {
@@ -854,7 +864,7 @@ namespace GameCore
                 AppendPendingSpecialClears(matches);
                 var clearedCount = ClearMatches(matches);
                 // CODEX: LEVEL_LOOP
-                MatchesCleared?.Invoke(clearedCount, cascadeCount);
+                MatchesCleared?.Invoke(clearedCount, cascadeCount, matchRunLengthsSnapshot);
                 yield return new WaitForSeconds(refillDelay);
                 CollapseColumns();
                 yield return new WaitForSeconds(refillDelay);
@@ -862,6 +872,7 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
+                matchRunLengthsSnapshot = GetMatchRunLengthsSnapshot();
             }
 
             EnsurePlayableBoard();
