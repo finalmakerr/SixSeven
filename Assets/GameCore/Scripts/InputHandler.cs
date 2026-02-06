@@ -67,6 +67,7 @@ namespace GameCore
                                 if (board.TryJetpackDouble(selectedPiece, direction))
                                 {
                                     manager.RegisterManualAbilityUse();
+                                    manager.TriggerJetpackDoubleSuccess();
                                 }
                             }
                         }

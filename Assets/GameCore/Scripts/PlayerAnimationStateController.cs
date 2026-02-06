@@ -137,14 +137,14 @@ namespace GameCore
                 return PlayerAnimationState.Stunned;
             }
 
-            if (isShielded)
-            {
-                return PlayerAnimationState.Shielded;
-            }
-
             if (isMeditating)
             {
                 return PlayerAnimationState.Meditating;
+            }
+
+            if (isShielded)
+            {
+                return PlayerAnimationState.Shielded;
             }
 
             if (isExcited)
