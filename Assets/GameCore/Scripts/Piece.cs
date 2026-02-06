@@ -33,8 +33,19 @@ namespace GameCore
         {
             X = x;
             Y = y;
+            if (IsPlayer)
+            {
+                ColorIndex = -1;
+                BombTier = 0;
+                name = $"Piece_{x}_{y}";
+                return;
+            }
+
             SetColor(colorIndex, sprite);
-            SetSpecialType(SpecialType.None);
+            if (SpecialType == SpecialType.None)
+            {
+                SetSpecialType(SpecialType.None);
+            }
             name = $"Piece_{x}_{y}";
         }
 
