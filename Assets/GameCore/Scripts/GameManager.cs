@@ -114,6 +114,8 @@ namespace GameCore
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
+        [Header("Player Health")]
+        [SerializeField] private int maxHP = 3;
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
@@ -127,6 +129,8 @@ namespace GameCore
         public int CurrentLevelIndex { get; private set; }
         public bool HasMetTarget { get; private set; }
         public int Energy => energy;
+        public int MaxHP => maxHP;
+        public int CurrentHP { get; private set; }
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
         // CODEX BOSS PR1
@@ -333,6 +337,7 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             energy = 0;
+            ResetPlayerHealth();
             toxicStacks = 0;
             toxicDrainActive = false;
             manualAbilityUsedThisTurn = false;
@@ -888,7 +893,7 @@ namespace GameCore
 
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
         {
-            return DistanceManhattan(monsterPosition, playerPosition) <= monsterReachDistance;
+            return DistanceManhattan(monsterPosition, playerPosition) <= GetCurrentMonsterRange();
         }
 
         private void ActivateMonsterAttack(Vector2Int targetPosition)
@@ -924,10 +929,12 @@ namespace GameCore
                 && playerPosition == targetPosition)
             {
                 TriggerStunnedAnimation();
-                if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
                 {
-                    TriggerLose();
+                    return;
                 }
+
+                ApplyPlayerDamage(GetCurrentMonsterDamage());
 
                 return;
             }
@@ -1246,6 +1253,55 @@ namespace GameCore
         private static int DistanceManhattan(Vector2Int a, Vector2Int b)
         {
             return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
+        }
+
+        private void ResetPlayerHealth()
+        {
+            if (maxHP < 1)
+            {
+                maxHP = 1;
+            }
+
+            CurrentHP = maxHP;
+        }
+
+        private int GetCurrentMonsterRange()
+        {
+            if (CurrentBoss == null)
+            {
+                return monsterReachDistance;
+            }
+
+            return CurrentBoss.range > 0 ? CurrentBoss.range : monsterReachDistance;
+        }
+
+        private int GetCurrentMonsterDamage()
+        {
+            if (CurrentBoss == null)
+            {
+                return 0;
+            }
+
+            if (CurrentBoss.damage > 0)
+            {
+                return CurrentBoss.damage;
+            }
+
+            return Mathf.Max(1, CurrentBoss.tier);
+        }
+
+        private void ApplyPlayerDamage(int damage)
+        {
+            if (damage <= 0 || hasEnded)
+            {
+                return;
+            }
+
+            CurrentHP = Mathf.Max(0, CurrentHP - damage);
+            if (CurrentHP <= 0)
+            {
+                TriggerLose();
+            }
         }
 
         public void TriggerJetpackDoubleSuccess()
