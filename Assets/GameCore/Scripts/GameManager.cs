@@ -136,8 +136,8 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
-        public bool HasMonsterAttackTarget => hasMonsterAttackTarget;
-        public Vector2Int MonsterAttackTarget => monsterAttackTarget;
+        public bool HasMonsterAttackTarget => CurrentBossState.IsEnraged;
+        public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
 
@@ -219,11 +219,6 @@ namespace GameCore
         private bool isTired;
         private bool hasGainedEnergy;
         private int stunnedTurnsRemaining;
-        private int monsterAttackTurnsRemaining;
-        private bool hasMonsterAttackTarget;
-        private Vector2Int monsterAttackTarget;
-        private int monsterEnrageTurn;
-        private int currentTurnIndex;
         private GameObject monsterAttackMarkerInstance;
         private const int ToxicGraceStacks = 2;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
@@ -342,7 +337,6 @@ namespace GameCore
             isTired = false;
             hasGainedEnergy = false;
             stunnedTurnsRemaining = 0;
-            currentTurnIndex = 0;
             ResetMonsterAttackState();
             HideComboText();
             displayedScore = Score;
@@ -743,7 +737,6 @@ namespace GameCore
             }
 
             manualAbilityUsedThisTurn = false;
-            currentTurnIndex += 1;
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             if (!hasPlayerPosition || playerPosition.y > 0)
@@ -801,42 +794,50 @@ namespace GameCore
 
         private void ResetMonsterAttackState()
         {
-            monsterAttackTurnsRemaining = 0;
-            hasMonsterAttackTarget = false;
-            monsterAttackTarget = default;
-            monsterEnrageTurn = -1;
+            var bossState = CurrentBossState;
+            bossState.IsEnraged = false;
+            bossState.AttackTarget = default;
+            bossState.TurnsUntilAttack = 0;
+            CurrentBossState = bossState;
             DestroyMonsterAttackMarker();
         }
 
         private void TickMonsterAttackMarker()
         {
-            if (monsterAttackTurnsRemaining <= 0)
+            var bossState = CurrentBossState;
+            if (!bossState.IsEnraged)
             {
                 return;
             }
 
-            monsterAttackTurnsRemaining -= 1;
-            if (monsterAttackTurnsRemaining > 0)
+            if (!bossState.bossAlive)
             {
+                ResetMonsterAttackState();
                 return;
             }
 
-            ResolveMonsterAttack();
-            hasMonsterAttackTarget = false;
-            monsterAttackTarget = default;
-            monsterEnrageTurn = -1;
-            DestroyMonsterAttackMarker();
+            bossState.TurnsUntilAttack = Mathf.Max(0, bossState.TurnsUntilAttack - 1);
+            if (bossState.TurnsUntilAttack > 0)
+            {
+                CurrentBossState = bossState;
+                return;
+            }
+
+            var targetPosition = bossState.AttackTarget;
+            CurrentBossState = bossState;
+            ResolveMonsterAttack(targetPosition);
+            ResetMonsterAttackState();
         }
 
         private void TryTriggerMonsterEnrage()
         {
-            if (!IsBossLevel || board == null || monsterAttackTurnsRemaining > 0)
+            if (!IsBossLevel || board == null)
             {
                 return;
             }
 
             var bossState = CurrentBossState;
-            if (!bossState.bossAlive)
+            if (!bossState.bossAlive || bossState.IsEnraged)
             {
                 return;
             }
@@ -861,16 +862,17 @@ namespace GameCore
 
         private void ActivateMonsterAttack(Vector2Int targetPosition)
         {
-            hasMonsterAttackTarget = true;
-            monsterAttackTarget = targetPosition;
-            monsterAttackTurnsRemaining = 2;
-            monsterEnrageTurn = currentTurnIndex;
+            var bossState = CurrentBossState;
+            bossState.IsEnraged = true;
+            bossState.AttackTarget = targetPosition;
+            bossState.TurnsUntilAttack = 2;
+            CurrentBossState = bossState;
             SpawnMonsterAttackMarker(targetPosition);
         }
 
-        private void ResolveMonsterAttack()
+        private void ResolveMonsterAttack(Vector2Int targetPosition)
         {
-            if (!hasMonsterAttackTarget || board == null || hasEnded)
+            if (board == null || hasEnded)
             {
                 return;
             }
@@ -881,7 +883,7 @@ namespace GameCore
             }
 
             if (board.TryGetPlayerPosition(out var playerPosition)
-                && playerPosition == monsterAttackTarget)
+                && playerPosition == targetPosition)
             {
                 if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
                 {
@@ -891,7 +893,7 @@ namespace GameCore
                 return;
             }
 
-            board.TryDestroyPieceAt(monsterAttackTarget, DestructionReason.MonsterAttack);
+            board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
         }
 
         private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
@@ -1010,6 +1012,8 @@ namespace GameCore
                 return;
             }
 
+            TryDefeatBossFromDestruction(piece, reason);
+
             if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
             {
                 GrantCrown();
@@ -1023,6 +1027,32 @@ namespace GameCore
                     Debug.Log("CrownIgnored", this); // CODEX CHEST PR2
                 }
             }
+        }
+
+        private void TryDefeatBossFromDestruction(Piece piece, DestructionReason reason)
+        {
+            if (!IsBossLevel)
+            {
+                return;
+            }
+
+            if (reason != DestructionReason.NormalMatch && reason != DestructionReason.BombExplosion)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive)
+            {
+                return;
+            }
+
+            if (piece.X != bossState.bossPosition.x || piece.Y != bossState.bossPosition.y)
+            {
+                return;
+            }
+
+            DefeatBoss(new Vector2Int(piece.X, piece.Y), "match/explosion");
         }
 
         // CODEX BOSS PR3
@@ -1053,15 +1083,26 @@ namespace GameCore
                 return;
             }
 
+            DefeatBoss(position, "bomb");
+        }
+
+        private void DefeatBoss(Vector2Int position, string source)
+        {
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive)
+            {
+                return;
+            }
+
             Debug.Log(
-                $"BossHit bomb at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
+                $"BossHit {source} at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
                 this); // CODEX BOSS PR4
             bossState.bossAlive = false;
             CurrentBossState = bossState;
             ResetMonsterAttackState();
 
             Debug.Log(
-                $"BossDefeated bomb at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
+                $"BossDefeated {source} at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
                 this); // CODEX BOSS PR4
 
             TriggerInstantWin();
