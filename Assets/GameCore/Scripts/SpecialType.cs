@@ -8,6 +8,7 @@ namespace GameCore
         RowClear = 2,
         ColumnClear = 3,
         ColorBomb = 4,
-        TreasureChest = 5 // CODEX CHEST PR1
+        TreasureChest = 5, // CODEX CHEST PR1
+        Player = 6
     }
 }
