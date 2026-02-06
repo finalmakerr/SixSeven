@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace GameCore
@@ -11,6 +12,9 @@ namespace GameCore
         [SerializeField] private float fastPulseSpeed = 5.5f;
         [SerializeField] private float pulseScale = 0.08f;
         [SerializeField] private float urgentPulseScale = 0.14f;
+        [SerializeField] private float impactPulseDuration = 0.3f;
+        [SerializeField] private float impactPulseScale = 0.2f;
+        [SerializeField] private Color impactPulseColor = new Color(1f, 0.9f, 0.6f, 1f);
         [SerializeField] private Vector3 countdownOffset = new Vector3(0f, -0.15f, 0f);
         [SerializeField] private float outlineRadius = 0.42f;
         [SerializeField] private int outlineSegments = 32;
@@ -23,6 +27,7 @@ namespace GameCore
         private int turnsRemaining;
         private Vector3 baseScale;
         private float currentPulseSpeed;
+        private Coroutine impactRoutine;
 
         private void Awake()
         {
@@ -56,6 +61,16 @@ namespace GameCore
         public void SetWorldPosition(Vector3 position)
         {
             transform.position = position;
+        }
+
+        public void PlayImpactPulse()
+        {
+            if (impactRoutine != null)
+            {
+                StopCoroutine(impactRoutine);
+            }
+
+            impactRoutine = StartCoroutine(ImpactPulse());
         }
 
         private void EnsureTextMeshes()
@@ -192,6 +207,37 @@ namespace GameCore
                 outlineRenderer.startWidth = width;
                 outlineRenderer.endWidth = width;
             }
+        }
+
+        private IEnumerator ImpactPulse()
+        {
+            var iconStartColor = iconText != null ? iconText.color : Color.white;
+            var outlineStartColor = outlineRenderer != null ? outlineRenderer.startColor : Color.white;
+            var elapsed = 0f;
+            while (elapsed < impactPulseDuration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / impactPulseDuration);
+                var pulse = 1f + Mathf.Sin(t * Mathf.PI) * impactPulseScale;
+                transform.localScale = baseScale * pulse;
+
+                if (iconText != null)
+                {
+                    iconText.color = Color.Lerp(impactPulseColor, iconStartColor, t);
+                }
+
+                if (outlineRenderer != null)
+                {
+                    outlineRenderer.startColor = Color.Lerp(impactPulseColor, outlineStartColor, t);
+                    outlineRenderer.endColor = Color.Lerp(impactPulseColor, outlineStartColor, t);
+                }
+
+                yield return null;
+            }
+
+            impactRoutine = null;
+            transform.localScale = baseScale;
+            UpdateTelegraphState();
         }
     }
 }
