@@ -538,6 +538,18 @@ namespace GameCore
             return false;
         }
 
+        public bool TryGetPieceAt(Vector2Int position, out Piece piece)
+        {
+            piece = null;
+            if (pieces == null || !IsInBounds(position.x, position.y))
+            {
+                return false;
+            }
+
+            piece = pieces[position.x, position.y];
+            return piece != null;
+        }
+
         public bool TryDestroyPieceAt(Vector2Int position, DestructionReason reason)
         {
             if (pieces == null || !IsInBounds(position.x, position.y))
