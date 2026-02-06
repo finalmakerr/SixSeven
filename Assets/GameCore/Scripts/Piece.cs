@@ -13,11 +13,13 @@ namespace GameCore
         public int ColorIndex { get; private set; }
         public SpecialType SpecialType { get; private set; }
         public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
-        public bool IsPlayer => SpecialType == SpecialType.Player;
+        public bool IsPlayer => isPlayerPiece;
 
         private SpriteRenderer spriteRenderer;
         private Sprite baseSprite;
         private Sprite bombSprite;
+        private bool isPlayerPiece;
+        private bool hasInitializedSpecialType;
         // CODEX CHEST PR1
         private SpriteRenderer treasureOverlayRenderer;
         private TextMesh treasureDebugText;
@@ -33,16 +35,9 @@ namespace GameCore
         {
             X = x;
             Y = y;
-            if (IsPlayer)
-            {
-                ColorIndex = -1;
-                BombTier = 0;
-                name = $"Piece_{x}_{y}";
-                return;
-            }
 
             SetColor(colorIndex, sprite);
-            if (SpecialType == SpecialType.None)
+            if (!hasInitializedSpecialType && SpecialType == SpecialType.None)
             {
                 SetSpecialType(SpecialType.None);
             }
@@ -59,7 +54,17 @@ namespace GameCore
         // CODEX BOSS PR2
         public void SetSpecialType(SpecialType type)
         {
+            if (type == SpecialType.None && hasInitializedSpecialType)
+            {
+                return;
+            }
+
             SpecialType = type;
+            isPlayerPiece = type == SpecialType.Player;
+            if (type == SpecialType.None)
+            {
+                hasInitializedSpecialType = true;
+            }
             if (type != SpecialType.Bomb)
             {
                 BombTier = 0;
@@ -69,6 +74,15 @@ namespace GameCore
             {
                 ClearTreasureChestVisual();
             }
+            if (type == SpecialType.Player)
+            {
+                ColorIndex = -1;
+                baseSprite = null;
+                if (spriteRenderer != null)
+                {
+                    spriteRenderer.sprite = null;
+                }
+            }
             ApplySpecialVisual();
         }
 
@@ -76,6 +90,7 @@ namespace GameCore
         public void SetBombTier(int tier, Sprite sprite)
         {
             SpecialType = SpecialType.Bomb;
+            isPlayerPiece = false;
             BombTier = tier;
             bombSprite = sprite;
             ApplySpecialVisual();
