@@ -62,10 +62,12 @@ namespace GameCore
                         var manager = gameManager != null ? gameManager : GameManager.Instance;
                         if (manager != null && board.CanJetpackDouble(selectedPiece, direction))
                         {
-                            if (manager.TrySpendEnergy(JetpackEnergyCost))
+                            if (manager.CanUseManualAbility() && manager.TrySpendEnergy(JetpackEnergyCost))
                             {
-                                manager.CancelMeditation();
-                                board.TryJetpackDouble(selectedPiece, direction);
+                                if (board.TryJetpackDouble(selectedPiece, direction))
+                                {
+                                    manager.RegisterManualAbilityUse();
+                                }
                             }
                         }
                     }
