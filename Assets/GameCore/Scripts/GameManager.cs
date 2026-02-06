@@ -136,6 +136,8 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
+        public bool HasMonsterAttackTarget => hasMonsterAttackTarget;
+        public Vector2Int MonsterAttackTarget => monsterAttackTarget;
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
 
