@@ -328,6 +328,54 @@ namespace GameCore
             return true;
         }
 
+        public bool CanJetpackSwap(Piece playerPiece, Vector2Int direction)
+        {
+            if (isBusy || playerPiece == null || pieces == null)
+            {
+                return false;
+            }
+
+            if (!playerPiece.IsPlayer)
+            {
+                return false;
+            }
+
+            var targetX = playerPiece.X + direction.x;
+            var targetY = playerPiece.Y + direction.y;
+
+            if (!IsInBounds(targetX, targetY))
+            {
+                return false;
+            }
+
+            var target = pieces[targetX, targetY];
+            if (target == null)
+            {
+                return false;
+            }
+
+            return IsSwappable(target);
+        }
+
+        public bool TryJetpackSwap(Piece playerPiece, Vector2Int direction)
+        {
+            if (!CanJetpackSwap(playerPiece, direction))
+            {
+                return false;
+            }
+
+            var targetX = playerPiece.X + direction.x;
+            var targetY = playerPiece.Y + direction.y;
+            var target = pieces[targetX, targetY];
+            if (target == null)
+            {
+                return false;
+            }
+
+            StartCoroutine(JetpackSwapRoutine(playerPiece, target));
+            return true;
+        }
+
         public bool IsSwapValid(Piece first, Piece second)
         {
             if (first == null || second == null || pieces == null)
@@ -371,6 +419,32 @@ namespace GameCore
             }
 
             // CODEX: LEVEL_LOOP
+            moveId = activeMoveId; // CODEX VERIFY 2: commit staged move id for accepted swaps.
+            if (debugMode)
+            {
+                Debug.Log($"MoveStart({activeMoveId}): ({first.X},{first.Y}) -> ({second.X},{second.Y})", this); // CODEX VERIFY 2: move start log once per accepted swap.
+            }
+            ValidSwap?.Invoke();
+            HandleTreasureChestSwap(); // CODEX CHEST PR1
+            yield return StartCoroutine(ClearMatchesRoutine());
+            if (debugMode)
+            {
+                Debug.Log($"MoveEnd({activeMoveId}): resolve complete.", this); // CODEX VERIFY 2: move end log once per accepted swap.
+            }
+            isBusy = false;
+        }
+
+        private IEnumerator JetpackSwapRoutine(Piece first, Piece second)
+        {
+            isBusy = true;
+            SwapPieces(first, second);
+
+            yield return new WaitForSeconds(0.05f);
+
+            activeMoveId = moveId + 1; // CODEX VERIFY 2: stage upcoming move id for match diagnostics.
+            specialRecipeBombPositions.Clear(); // CODEX BOMB PR3: reset per swap to avoid double-trigger.
+            TryApplySpecialRecipe(first, second);
+
             moveId = activeMoveId; // CODEX VERIFY 2: commit staged move id for accepted swaps.
             if (debugMode)
             {
