@@ -117,6 +117,7 @@ namespace GameCore
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
+        [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
 
         public static GameManager Instance { get; private set; }
 
@@ -221,6 +222,9 @@ namespace GameCore
         private int stunnedTurnsRemaining;
         private GameObject monsterAttackMarkerInstance;
         private MonsterAttackTelegraph monsterAttackTelegraph;
+        private MonsterAttackAnimationController monsterAttackAnimationController;
+        private Coroutine monsterAttackVisualResetRoutine;
+        private bool hasTriggeredMonsterWindup;
         private Piece monsterEnragePiece;
         private MonsterEnrageIndicator monsterEnrageIndicator;
         private const int ToxicGraceStacks = 2;
@@ -796,15 +800,30 @@ namespace GameCore
             TryTriggerMonsterEnrage();
         }
 
-        private void ResetMonsterAttackState()
+        private void ResetMonsterAttackState(bool delayVisualReset = false)
         {
             var bossState = CurrentBossState;
             bossState.IsEnraged = false;
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
             CurrentBossState = bossState;
-            DestroyMonsterAttackMarker();
-            ClearMonsterEnrageIndicator();
+            hasTriggeredMonsterWindup = false;
+
+            if (monsterAttackVisualResetRoutine != null)
+            {
+                StopCoroutine(monsterAttackVisualResetRoutine);
+                monsterAttackVisualResetRoutine = null;
+            }
+
+            if (delayVisualReset)
+            {
+                monsterAttackVisualResetRoutine = StartCoroutine(DelayedMonsterAttackVisualReset());
+            }
+            else
+            {
+                DestroyMonsterAttackMarker();
+                ClearMonsterEnrageIndicator();
+            }
             UpdateWorriedState();
             UpdatePlayerAnimationFlags();
         }
@@ -826,6 +845,11 @@ namespace GameCore
             bossState.TurnsUntilAttack = Mathf.Max(0, bossState.TurnsUntilAttack - 1);
             CurrentBossState = bossState;
             UpdateMonsterAttackTelegraph();
+            if (bossState.TurnsUntilAttack == 1 && !hasTriggeredMonsterWindup)
+            {
+                TriggerMonsterAttackWindup();
+                hasTriggeredMonsterWindup = true;
+            }
             if (bossState.TurnsUntilAttack > 0)
             {
                 return;
@@ -833,7 +857,7 @@ namespace GameCore
 
             var targetPosition = bossState.AttackTarget;
             ResolveMonsterAttack(targetPosition);
-            ResetMonsterAttackState();
+            ResetMonsterAttackState(true);
         }
 
         private void TryTriggerMonsterEnrage()
@@ -874,6 +898,7 @@ namespace GameCore
             bossState.AttackTarget = targetPosition;
             bossState.TurnsUntilAttack = 2;
             CurrentBossState = bossState;
+            hasTriggeredMonsterWindup = false;
             SpawnMonsterAttackMarker(targetPosition);
             UpdateMonsterAttackTelegraph();
             UpdateMonsterEnrageVisuals();
@@ -893,9 +918,12 @@ namespace GameCore
                 return;
             }
 
+            TriggerMonsterAttackExecuteVisuals();
+
             if (board.TryGetPlayerPosition(out var playerPosition)
                 && playerPosition == targetPosition)
             {
+                TriggerStunnedAnimation();
                 if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
                 {
                     TriggerLose();
@@ -1319,9 +1347,19 @@ namespace GameCore
                 {
                     monsterEnrageIndicator = bossPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
                 }
+
+                monsterAttackAnimationController = bossPiece.GetComponent<MonsterAttackAnimationController>();
+                if (monsterAttackAnimationController == null)
+                {
+                    monsterAttackAnimationController = bossPiece.gameObject.AddComponent<MonsterAttackAnimationController>();
+                }
             }
 
             monsterEnrageIndicator.SetEnraged(true);
+            if (monsterAttackAnimationController != null)
+            {
+                monsterAttackAnimationController.SetEnraged(true);
+            }
         }
 
         private void ClearMonsterEnrageIndicator()
@@ -1331,8 +1369,49 @@ namespace GameCore
                 monsterEnrageIndicator.SetEnraged(false);
             }
 
+            if (monsterAttackAnimationController != null)
+            {
+                monsterAttackAnimationController.SetEnraged(false);
+            }
+
             monsterEnrageIndicator = null;
             monsterEnragePiece = null;
+            monsterAttackAnimationController = null;
+        }
+
+        private void TriggerMonsterAttackWindup()
+        {
+            if (monsterAttackAnimationController != null)
+            {
+                monsterAttackAnimationController.TriggerWindup();
+            }
+        }
+
+        private void TriggerMonsterAttackExecuteVisuals()
+        {
+            if (monsterAttackAnimationController != null)
+            {
+                monsterAttackAnimationController.TriggerAttackExecute();
+            }
+
+            if (monsterAttackTelegraph != null)
+            {
+                monsterAttackTelegraph.PlayImpactPulse();
+            }
+        }
+
+        private IEnumerator DelayedMonsterAttackVisualReset()
+        {
+            var delay = monsterAttackVisualResetDelay;
+            if (monsterAttackAnimationController != null)
+            {
+                delay = Mathf.Max(delay, monsterAttackAnimationController.AttackExecuteDuration);
+            }
+
+            yield return new WaitForSeconds(delay);
+            DestroyMonsterAttackMarker();
+            ClearMonsterEnrageIndicator();
+            monsterAttackVisualResetRoutine = null;
         }
 
         private void UpdateTiredState()
