@@ -429,6 +429,40 @@ namespace GameCore
             return true;
         }
 
+        public bool TryMovePlayerUp()
+        {
+            if (pieces == null)
+            {
+                return false;
+            }
+
+            if (!TryGetPlayerPosition(out var playerPosition))
+            {
+                return false;
+            }
+
+            var targetY = playerPosition.y + 1;
+            if (!IsInBounds(playerPosition.x, targetY))
+            {
+                return false;
+            }
+
+            var playerPiece = pieces[playerPosition.x, playerPosition.y];
+            var targetPiece = pieces[playerPosition.x, targetY];
+            if (playerPiece == null || targetPiece == null)
+            {
+                return false;
+            }
+
+            if (!IsSwappable(targetPiece))
+            {
+                return false;
+            }
+
+            SwapPieces(playerPiece, targetPiece);
+            return true;
+        }
+
         public bool IsSwapValid(Piece first, Piece second)
         {
             if (first == null || second == null || pieces == null)

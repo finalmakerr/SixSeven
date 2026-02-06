@@ -198,6 +198,8 @@ namespace GameCore
         private Coroutine bonusMiniGameCleanupRoutine;
         private int energy;
         private bool isShieldActive;
+        private bool isMeditating;
+        private int meditationTurnsRemaining;
         private int toxicStacks;
         private const int ToxicGraceStacks = 2;
 
@@ -306,6 +308,7 @@ namespace GameCore
             energy = 0;
             toxicStacks = 0;
             SetShieldActive(false);
+            CancelMeditation();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -509,7 +512,25 @@ namespace GameCore
                 return false;
             }
 
+            CancelMeditation();
             SetShieldActive(true);
+            return true;
+        }
+
+        public bool TryActivateMeditation()
+        {
+            if (isMeditating)
+            {
+                return false;
+            }
+
+            const int meditationEnergyCost = 2;
+            if (!TrySpendEnergy(meditationEnergyCost))
+            {
+                return false;
+            }
+
+            BeginMeditation(3);
             return true;
         }
 
@@ -550,6 +571,38 @@ namespace GameCore
             if (playerAnimationStateController != null)
             {
                 playerAnimationStateController.IsShielded = isShieldActive;
+            }
+        }
+
+        private void BeginMeditation(int turns)
+        {
+            if (turns <= 0)
+            {
+                return;
+            }
+
+            isMeditating = true;
+            meditationTurnsRemaining = turns;
+            UpdateMeditationAnimationState();
+        }
+
+        public void CancelMeditation()
+        {
+            if (!isMeditating && meditationTurnsRemaining <= 0)
+            {
+                return;
+            }
+
+            isMeditating = false;
+            meditationTurnsRemaining = 0;
+            UpdateMeditationAnimationState();
+        }
+
+        private void UpdateMeditationAnimationState()
+        {
+            if (playerAnimationStateController != null)
+            {
+                playerAnimationStateController.IsMeditating = isMeditating;
             }
         }
 
@@ -610,23 +663,30 @@ namespace GameCore
                 return;
             }
 
-            if (!board.TryGetPlayerPosition(out var playerPosition))
+            var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
+            if (!hasPlayerPosition || playerPosition.y > 0)
             {
                 ClearToxicStacks();
-                return;
+            }
+            else
+            {
+                toxicStacks += 1;
+                if (toxicStacks >= ToxicGraceStacks)
+                {
+                    ApplyEnergyDrain(1);
+                }
             }
 
-            if (playerPosition.y > 0)
+            if (isMeditating && meditationTurnsRemaining > 0)
             {
-                ClearToxicStacks();
-                return;
-            }
+                meditationTurnsRemaining -= 1;
+                board.TryMovePlayerUp();
 
-            toxicStacks += 1;
-
-            if (toxicStacks >= ToxicGraceStacks)
-            {
-                ApplyEnergyDrain(1);
+                if (meditationTurnsRemaining <= 0)
+                {
+                    isMeditating = false;
+                    UpdateMeditationAnimationState();
+                }
             }
         }
 

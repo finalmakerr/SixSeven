@@ -64,6 +64,7 @@ namespace GameCore
                         {
                             if (manager.TrySpendEnergy(JetpackEnergyCost))
                             {
+                                manager.CancelMeditation();
                                 board.TryJetpackDouble(selectedPiece, direction);
                             }
                         }
