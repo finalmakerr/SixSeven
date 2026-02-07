@@ -169,6 +169,7 @@ namespace GameCore
         private BossPower pendingBossPowerLossDiscard;
         // CODEX POWER PR5
         private bool awaitingBossPowerRewardChoice;
+        private bool awaitingBossStatRewardChoice;
         // CODEX BONUS PR6
         private bool awaitingBonusBossPowerRewardChoice;
         // CODEX POWER PR5
@@ -219,6 +220,10 @@ namespace GameCore
         private Coroutine bonusMiniGameCleanupRoutine;
         private int energy;
         private bool isShieldActive;
+        private bool shieldJustActivated;
+        private bool shieldCooldownJustStarted;
+        private int shieldTurnsRemaining;
+        private int shieldCooldownTurnsRemaining;
         private bool isMeditating;
         private bool manualAbilityUsedThisTurn;
         private int meditationTurnsRemaining;
@@ -234,6 +239,7 @@ namespace GameCore
         private bool bugadaJustActivated;
         private AudioClip bugadaOriginalMusicClip;
         private int stunnedTurnsRemaining;
+        private bool skipMoveCostThisSwap;
         private GameObject monsterAttackMarkerInstance;
         private MonsterAttackTelegraph monsterAttackTelegraph;
         private MonsterAttackAnimationController monsterAttackAnimationController;
@@ -352,6 +358,7 @@ namespace GameCore
             MovesRemaining = MovesLimit > 0 ? MovesLimit : startingMoves;
             HasMetTarget = false;
             hasEnded = false;
+            awaitingBossStatRewardChoice = false;
             energy = 0;
             ResetPlayerHealth();
             playerItemInventory?.Clear();
@@ -359,6 +366,10 @@ namespace GameCore
             toxicDrainActive = false;
             manualAbilityUsedThisTurn = false;
             SetShieldActive(false);
+            shieldJustActivated = false;
+            shieldCooldownJustStarted = false;
+            shieldTurnsRemaining = 0;
+            shieldCooldownTurnsRemaining = 0;
             CancelMeditation();
             ClearTransientEmotionFlags();
             isStunned = false;
@@ -367,6 +378,7 @@ namespace GameCore
             hasGainedEnergy = false;
             ResetBugadaState();
             stunnedTurnsRemaining = 0;
+            skipMoveCostThisSwap = false;
             ResetMonsterAttackState();
             HideComboText();
             displayedScore = Score;
@@ -533,7 +545,12 @@ namespace GameCore
             }
 
             AddScore(clearedCount, cascadeCount);
-            var energyGain = AddEnergyFromMatches(matchRunLengths, out var reachedMaxEnergy);
+            var energyGain = 0;
+            var reachedMaxEnergy = false;
+            if (cascadeCount == 1)
+            {
+                energyGain = AddEnergyFromMatches(matchRunLengths, out reachedMaxEnergy);
+            }
             var hasMatchFourPlus = HasMatchRunAtLeast(matchRunLengths, 4);
             var hasMatchFivePlus = HasMatchRunAtLeast(matchRunLengths, 5);
             if (energyGain >= 2 && hasMatchFourPlus)
@@ -652,15 +669,33 @@ namespace GameCore
                 return false;
             }
 
+            if (shieldCooldownTurnsRemaining > 0)
+            {
+                return false;
+            }
+
+            if (playerItemInventory == null || !playerItemInventory.HasItem(PlayerItemType.Shield))
+            {
+                return false;
+            }
+
             const int shieldEnergyCost = 2;
             if (!TrySpendEnergy(shieldEnergyCost))
             {
                 return false;
             }
 
+            if (!playerItemInventory.TryConsumeItem(PlayerItemType.Shield))
+            {
+                return false;
+            }
+
             CancelMeditation();
             SetShieldActive(true);
+            shieldTurnsRemaining = 2;
+            shieldJustActivated = true;
             RegisterManualAbilityUse();
+            UpdateUI();
             return true;
         }
 
@@ -701,17 +736,13 @@ namespace GameCore
 
             if (!isShieldActive)
             {
-                if (playerItemInventory == null || !playerItemInventory.TryConsumeItem(PlayerItemType.Shield))
-                {
-                    return false;
-                }
-
-                UpdateShieldAnimationState();
-                UpdateUI();
-                return true;
+                return false;
             }
 
             SetShieldActive(false);
+            shieldTurnsRemaining = 0;
+            BeginShieldCooldown();
+            UpdateUI();
             return true;
         }
 
@@ -777,12 +808,16 @@ namespace GameCore
                 return 0;
             }
 
-            var energyGain = 0;
+            var maxRunLength = 0;
             foreach (var runLength in matchRunLengths)
             {
-                energyGain += GetEnergyGainForRun(runLength);
+                if (runLength > maxRunLength)
+                {
+                    maxRunLength = runLength;
+                }
             }
 
+            var energyGain = GetEnergyGainForRun(maxRunLength);
             if (energyGain <= 0)
             {
                 return 0;
@@ -798,12 +833,12 @@ namespace GameCore
 
         private int GetEnergyGainForRun(int runLength)
         {
-            if (runLength >= 5)
+            if (runLength >= 6)
             {
                 return 3;
             }
 
-            if (runLength == 4)
+            if (runLength >= 4)
             {
                 return 2;
             }
@@ -820,6 +855,12 @@ namespace GameCore
 
             ClearTransientEmotionFlags();
             UpdatePlayerAnimationFlags();
+            if (skipMoveCostThisSwap)
+            {
+                skipMoveCostThisSwap = false;
+                return;
+            }
+
             TryUseMove();
             if (MovesRemaining <= 0 && !HasMetTarget)
             {
@@ -885,6 +926,7 @@ namespace GameCore
             }
 
             TickBugadaDuration();
+            TickShieldStatus();
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
@@ -996,6 +1038,11 @@ namespace GameCore
         // CODEX STAGE 7D: Bugada activation + duration handling.
         private void ActivateBugada()
         {
+            if (IsBugadaActive)
+            {
+                return;
+            }
+
             bugadaTurnsRemaining = 3;
             bugadaJustActivated = true;
             UpdateBugadaMusic(true);
@@ -1032,6 +1079,57 @@ namespace GameCore
             bugadaJustActivated = false;
             UpdateBugadaMusic(false);
             UpdateUI();
+        }
+
+        private void TickShieldStatus()
+        {
+            var updated = false;
+
+            if (isShieldActive && shieldTurnsRemaining > 0)
+            {
+                if (shieldJustActivated)
+                {
+                    shieldJustActivated = false;
+                }
+                else
+                {
+                    shieldTurnsRemaining -= 1;
+                    if (shieldTurnsRemaining <= 0)
+                    {
+                        SetShieldActive(false);
+                        BeginShieldCooldown();
+                        updated = true;
+                    }
+                }
+            }
+
+            if (shieldCooldownTurnsRemaining > 0)
+            {
+                if (shieldCooldownJustStarted)
+                {
+                    shieldCooldownJustStarted = false;
+                }
+                else
+                {
+                    shieldCooldownTurnsRemaining -= 1;
+                    if (shieldCooldownTurnsRemaining < 0)
+                    {
+                        shieldCooldownTurnsRemaining = 0;
+                    }
+                    updated = true;
+                }
+            }
+
+            if (updated)
+            {
+                UpdateUI();
+            }
+        }
+
+        private void BeginShieldCooldown()
+        {
+            shieldCooldownTurnsRemaining = 3;
+            shieldCooldownJustStarted = true;
         }
 
         private void ResetBugadaState()
@@ -1480,7 +1578,17 @@ namespace GameCore
             // CODEX: LEVEL_LOOP
             SetEndPanels(true, false);
             // CODEX BOSS PR4
-            GrantBossPowerIfEligible();
+            if (IsBossLevel && !CurrentBossState.bossAlive)
+            {
+                if (!TryBeginBossStatRewardChoice())
+                {
+                    var bossPowerRewardStarted = GrantBossPowerIfEligible();
+                    if (!bossPowerRewardStarted)
+                    {
+                        SetBoardInputLock(false);
+                    }
+                }
+            }
             OnWin?.Invoke();
         }
 
@@ -1583,6 +1691,11 @@ namespace GameCore
         public void TriggerJetpackDoubleSuccess()
         {
             TriggerExcitedAnimation();
+        }
+
+        public void RegisterJetpackMove()
+        {
+            skipMoveCostThisSwap = true;
         }
 
         private void TriggerHappyAnimation()
@@ -2731,11 +2844,11 @@ namespace GameCore
         }
 
         // CODEX BOSS PR4
-        private void GrantBossPowerIfEligible()
+        private bool GrantBossPowerIfEligible()
         {
             if (!IsBossLevel || CurrentBossState.bossAlive)
             {
-                return;
+                return false;
             }
 
             if (bossPowerInventory == null)
@@ -2746,7 +2859,105 @@ namespace GameCore
             // CODEX POWER PR5
             if (!TryBeginBossPowerRewardChoice())
             {
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool TryBeginBossStatRewardChoice()
+        {
+            if (bossPowerRewardPanel == null || bossPowerRewardButtons == null || bossPowerRewardButtons.Length == 0)
+            {
+                Debug.LogWarning("Boss reward UI is not configured; skipping reward choices.", this);
+                return false;
+            }
+
+            awaitingBossStatRewardChoice = true;
+            bossPowerRewardPanel.SetActive(true);
+
+            if (bossPowerRewardPromptText != null)
+            {
+                bossPowerRewardPromptText.text = "Choose a reward.";
+            }
+
+            for (var i = 0; i < bossPowerRewardButtons.Length; i++)
+            {
+                var button = bossPowerRewardButtons[i];
+                if (button == null)
+                {
+                    continue;
+                }
+
+                if (i == 0)
+                {
+                    ConfigureBossStatRewardButton(button, "+1 Heart", true);
+                }
+                else if (i == 1)
+                {
+                    ConfigureBossStatRewardButton(button, "+1 Max Energy", false);
+                }
+                else
+                {
+                    button.onClick.RemoveAllListeners();
+                    button.gameObject.SetActive(false);
+                }
+            }
+
+            SetBoardInputLock(true);
+            return true;
+        }
+
+        private void ConfigureBossStatRewardButton(Button button, string label, bool isHeartReward)
+        {
+            button.gameObject.SetActive(true);
+            button.onClick.RemoveAllListeners();
+            var textLabel = button.GetComponentInChildren<Text>();
+            if (textLabel != null)
+            {
+                textLabel.text = label;
+            }
+
+            if (isHeartReward)
+            {
+                button.onClick.AddListener(() => ResolveBossStatRewardChoice(true));
+            }
+            else
+            {
+                button.onClick.AddListener(() => ResolveBossStatRewardChoice(false));
+            }
+        }
+
+        private void ResolveBossStatRewardChoice(bool chooseHeart)
+        {
+            if (!awaitingBossStatRewardChoice)
+            {
                 return;
+            }
+
+            awaitingBossStatRewardChoice = false;
+            if (bossPowerRewardPanel != null)
+            {
+                bossPowerRewardPanel.SetActive(false);
+            }
+
+            if (chooseHeart)
+            {
+                maxHP = Mathf.Max(1, maxHP + 1);
+                CurrentHP = Mathf.Min(maxHP, CurrentHP + 1);
+            }
+            else
+            {
+                maxEnergy = Mathf.Max(1, maxEnergy + 1);
+                energy = Mathf.Min(maxEnergy, energy);
+            }
+
+            UpdateUI();
+
+            var bossPowerRewardStarted = GrantBossPowerIfEligible();
+            if (!bossPowerRewardStarted)
+            {
+                SetBoardInputLock(false);
             }
         }
 
