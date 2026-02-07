@@ -64,7 +64,6 @@ namespace GameCore
         // CODEX STAGE 7B: track item spawns + lifetimes.
         private readonly HashSet<Vector2Int> pendingItemSpawnPositions = new HashSet<Vector2Int>();
         private readonly HashSet<Piece> activeItems = new HashSet<Piece>();
-        private readonly HashSet<Piece> itemsSpawnedThisTurn = new HashSet<Piece>();
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
         // CODEX CHEST PR1
@@ -147,7 +146,6 @@ namespace GameCore
             pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
             pendingItemSpawnPositions.Clear(); // CODEX STAGE 7B: reset item spawns.
             activeItems.Clear(); // CODEX STAGE 7B: reset item lifetimes.
-            itemsSpawnedThisTurn.Clear(); // CODEX STAGE 7B
             chestCooldownMovesRemaining = 0; // CODEX CHEST PR1
             chestPresent = false; // CODEX CHEST PR1
             CreateBoard();
@@ -917,11 +915,6 @@ namespace GameCore
 
             matchRunLengths.Add(runLength);
 
-            if (runLength >= 4)
-            {
-                pendingItemSpawnPositions.Add(new Vector2Int(endX, endY)); // CODEX STAGE 7B: item spawn candidate.
-            }
-
             // CODEX BOSS PR2
             Vector2Int? bombPosition = null;
             if ((runLength == 4 || runLength == 7) && ShouldAllowBombCreation())
@@ -935,6 +928,15 @@ namespace GameCore
                     var bombTier = runLength == 4 ? 4 : 7;
                     CreateBombAt(candidatePosition, bombTier); // CODEX BOMB TIERS: match-4 and match-7 bomb creation.
                     bombPosition = candidatePosition;
+                }
+            }
+
+            if (runLength >= 4)
+            {
+                var itemSpawnPosition = FindItemSpawnPosition(endX, endY, runLength, direction, bombPosition);
+                if (itemSpawnPosition.HasValue)
+                {
+                    pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7B: item spawn candidate.
                 }
             }
 
@@ -970,6 +972,30 @@ namespace GameCore
         private IReadOnlyList<int> GetMatchRunLengthsSnapshot()
         {
             return new List<int>(matchRunLengths);
+        }
+
+        // CODEX STAGE 7B: choose an empty spot in a match run for item spawning.
+        private Vector2Int? FindItemSpawnPosition(int endX, int endY, int runLength, Vector2Int direction, Vector2Int? bombPosition)
+        {
+            for (var i = 0; i < runLength; i++)
+            {
+                var x = endX - direction.x * i;
+                var y = endY - direction.y * i;
+                var candidate = new Vector2Int(x, y);
+                if (bombPosition.HasValue && bombPosition.Value == candidate)
+                {
+                    continue;
+                }
+
+                if (bombCreationPositions.Contains(candidate))
+                {
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return null;
         }
 
         // CODEX BOMB PR3: SpecialRecipe system for mixing special tiles.
@@ -1152,7 +1178,6 @@ namespace GameCore
             var lifetime = Mathf.Max(1, itemLifetimeTurns);
             itemPiece.ConfigureAsItem(lifetime);
             activeItems.Add(itemPiece);
-            itemsSpawnedThisTurn.Add(itemPiece);
         }
 
         // CODEX STAGE 7B: decrement item turns at end of each match.
@@ -1169,11 +1194,6 @@ namespace GameCore
                 if (item == null)
                 {
                     expiredItems.Add(item);
-                    continue;
-                }
-
-                if (itemsSpawnedThisTurn.Contains(item))
-                {
                     continue;
                 }
 
@@ -1196,7 +1216,6 @@ namespace GameCore
                 StartCoroutine(FadeAndRemoveItem(item));
             }
 
-            itemsSpawnedThisTurn.Clear();
         }
 
         // CODEX STAGE 7B: fade expired items before removing them.
@@ -1248,7 +1267,6 @@ namespace GameCore
             OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
             HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
             activeItems.Remove(piece); // CODEX STAGE 7B
-            itemsSpawnedThisTurn.Remove(piece); // CODEX STAGE 7B
 
             if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)
             {
@@ -1283,7 +1301,6 @@ namespace GameCore
             while (matches.Count > 0 || pendingSpecialClearPositions.Count > 0)
             {
                 cascadeCount++;
-                itemsSpawnedThisTurn.Clear(); // CODEX STAGE 7B: track new items per match turn.
                 if (debugMode)
                 {
                     Debug.Log($"CascadeCount({activeMoveId}): {cascadeCount}", this); // CODEX VERIFY 2: cascade instrumentation with move id.
@@ -1362,7 +1379,6 @@ namespace GameCore
                 OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
                 HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
                 activeItems.Remove(piece); // CODEX STAGE 7B: remove items cleared by specials.
-                itemsSpawnedThisTurn.Remove(piece); // CODEX STAGE 7B
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
