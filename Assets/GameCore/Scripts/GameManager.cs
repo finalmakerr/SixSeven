@@ -253,6 +253,8 @@ namespace GameCore
         private const int ToxicGraceStacks = 2;
         private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
         private bool isActivatingSpecialPower;
+        private SpecialPowerDefinition activeSpecialPower;
+        private bool activeSpecialPowerAllowsHpModification;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
 
@@ -644,6 +646,12 @@ namespace GameCore
                 return;
             }
 
+            if (isActivatingSpecialPower)
+            {
+                Debug.LogWarning("Special powers cannot generate energy.", this);
+                return;
+            }
+
             if (energy < 0)
             {
                 energy = 0;
@@ -663,6 +671,12 @@ namespace GameCore
         {
             if (amount <= 0)
             {
+                return;
+            }
+
+            if (isActivatingSpecialPower && !activeSpecialPowerAllowsHpModification)
+            {
+                Debug.LogWarning("Special powers cannot directly modify player HP.", this);
                 return;
             }
 
@@ -1429,6 +1443,14 @@ namespace GameCore
 
         public SpecialPowerActivationResult TryActivateSpecialPower(SpecialPowerDefinition power, SpecialPowerTarget target)
         {
+            return TryActivateSpecialPower(power, target, null);
+        }
+
+        public SpecialPowerActivationResult TryActivateSpecialPower(
+            SpecialPowerDefinition power,
+            SpecialPowerTarget target,
+            Action onActivate)
+        {
             if (power == null)
             {
                 var missing = SpecialPowerActivationResult.Failed(
@@ -1537,12 +1559,17 @@ namespace GameCore
             }
 
             isActivatingSpecialPower = true;
+            activeSpecialPower = power;
+            activeSpecialPowerAllowsHpModification = power.AllowsDirectPlayerHpModification;
             try
             {
+                onActivate?.Invoke();
                 SetSpecialPowerCooldown(power, power.CooldownTurns);
             }
             finally
             {
+                activeSpecialPower = null;
+                activeSpecialPowerAllowsHpModification = false;
                 isActivatingSpecialPower = false;
             }
 
@@ -1956,6 +1983,12 @@ namespace GameCore
         {
             if (damage <= 0 || hasEnded || IsBugadaActive)
             {
+                return;
+            }
+
+            if (isActivatingSpecialPower && !activeSpecialPowerAllowsHpModification)
+            {
+                Debug.LogWarning("Special powers cannot directly modify player HP.", this);
                 return;
             }
 
