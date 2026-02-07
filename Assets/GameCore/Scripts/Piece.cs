@@ -13,6 +13,7 @@ namespace GameCore
         public int ColorIndex { get; private set; }
         public SpecialType SpecialType { get; private set; }
         public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
+        public int ItemTurnsRemaining { get; private set; } // CODEX STAGE 7B: track item lifetime.
         public bool IsPlayer => isPlayerPiece;
 
         private SpriteRenderer spriteRenderer;
@@ -23,6 +24,8 @@ namespace GameCore
         // CODEX CHEST PR1
         private SpriteRenderer treasureOverlayRenderer;
         private TextMesh treasureDebugText;
+        // CODEX STAGE 7B
+        private TextMesh itemTurnsText;
 
         private void Awake()
         {
@@ -59,10 +62,12 @@ namespace GameCore
             SpecialType = SpecialType.Player;
             ColorIndex = -1;
             BombTier = 0;
+            ItemTurnsRemaining = 0;
             baseSprite = null;
             bombSprite = null;
             hasInitializedSpecialType = true;
             ClearTreasureChestVisual();
+            ClearItemVisual();
             if (spriteRenderer != null)
             {
                 spriteRenderer.sprite = null;
@@ -107,6 +112,11 @@ namespace GameCore
             {
                 ClearTreasureChestVisual();
             }
+            if (type != SpecialType.Item)
+            {
+                ItemTurnsRemaining = 0;
+                ClearItemVisual();
+            }
             ApplySpecialVisual();
         }
 
@@ -122,7 +132,57 @@ namespace GameCore
             hasInitializedSpecialType = true;
             BombTier = tier;
             bombSprite = sprite;
+            ItemTurnsRemaining = 0;
+            ClearItemVisual();
             ApplySpecialVisual();
+        }
+
+        // CODEX STAGE 7B: configure a board-spawned item with remaining turns.
+        public void ConfigureAsItem(int remainingTurns)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            SpecialType = SpecialType.Item;
+            hasInitializedSpecialType = true;
+            BombTier = 0;
+            bombSprite = null;
+            ClearTreasureChestVisual();
+            ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
+            UpdateItemTurnsVisual();
+            ApplySpecialVisual();
+        }
+
+        // CODEX STAGE 7B: update item turns remaining and indicator.
+        public void UpdateItemTurns(int remainingTurns)
+        {
+            if (isPlayerPiece || SpecialType != SpecialType.Item)
+            {
+                return;
+            }
+
+            ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
+            UpdateItemTurnsVisual();
+        }
+
+        // CODEX STAGE 7B: fade item visuals on expiry.
+        public void SetItemFade(float alpha)
+        {
+            if (spriteRenderer != null)
+            {
+                var color = spriteRenderer.color;
+                color.a = alpha;
+                spriteRenderer.color = color;
+            }
+
+            if (itemTurnsText != null)
+            {
+                var color = itemTurnsText.color;
+                color.a = alpha;
+                itemTurnsText.color = color;
+            }
         }
 
         private void ApplySpecialVisual()
@@ -198,6 +258,48 @@ namespace GameCore
             {
                 treasureDebugText.gameObject.SetActive(false);
             }
+        }
+
+        // CODEX STAGE 7B
+        private void UpdateItemTurnsVisual()
+        {
+            if (SpecialType != SpecialType.Item)
+            {
+                ClearItemVisual();
+                return;
+            }
+
+            var text = EnsureItemTurnsText();
+            text.text = ItemTurnsRemaining.ToString();
+            text.gameObject.SetActive(true);
+        }
+
+        // CODEX STAGE 7B
+        private void ClearItemVisual()
+        {
+            if (itemTurnsText != null)
+            {
+                itemTurnsText.gameObject.SetActive(false);
+            }
+        }
+
+        // CODEX STAGE 7B
+        private TextMesh EnsureItemTurnsText()
+        {
+            if (itemTurnsText != null)
+            {
+                return itemTurnsText;
+            }
+
+            var textObject = new GameObject("ItemTurnsText");
+            textObject.transform.SetParent(transform, false);
+            itemTurnsText = textObject.AddComponent<TextMesh>();
+            itemTurnsText.anchor = TextAnchor.MiddleCenter;
+            itemTurnsText.alignment = TextAlignment.Center;
+            itemTurnsText.characterSize = 0.18f;
+            itemTurnsText.fontSize = 60;
+            itemTurnsText.color = Color.white;
+            return itemTurnsText;
         }
 
         // CODEX CHEST PR1

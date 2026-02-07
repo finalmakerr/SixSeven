@@ -34,6 +34,9 @@ namespace GameCore
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
         [SerializeField] private int maxSpawnAttempts = 6; // CODEX VERIFY: cap retry attempts for spawn/refill.
         [SerializeField] private int maxShuffleAttempts = 10; // CODEX VERIFY: cap shuffle retries for dead boards.
+        // CODEX STAGE 7B: board-spawned items.
+        [SerializeField] private int itemLifetimeTurns = 2;
+        [SerializeField] private float itemExpireFadeDuration = 0.2f;
         // CODEX CHEST PR1
         [SerializeField] [Range(1, 10)] private int chestSpawnChancePercent = 5; // CODEX CHEST PR1
         [SerializeField] private int chestCooldownMovesRemaining; // CODEX CHEST PR1
@@ -58,6 +61,10 @@ namespace GameCore
         private readonly HashSet<Vector2Int> bombDetonationsThisStep = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> specialRecipeBombPositions = new HashSet<Vector2Int>(); // CODEX BOMB PR3: prevent double recipe bombs per swap.
         private readonly HashSet<Vector2Int> pendingSpecialClearPositions = new HashSet<Vector2Int>(); // CODEX BOMB TIERS: force clears for bomb mixes.
+        // CODEX STAGE 7B: track item spawns + lifetimes.
+        private readonly HashSet<Vector2Int> pendingItemSpawnPositions = new HashSet<Vector2Int>();
+        private readonly HashSet<Piece> activeItems = new HashSet<Piece>();
+        private readonly HashSet<Piece> itemsSpawnedThisTurn = new HashSet<Piece>();
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
         // CODEX CHEST PR1
@@ -138,6 +145,9 @@ namespace GameCore
             ResetRandomGenerator();
             colorBag.Clear();
             pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
+            pendingItemSpawnPositions.Clear(); // CODEX STAGE 7B: reset item spawns.
+            activeItems.Clear(); // CODEX STAGE 7B: reset item lifetimes.
+            itemsSpawnedThisTurn.Clear(); // CODEX STAGE 7B
             chestCooldownMovesRemaining = 0; // CODEX CHEST PR1
             chestPresent = false; // CODEX CHEST PR1
             CreateBoard();
@@ -849,6 +859,7 @@ namespace GameCore
             specialActivationLogged.Clear(); // CODEX VERIFY 2: reset special activation logs per scan.
             // CODEX BOSS PR2
             bombCreationPositions.Clear();
+            pendingItemSpawnPositions.Clear(); // CODEX STAGE 7B: reset item spawn tracking per scan.
 
             // Scan horizontally for runs of 3+ matching pieces.
             for (var y = 0; y < height; y++)
@@ -905,6 +916,11 @@ namespace GameCore
             }
 
             matchRunLengths.Add(runLength);
+
+            if (runLength >= 4)
+            {
+                pendingItemSpawnPositions.Add(new Vector2Int(endX, endY)); // CODEX STAGE 7B: item spawn candidate.
+            }
 
             // CODEX BOSS PR2
             Vector2Int? bombPosition = null;
@@ -1098,6 +1114,123 @@ namespace GameCore
             piece.SetBombTier(bombTier, sprite);
         }
 
+        // CODEX STAGE 7B: spawn items at recorded match positions.
+        private void SpawnPendingItems()
+        {
+            if (pendingItemSpawnPositions.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var position in pendingItemSpawnPositions)
+            {
+                TrySpawnItemAt(position);
+            }
+
+            pendingItemSpawnPositions.Clear();
+        }
+
+        // CODEX STAGE 7B: try to place an item into an empty cell.
+        private void TrySpawnItemAt(Vector2Int position)
+        {
+            if (!IsInBounds(position.x, position.y) || pieces == null)
+            {
+                return;
+            }
+
+            if (pieces[position.x, position.y] != null)
+            {
+                return;
+            }
+
+            var itemPiece = CreatePiece(position.x, position.y, GetRandomColorIndex());
+            if (itemPiece == null)
+            {
+                return;
+            }
+
+            var lifetime = Mathf.Max(1, itemLifetimeTurns);
+            itemPiece.ConfigureAsItem(lifetime);
+            activeItems.Add(itemPiece);
+            itemsSpawnedThisTurn.Add(itemPiece);
+        }
+
+        // CODEX STAGE 7B: decrement item turns at end of each match.
+        private void TickItemTurns()
+        {
+            if (activeItems.Count == 0)
+            {
+                return;
+            }
+
+            var expiredItems = new List<Piece>();
+            foreach (var item in activeItems)
+            {
+                if (item == null)
+                {
+                    expiredItems.Add(item);
+                    continue;
+                }
+
+                if (itemsSpawnedThisTurn.Contains(item))
+                {
+                    continue;
+                }
+
+                var remaining = item.ItemTurnsRemaining - 1;
+                item.UpdateItemTurns(remaining);
+                if (remaining <= 0)
+                {
+                    expiredItems.Add(item);
+                }
+            }
+
+            foreach (var item in expiredItems)
+            {
+                activeItems.Remove(item);
+                if (item == null)
+                {
+                    continue;
+                }
+
+                StartCoroutine(FadeAndRemoveItem(item));
+            }
+
+            itemsSpawnedThisTurn.Clear();
+        }
+
+        // CODEX STAGE 7B: fade expired items before removing them.
+        private IEnumerator FadeAndRemoveItem(Piece item)
+        {
+            if (item == null)
+            {
+                yield break;
+            }
+
+            var duration = Mathf.Max(0.05f, itemExpireFadeDuration);
+            var elapsed = 0f;
+            while (elapsed < duration && item != null)
+            {
+                var alpha = Mathf.Lerp(1f, 0f, elapsed / duration);
+                item.SetItemFade(alpha);
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (item == null)
+            {
+                yield break;
+            }
+
+            item.SetItemFade(0f);
+            if (IsInBounds(item.X, item.Y) && pieces[item.X, item.Y] == item)
+            {
+                pieces[item.X, item.Y] = null;
+            }
+
+            Destroy(item.gameObject);
+        }
+
         // CODEX BOMB TIERS: enqueue a forced clear (used for bomb mixing).
         private void QueueForcedClear(Vector2Int position)
         {
@@ -1114,6 +1247,8 @@ namespace GameCore
 
             OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
             HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
+            activeItems.Remove(piece); // CODEX STAGE 7B
+            itemsSpawnedThisTurn.Remove(piece); // CODEX STAGE 7B
 
             if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)
             {
@@ -1148,12 +1283,14 @@ namespace GameCore
             while (matches.Count > 0 || pendingSpecialClearPositions.Count > 0)
             {
                 cascadeCount++;
+                itemsSpawnedThisTurn.Clear(); // CODEX STAGE 7B: track new items per match turn.
                 if (debugMode)
                 {
                     Debug.Log($"CascadeCount({activeMoveId}): {cascadeCount}", this); // CODEX VERIFY 2: cascade instrumentation with move id.
                 }
                 AppendPendingSpecialClears(matches);
                 var clearedCount = ClearMatches(matches);
+                SpawnPendingItems(); // CODEX STAGE 7B: spawn items from 4+ matches.
                 // CODEX: LEVEL_LOOP
                 MatchesCleared?.Invoke(clearedCount, cascadeCount, matchRunLengthsSnapshot);
                 yield return new WaitForSeconds(refillDelay);
@@ -1161,6 +1298,7 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
+                TickItemTurns(); // CODEX STAGE 7B: every match counts as a turn for items.
                 // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
                 matchRunLengthsSnapshot = GetMatchRunLengthsSnapshot();
@@ -1223,6 +1361,8 @@ namespace GameCore
                 var reason = GetClearReason(clearedReasons, position);
                 OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
                 HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
+                activeItems.Remove(piece); // CODEX STAGE 7B: remove items cleared by specials.
+                itemsSpawnedThisTurn.Remove(piece); // CODEX STAGE 7B
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
@@ -1750,12 +1890,12 @@ namespace GameCore
 
         private static bool IsMatchable(Piece piece)
         {
-            return piece != null && !piece.IsPlayer;
+            return piece != null && !piece.IsPlayer && piece.SpecialType != SpecialType.Item;
         }
 
         private static bool IsSwappable(Piece piece)
         {
-            return piece != null && !piece.IsPlayer;
+            return piece != null && !piece.IsPlayer && piece.SpecialType != SpecialType.Item;
         }
 
         private static bool IsRegularMatchable(Piece piece)
