@@ -1019,9 +1019,37 @@ namespace GameCore
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
             UpdateMonsterEnrageVisuals();
-            TickMonsterAttackMarker();
-            TryTriggerMonsterEnrage();
+            if (CanEnemiesReactAtTurnEnd())
+            {
+                TickMonsterAttackMarker();
+                TryTriggerMonsterEnrage();
+            }
             isPlayerActionPhase = true;
+        }
+
+        private bool CanEnemiesReactAtTurnEnd()
+        {
+            if (hasEnded || board == null)
+            {
+                return false;
+            }
+
+            if (isPlayerActionPhase)
+            {
+                return false;
+            }
+
+            if (board.IsBusy)
+            {
+                return false;
+            }
+
+            if (isResolvingMonsterAttack)
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private void TryPickupAdjacentItems()
@@ -1366,6 +1394,11 @@ namespace GameCore
                 return;
             }
 
+            if (isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
+            {
+                return;
+            }
+
             var bossState = CurrentBossState;
             if (!bossState.bossAlive || bossState.IsEnraged)
             {
@@ -1388,6 +1421,11 @@ namespace GameCore
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
         {
             return DistanceManhattan(monsterPosition, playerPosition) <= GetCurrentMonsterRange();
+        }
+
+        private bool IsBossInstantKillBlocked()
+        {
+            return CurrentBoss != null && CurrentBoss.preventInstantKillFromPlayerActions;
         }
 
         private void ActivateMonsterAttack(Vector2Int targetPosition)
@@ -1772,12 +1810,20 @@ namespace GameCore
                     return false;
                 }
 
-                if (CurrentBoss != null
-                    && CurrentBoss.specialPowerResistance == SpecialPowerBossResistance.Immune
-                    && !power.IgnoresBossImmunity)
+                if (CurrentBoss != null && !power.IgnoresBossImmunity)
                 {
-                    failureReason = SpecialPowerActivationFailureReason.BossImmune;
-                    return false;
+                    if (CurrentBoss.immuneTargetingModes != null
+                        && CurrentBoss.immuneTargetingModes.Contains(power.TargetingMode))
+                    {
+                        failureReason = SpecialPowerActivationFailureReason.BossImmune;
+                        return false;
+                    }
+
+                    if (CurrentBoss.specialPowerResistance == SpecialPowerBossResistance.Immune)
+                    {
+                        failureReason = SpecialPowerActivationFailureReason.BossImmune;
+                        return false;
+                    }
                 }
 
                 return true;
@@ -1956,6 +2002,11 @@ namespace GameCore
                 return;
             }
 
+            if (IsBossInstantKillBlocked())
+            {
+                return;
+            }
+
             if (reason != DestructionReason.NormalMatch && reason != DestructionReason.BombExplosion)
             {
                 return;
@@ -1993,6 +2044,11 @@ namespace GameCore
 
             var bossState = CurrentBossState;
             if (!bossState.bossAlive)
+            {
+                return;
+            }
+
+            if (IsBossInstantKillBlocked())
             {
                 return;
             }

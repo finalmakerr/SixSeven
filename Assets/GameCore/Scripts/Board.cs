@@ -579,6 +579,11 @@ namespace GameCore
                 return false;
             }
 
+            if (ShouldBlockBossInstantKill(piece, reason))
+            {
+                return false;
+            }
+
             RemovePiece(piece, reason);
             return true;
         }
@@ -1481,6 +1486,11 @@ namespace GameCore
 
                 if (IsInBounds(piece.X, piece.Y))
                 {
+                    if (ShouldBlockBossInstantKill(piece, DestructionReason.NormalMatch))
+                    {
+                        continue;
+                    }
+
                     clearedPositions.Add(position);
                     SetClearReason(clearedReasons, position, DestructionReason.NormalMatch);
                 }
@@ -1501,6 +1511,11 @@ namespace GameCore
                 }
 
                 var reason = GetClearReason(clearedReasons, position);
+                if (ShouldBlockBossInstantKill(piece, reason))
+                {
+                    continue;
+                }
+
                 OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
                 HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
                 activeItems.Remove(piece); // CODEX STAGE 7B: remove items cleared by specials.
@@ -1622,6 +1637,11 @@ namespace GameCore
 
             var piece = pieces[targetPosition.x, targetPosition.y];
             if (piece == null)
+            {
+                return;
+            }
+
+            if (ShouldBlockBossInstantKill(piece, DestructionReason.BombExplosion))
             {
                 return;
             }
@@ -2033,6 +2053,7 @@ namespace GameCore
         {
             return piece != null
                 && !piece.IsPlayer
+                && !ShouldBlockBossInstantKill(piece, DestructionReason.NormalMatch)
                 && piece.SpecialType != SpecialType.Item
                 && piece.SpecialType != SpecialType.Bugada;
         }
@@ -2054,7 +2075,11 @@ namespace GameCore
                 var bossState = GameManager.Instance.CurrentBossState;
                 if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
                 {
-                    return false;
+                    var boss = GameManager.Instance.CurrentBoss;
+                    if (boss == null || boss.immuneToSwaps)
+                    {
+                        return false;
+                    }
                 }
             }
 
@@ -2098,6 +2123,28 @@ namespace GameCore
             }
 
             return spriteList.ToArray();
+        }
+
+        private static bool ShouldBlockBossInstantKill(Piece piece, DestructionReason reason)
+        {
+            if (piece == null || GameManager.Instance == null || !GameManager.Instance.IsBossLevel)
+            {
+                return false;
+            }
+
+            var bossState = GameManager.Instance.CurrentBossState;
+            if (!bossState.bossAlive || piece.X != bossState.bossPosition.x || piece.Y != bossState.bossPosition.y)
+            {
+                return false;
+            }
+
+            var boss = GameManager.Instance.CurrentBoss;
+            if (boss == null || !boss.preventInstantKillFromPlayerActions)
+            {
+                return false;
+            }
+
+            return reason != DestructionReason.MonsterAttack;
         }
 
         // CODEX BOMB TIERS: load bomb sprites from Resources.
