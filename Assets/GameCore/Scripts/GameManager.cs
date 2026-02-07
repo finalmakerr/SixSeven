@@ -30,6 +30,7 @@ namespace GameCore
         [SerializeField] private Text scoreText;
         [SerializeField] private Text movesText;
         [SerializeField] private Text energyText;
+        [SerializeField] private Text inventoryText;
         [SerializeField] private Text shieldIconText;
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
@@ -116,6 +117,8 @@ namespace GameCore
         [SerializeField] private int maxEnergy = 3;
         [Header("Player Health")]
         [SerializeField] private int maxHP = 3;
+        [Header("Player Inventory")]
+        [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
@@ -266,6 +269,11 @@ namespace GameCore
                 bossPowerInventory = new BossPowerInventory(3);
             }
 
+            if (playerItemInventory == null)
+            {
+                playerItemInventory = new PlayerItemInventory(3);
+            }
+
             // CODEX POWER PR5
             if (persistBossPowersToPlayerPrefs)
             {
@@ -338,6 +346,7 @@ namespace GameCore
             hasEnded = false;
             energy = 0;
             ResetPlayerHealth();
+            playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
             manualAbilityUsedThisTurn = false;
@@ -566,6 +575,62 @@ namespace GameCore
             return true;
         }
 
+        public bool TryEnergyHeal()
+        {
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
+            if (CurrentHP >= maxHP)
+            {
+                return false;
+            }
+
+            const int energyHealCost = 2;
+            if (!TrySpendEnergy(energyHealCost))
+            {
+                return false;
+            }
+
+            HealPlayer(1);
+            RegisterManualAbilityUse();
+            return true;
+        }
+
+        private void GainEnergy(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            if (energy < 0)
+            {
+                energy = 0;
+            }
+
+            energy = Mathf.Min(maxEnergy, energy + amount);
+            if (energy > 0)
+            {
+                hasGainedEnergy = true;
+            }
+
+            UpdateTiredState();
+            UpdateUI();
+        }
+
+        private void HealPlayer(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            CurrentHP = Mathf.Min(maxHP, CurrentHP + amount);
+            UpdateUI();
+        }
+
         public bool TryActivateShield()
         {
             if (!CanUseManualAbility())
@@ -622,16 +687,23 @@ namespace GameCore
 
             if (!isShieldActive)
             {
-                return false;
-            }
+                if (playerItemInventory == null || !playerItemInventory.TryConsumeItem(PlayerItemType.Shield))
+                {
+                    return false;
+                }
 
-            if (damageType == PlayerDamageType.HeavyHit || damageType == PlayerDamageType.Explosion)
-            {
-                SetShieldActive(false);
+                UpdateShieldAnimationState();
+                UpdateUI();
                 return true;
             }
 
-            return false;
+            SetShieldActive(false);
+            return true;
+        }
+
+        private bool HasShieldVisual()
+        {
+            return isShieldActive || (playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.Shield));
         }
 
         private void SetShieldActive(bool active)
@@ -749,6 +821,7 @@ namespace GameCore
             }
 
             manualAbilityUsedThisTurn = false;
+            TryPickupAdjacentItems();
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             if (!hasPlayerPosition || playerPosition.y > 0)
@@ -803,6 +876,100 @@ namespace GameCore
             UpdateMonsterEnrageVisuals();
             TickMonsterAttackMarker();
             TryTriggerMonsterEnrage();
+        }
+
+        private void TryPickupAdjacentItems()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            if (!board.TryGetPlayerPosition(out var playerPosition))
+            {
+                return;
+            }
+
+            var offsets = new[]
+            {
+                Vector2Int.left,
+                Vector2Int.right,
+                Vector2Int.up,
+                Vector2Int.down
+            };
+
+            foreach (var offset in offsets)
+            {
+                var position = playerPosition + offset;
+                if (!board.TryGetPieceAt(position, out var piece))
+                {
+                    continue;
+                }
+
+                if (piece.SpecialType != SpecialType.Item)
+                {
+                    continue;
+                }
+
+                if (TryPickupItem())
+                {
+                    board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                }
+            }
+        }
+
+        private bool TryPickupItem()
+        {
+            var itemType = RollItemTypeForPickup();
+            switch (itemType)
+            {
+                case PlayerItemType.BasicHeal:
+                    if (CurrentHP >= maxHP)
+                    {
+                        return false;
+                    }
+
+                    HealPlayer(1);
+                    return true;
+                case PlayerItemType.EnergyItem:
+                    GainEnergy(1);
+                    return true;
+                case PlayerItemType.Shield:
+                case PlayerItemType.SecondChance:
+                    if (playerItemInventory == null)
+                    {
+                        playerItemInventory = new PlayerItemInventory(3);
+                    }
+
+                    if (!playerItemInventory.TryAddItem(itemType))
+                    {
+                        return false;
+                    }
+
+                    UpdateShieldAnimationState();
+                    UpdateUI();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private PlayerItemType RollItemTypeForPickup()
+        {
+            var options = new List<PlayerItemType>
+            {
+                PlayerItemType.Shield,
+                PlayerItemType.SecondChance,
+                PlayerItemType.EnergyItem
+            };
+
+            if (CurrentHP < maxHP)
+            {
+                options.Add(PlayerItemType.BasicHeal);
+            }
+
+            var index = UnityEngine.Random.Range(0, options.Count);
+            return options[index];
         }
 
         private void ResetMonsterAttackState(bool delayVisualReset = false)
@@ -1297,11 +1464,21 @@ namespace GameCore
                 return;
             }
 
-            CurrentHP = Mathf.Max(0, CurrentHP - damage);
+            var remainingHp = CurrentHP - damage;
+            if (remainingHp <= 0 && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
+            {
+                CurrentHP = 1;
+                UpdateUI();
+                return;
+            }
+
+            CurrentHP = Mathf.Max(0, remainingHp);
             if (CurrentHP <= 0)
             {
                 TriggerLose();
             }
+
+            UpdateUI();
         }
 
         public void TriggerJetpackDoubleSuccess()
@@ -1488,7 +1665,7 @@ namespace GameCore
                 isStunned,
                 isWorried,
                 isMeditating,
-                isShieldActive,
+                HasShieldVisual(),
                 isTired);
         }
 
@@ -1549,7 +1726,7 @@ namespace GameCore
 
             if (shieldIconText != null)
             {
-                shieldIconText.enabled = isShieldActive;
+                shieldIconText.enabled = HasShieldVisual();
             }
 
             if (toxicWarningIconText != null)
@@ -1565,6 +1742,11 @@ namespace GameCore
                 {
                     meditationText.text = $"Meditation: {meditationTurnsRemaining}";
                 }
+            }
+
+            if (inventoryText != null && playerItemInventory != null)
+            {
+                inventoryText.text = playerItemInventory.BuildDisplayString();
             }
         }
 

@@ -4,6 +4,7 @@ namespace GameCore
     {
         NormalMatch = 0,
         BombExplosion = 1,
-        MonsterAttack = 2
+        MonsterAttack = 2,
+        ItemPickup = 3
     }
 }
