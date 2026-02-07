@@ -10,6 +10,7 @@ namespace GameCore
         ColorBomb = 4,
         TreasureChest = 5, // CODEX CHEST PR1
         Player = 6,
-        Item = 7 // CODEX STAGE 7B: board-spawned items.
+        Item = 7, // CODEX STAGE 7B: board-spawned items.
+        Bugada = 8 // CODEX STAGE 7D: Bugada special item.
     }
 }

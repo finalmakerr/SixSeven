@@ -112,7 +112,7 @@ namespace GameCore
             {
                 ClearTreasureChestVisual();
             }
-            if (type != SpecialType.Item)
+            if (type != SpecialType.Item && type != SpecialType.Bugada)
             {
                 ItemTurnsRemaining = 0;
                 ClearItemVisual();
@@ -152,6 +152,24 @@ namespace GameCore
             ClearTreasureChestVisual();
             ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
             UpdateItemTurnsVisual();
+            ApplySpecialVisual();
+        }
+
+        // CODEX STAGE 7D: configure a Bugada special item.
+        public void ConfigureAsBugada()
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            SpecialType = SpecialType.Bugada;
+            hasInitializedSpecialType = true;
+            BombTier = 0;
+            bombSprite = null;
+            ClearTreasureChestVisual();
+            ItemTurnsRemaining = 0;
+            UpdateBugadaVisual();
             ApplySpecialVisual();
         }
 
@@ -271,6 +289,7 @@ namespace GameCore
 
             var text = EnsureItemTurnsText();
             text.text = ItemTurnsRemaining.ToString();
+            text.color = Color.white;
             text.gameObject.SetActive(true);
         }
 
@@ -281,6 +300,19 @@ namespace GameCore
             {
                 itemTurnsText.gameObject.SetActive(false);
             }
+        }
+
+        private void UpdateBugadaVisual()
+        {
+            if (SpecialType != SpecialType.Bugada)
+            {
+                return;
+            }
+
+            var text = EnsureItemTurnsText();
+            text.text = "BUG";
+            text.color = new Color(1f, 0.85f, 0.2f);
+            text.gameObject.SetActive(true);
         }
 
         // CODEX STAGE 7B
