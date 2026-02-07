@@ -228,7 +228,6 @@ namespace GameCore
         private int shieldTurnsRemaining;
         private int shieldCooldownTurnsRemaining;
         private bool isMeditating;
-        private bool manualAbilityUsedThisTurn;
         private int meditationTurnsRemaining;
         private int toxicStacks;
         private bool toxicDrainActive;
@@ -255,11 +254,25 @@ namespace GameCore
         private bool isActivatingSpecialPower;
         private SpecialPowerDefinition activeSpecialPower;
         private bool activeSpecialPowerAllowsHpModification;
+        private bool isPlayerActionPhase;
+        private bool isResolvingMonsterAttack;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
+
+        private readonly struct ItemDropOption
+        {
+            public readonly PlayerItemType Type;
+            public readonly int Weight;
+
+            public ItemDropOption(PlayerItemType type, int weight)
+            {
+                Type = type;
+                Weight = weight;
+            }
+        }
 
         private void Awake()
         {
@@ -378,7 +391,8 @@ namespace GameCore
             playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
-            manualAbilityUsedThisTurn = false;
+            isPlayerActionPhase = false;
+            isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
             SetShieldActive(false);
             shieldJustActivated = false;
@@ -616,6 +630,21 @@ namespace GameCore
             return true;
         }
 
+        public bool HasEnoughEnergy(int amount)
+        {
+            if (amount <= 0)
+            {
+                return false;
+            }
+
+            if (energy < 0)
+            {
+                energy = 0;
+            }
+
+            return energy >= amount;
+        }
+
         public bool TryEnergyHeal()
         {
             if (!CanUseManualAbility())
@@ -629,13 +658,13 @@ namespace GameCore
             }
 
             const int energyHealCost = 2;
-            if (!TrySpendEnergy(energyHealCost))
+            if (!HasEnoughEnergy(energyHealCost))
             {
                 return false;
             }
 
             HealPlayer(1);
-            RegisterManualAbilityUse();
+            TrySpendEnergy(energyHealCost);
             return true;
         }
 
@@ -707,7 +736,7 @@ namespace GameCore
             }
 
             const int shieldEnergyCost = 2;
-            if (!TrySpendEnergy(shieldEnergyCost))
+            if (!HasEnoughEnergy(shieldEnergyCost))
             {
                 return false;
             }
@@ -717,11 +746,16 @@ namespace GameCore
                 return false;
             }
 
+            if (!TrySpendEnergy(shieldEnergyCost))
+            {
+                playerItemInventory.TryAddItem(PlayerItemType.Shield);
+                return false;
+            }
+
             CancelMeditation();
             SetShieldActive(true);
             shieldTurnsRemaining = 2;
             shieldJustActivated = true;
-            RegisterManualAbilityUse();
             UpdateUI();
             return true;
         }
@@ -739,13 +773,39 @@ namespace GameCore
             }
 
             const int meditationEnergyCost = 2;
-            if (!TrySpendEnergy(meditationEnergyCost))
+            if (!HasEnoughEnergy(meditationEnergyCost))
             {
                 return false;
             }
 
             BeginMeditation(3);
-            RegisterManualAbilityUse();
+            TrySpendEnergy(meditationEnergyCost);
+            return true;
+        }
+
+        public bool TryUseEnergyPack()
+        {
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
+            if (energy >= maxEnergy)
+            {
+                return false;
+            }
+
+            if (playerItemInventory == null || !playerItemInventory.HasItem(PlayerItemType.EnergyPack))
+            {
+                return false;
+            }
+
+            if (!playerItemInventory.TryConsumeItem(PlayerItemType.EnergyPack))
+            {
+                return false;
+            }
+
+            GainEnergy(2);
             return true;
         }
 
@@ -880,6 +940,7 @@ namespace GameCore
                 return;
             }
 
+            isPlayerActionPhase = false;
             ClearTransientEmotionFlags();
             UpdatePlayerAnimationFlags();
             if (skipMoveCostThisSwap)
@@ -902,7 +963,6 @@ namespace GameCore
                 return;
             }
 
-            manualAbilityUsedThisTurn = false;
             TickSpecialPowerCooldowns();
             TryPickupAdjacentItems();
 
@@ -961,6 +1021,7 @@ namespace GameCore
             UpdateMonsterEnrageVisuals();
             TickMonsterAttackMarker();
             TryTriggerMonsterEnrage();
+            isPlayerActionPhase = true;
         }
 
         private void TryPickupAdjacentItems()
@@ -1025,6 +1086,19 @@ namespace GameCore
                 case PlayerItemType.EnergyItem:
                     GainEnergy(1);
                     return true;
+                case PlayerItemType.EnergyPack:
+                    if (playerItemInventory == null)
+                    {
+                        playerItemInventory = new PlayerItemInventory(3);
+                    }
+
+                    if (!playerItemInventory.TryAddItem(itemType))
+                    {
+                        return false;
+                    }
+
+                    UpdateUI();
+                    return true;
                 case PlayerItemType.Shield:
                 case PlayerItemType.SecondChance:
                     if (playerItemInventory == null)
@@ -1047,20 +1121,48 @@ namespace GameCore
 
         private PlayerItemType RollItemTypeForPickup()
         {
-            var options = new List<PlayerItemType>
+            var options = new List<ItemDropOption>
             {
-                PlayerItemType.Shield,
-                PlayerItemType.SecondChance,
-                PlayerItemType.EnergyItem
+                new ItemDropOption(PlayerItemType.Shield, 1),
+                new ItemDropOption(PlayerItemType.SecondChance, 1),
+                new ItemDropOption(PlayerItemType.EnergyItem, 1)
             };
 
             if (CurrentHP < maxHP)
             {
-                options.Add(PlayerItemType.BasicHeal);
+                options.Add(new ItemDropOption(PlayerItemType.BasicHeal, 1));
             }
 
-            var index = UnityEngine.Random.Range(0, options.Count);
-            return options[index];
+            var missingEnergy = Mathf.Max(0, maxEnergy - energy);
+            if (missingEnergy > 0)
+            {
+                options.Add(new ItemDropOption(PlayerItemType.EnergyPack, missingEnergy));
+            }
+
+            var totalWeight = 0;
+            for (var i = 0; i < options.Count; i++)
+            {
+                totalWeight += Mathf.Max(0, options[i].Weight);
+            }
+
+            if (totalWeight <= 0)
+            {
+                return PlayerItemType.Shield;
+            }
+
+            var roll = UnityEngine.Random.Range(0, totalWeight);
+            for (var i = 0; i < options.Count; i++)
+            {
+                var option = options[i];
+                if (roll < option.Weight)
+                {
+                    return option.Type;
+                }
+
+                roll -= option.Weight;
+            }
+
+            return options[0].Type;
         }
 
         // CODEX STAGE 7D: Bugada activation + duration handling.
@@ -1315,23 +1417,31 @@ namespace GameCore
                 return;
             }
 
-            TriggerMonsterAttackExecuteVisuals();
-
-            if (board.TryGetPlayerPosition(out var playerPosition)
-                && playerPosition == targetPosition)
+            isResolvingMonsterAttack = true;
+            try
             {
-                TriggerStunnedAnimation();
-                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                TriggerMonsterAttackExecuteVisuals();
+
+                if (board.TryGetPlayerPosition(out var playerPosition)
+                    && playerPosition == targetPosition)
                 {
+                    TriggerStunnedAnimation();
+                    if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                    {
+                        return;
+                    }
+
+                    ApplyPlayerDamage(GetCurrentMonsterDamage());
+
                     return;
                 }
 
-                ApplyPlayerDamage(GetCurrentMonsterDamage());
-
-                return;
+                board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
             }
-
-            board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
+            finally
+            {
+                isResolvingMonsterAttack = false;
+            }
         }
 
         private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
@@ -1494,6 +1604,42 @@ namespace GameCore
                     "Player is stunned.");
                 LogSpecialPowerActivationFailure(power, stunned);
                 return stunned;
+            }
+
+            if (!isPlayerActionPhase)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Player action phase is not active.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
+            if (isMeditating)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Player is meditating.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
+            if (isResolvingMonsterAttack)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Monster attack is resolving.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
+            if (IsBossScriptedPhaseActive())
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Boss scripted phase is active.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
             }
 
             if (board != null && board.IsBusy)
@@ -1677,34 +1823,76 @@ namespace GameCore
             Debug.LogWarning($"Special power activation blocked: {powerName} ({reason}) {message}", this);
         }
 
-        public bool CanUseManualAbility()
+        private bool IsBossScriptedPhaseActive()
         {
+            return awaitingBossChallengeChoice
+                || awaitingBossPowerRewardChoice
+                || awaitingBossPowerDiscard
+                || awaitingBossPowerLossDiscard
+                || awaitingBossPowerLossConfirm
+                || awaitingBossStatRewardChoice
+                || awaitingBonusBossPowerRewardChoice
+                || awaitingBonusStageBan
+                || isBonusStageActive;
+        }
+
+        private bool IsPlayerActionBlocked(out string reason)
+        {
+            reason = null;
             if (hasEnded)
             {
-                return false;
+                reason = "Level has ended.";
+                return true;
+            }
+
+            if (!isPlayerActionPhase)
+            {
+                reason = "Player action phase is not active.";
+                return true;
             }
 
             if (board != null && board.IsBusy)
             {
-                return false;
+                reason = "Board is resolving.";
+                return true;
+            }
+
+            if (isResolvingMonsterAttack)
+            {
+                reason = "Monster attack is resolving.";
+                return true;
+            }
+
+            if (CurrentHP <= 0)
+            {
+                reason = "Player is dead.";
+                return true;
             }
 
             if (IsPlayerStunned)
             {
-                return false;
+                reason = "Player is stunned.";
+                return true;
             }
 
             if (isMeditating)
             {
-                return false;
+                reason = "Player is meditating.";
+                return true;
             }
 
-            return !manualAbilityUsedThisTurn;
+            if (IsBossScriptedPhaseActive())
+            {
+                reason = "Boss scripted phase is active.";
+                return true;
+            }
+
+            return false;
         }
 
-        public void RegisterManualAbilityUse()
+        public bool CanUseManualAbility()
         {
-            manualAbilityUsedThisTurn = true;
+            return !IsPlayerActionBlocked(out _);
         }
 
         private void ClearToxicStacks()

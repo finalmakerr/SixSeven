@@ -5,6 +5,7 @@ namespace GameCore
         BasicHeal = 0,
         Shield = 1,
         SecondChance = 2,
-        EnergyItem = 3
+        EnergyItem = 3,
+        EnergyPack = 4
     }
 }

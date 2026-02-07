@@ -25,6 +25,7 @@ namespace GameCore
         PlayerDead,
         PlayerStunned,
         BoardBusy,
+        ActionBlocked,
         ActivationInProgress,
         InsufficientEnergy,
         OnCooldown,
