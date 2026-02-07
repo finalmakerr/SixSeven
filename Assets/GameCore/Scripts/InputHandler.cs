@@ -10,9 +10,13 @@ namespace GameCore
         [SerializeField] private Board board;
         [SerializeField] private GameManager gameManager;
         [SerializeField] private float swipeThreshold = 0.2f;
+        [SerializeField] private float holdToHealDuration = 0.5f;
 
         private Piece selectedPiece;
         private Vector2 startPosition;
+        private bool isHoldingPlayer;
+        private float holdStartTime;
+        private bool holdTriggered;
 
         private void Awake()
         {
@@ -48,8 +52,29 @@ namespace GameCore
             {
                 startPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
                 selectedPiece = GetPieceAtPosition(startPosition);
+                isHoldingPlayer = selectedPiece != null && selectedPiece.IsPlayer;
+                holdStartTime = Time.time;
+                holdTriggered = false;
             }
-            else if (Input.GetMouseButtonUp(0) && selectedPiece != null)
+            else if (Input.GetMouseButton(0) && isHoldingPlayer && !holdTriggered)
+            {
+                var currentPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+                var delta = currentPosition - startPosition;
+                if (delta.magnitude < swipeThreshold && Time.time - holdStartTime >= holdToHealDuration)
+                {
+                    var manager = gameManager != null ? gameManager : GameManager.Instance;
+                    if (manager != null && manager.TryEnergyHeal())
+                    {
+                        holdTriggered = true;
+                        selectedPiece = null;
+                    }
+                }
+                else if (delta.magnitude >= swipeThreshold)
+                {
+                    isHoldingPlayer = false;
+                }
+            }
+            else if (Input.GetMouseButtonUp(0) && selectedPiece != null && !holdTriggered)
             {
                 var endPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
                 var delta = endPosition - startPosition;
@@ -79,6 +104,14 @@ namespace GameCore
                 }
 
                 selectedPiece = null;
+                isHoldingPlayer = false;
+                holdTriggered = false;
+            }
+            else if (Input.GetMouseButtonUp(0))
+            {
+                selectedPiece = null;
+                isHoldingPlayer = false;
+                holdTriggered = false;
             }
         }
 
