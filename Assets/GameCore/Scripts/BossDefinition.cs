@@ -25,5 +25,7 @@ namespace GameCore
         public int damage = 0;
         // CODEX COMBAT PR1
         public int range = 2;
+        // CODEX SPECIAL POWERS PR1
+        public SpecialPowerBossResistance specialPowerResistance = SpecialPowerBossResistance.None;
     }
 }

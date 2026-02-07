@@ -120,6 +120,8 @@ namespace GameCore
         [SerializeField] private int maxHP = 3;
         [Header("Player Inventory")]
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
+        [Header("Player Special Powers")]
+        [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
@@ -152,6 +154,7 @@ namespace GameCore
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
+        public IReadOnlyList<SpecialPowerDefinition> PlayerSpecialPowers => playerSpecialPowers;
 
         private bool hasEnded;
         private Coroutine comboRoutine;
@@ -248,6 +251,8 @@ namespace GameCore
         private Piece monsterEnragePiece;
         private MonsterEnrageIndicator monsterEnrageIndicator;
         private const int ToxicGraceStacks = 2;
+        private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
+        private bool isActivatingSpecialPower;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
 
@@ -287,6 +292,13 @@ namespace GameCore
             {
                 playerItemInventory = new PlayerItemInventory(3);
             }
+
+            if (playerSpecialPowers == null)
+            {
+                playerSpecialPowers = new List<SpecialPowerDefinition>();
+            }
+
+            InitializeSpecialPowerCooldowns();
 
             // CODEX POWER PR5
             if (persistBossPowersToPlayerPrefs)
@@ -365,6 +377,7 @@ namespace GameCore
             toxicStacks = 0;
             toxicDrainActive = false;
             manualAbilityUsedThisTurn = false;
+            InitializeSpecialPowerCooldowns();
             SetShieldActive(false);
             shieldJustActivated = false;
             shieldCooldownJustStarted = false;
@@ -876,6 +889,7 @@ namespace GameCore
             }
 
             manualAbilityUsedThisTurn = false;
+            TickSpecialPowerCooldowns();
             TryPickupAdjacentItems();
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
@@ -1360,6 +1374,280 @@ namespace GameCore
             Destroy(monsterAttackMarkerInstance);
             monsterAttackMarkerInstance = null;
             monsterAttackTelegraph = null;
+        }
+
+        private void InitializeSpecialPowerCooldowns()
+        {
+            specialPowerCooldowns.Clear();
+            if (playerSpecialPowers == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < playerSpecialPowers.Count; i++)
+            {
+                var power = playerSpecialPowers[i];
+                if (power == null)
+                {
+                    continue;
+                }
+
+                specialPowerCooldowns[power] = 0;
+            }
+        }
+
+        private void TickSpecialPowerCooldowns()
+        {
+            if (specialPowerCooldowns.Count == 0)
+            {
+                return;
+            }
+
+            var powers = new List<SpecialPowerDefinition>(specialPowerCooldowns.Keys);
+            for (var i = 0; i < powers.Count; i++)
+            {
+                var power = powers[i];
+                var remaining = specialPowerCooldowns[power];
+                if (remaining <= 0)
+                {
+                    continue;
+                }
+
+                specialPowerCooldowns[power] = Mathf.Max(0, remaining - 1);
+            }
+        }
+
+        public int GetSpecialPowerCooldownRemaining(SpecialPowerDefinition power)
+        {
+            if (power == null)
+            {
+                return 0;
+            }
+
+            return specialPowerCooldowns.TryGetValue(power, out var remaining) ? remaining : 0;
+        }
+
+        public SpecialPowerActivationResult TryActivateSpecialPower(SpecialPowerDefinition power, SpecialPowerTarget target)
+        {
+            if (power == null)
+            {
+                var missing = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.MissingPower,
+                    "Power was null.");
+                LogSpecialPowerActivationFailure(power, missing);
+                return missing;
+            }
+
+            if (playerSpecialPowers != null && !playerSpecialPowers.Contains(power))
+            {
+                var missing = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.MissingPower,
+                    "Power is not available to the player.");
+                LogSpecialPowerActivationFailure(power, missing);
+                return missing;
+            }
+
+            if (hasEnded)
+            {
+                var ended = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.LevelEnded,
+                    "Level has ended.");
+                LogSpecialPowerActivationFailure(power, ended);
+                return ended;
+            }
+
+            if (CurrentHP <= 0)
+            {
+                var dead = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.PlayerDead,
+                    "Player is dead.");
+                LogSpecialPowerActivationFailure(power, dead);
+                return dead;
+            }
+
+            if (IsPlayerStunned)
+            {
+                var stunned = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.PlayerStunned,
+                    "Player is stunned.");
+                LogSpecialPowerActivationFailure(power, stunned);
+                return stunned;
+            }
+
+            if (board != null && board.IsBusy)
+            {
+                var busy = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.BoardBusy,
+                    "Board is resolving.");
+                LogSpecialPowerActivationFailure(power, busy);
+                return busy;
+            }
+
+            if (isActivatingSpecialPower)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActivationInProgress,
+                    "Special power activation is already in progress.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
+            var cooldownRemaining = GetSpecialPowerCooldownRemaining(power);
+            if (cooldownRemaining > 0)
+            {
+                var onCooldown = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.OnCooldown,
+                    $"Cooldown remaining: {cooldownRemaining}.");
+                LogSpecialPowerActivationFailure(power, onCooldown);
+                return onCooldown;
+            }
+
+            if (power.EnergyCost < 0)
+            {
+                var invalidCost = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.InsufficientEnergy,
+                    "Invalid energy cost.");
+                LogSpecialPowerActivationFailure(power, invalidCost);
+                return invalidCost;
+            }
+
+            if (energy < power.EnergyCost)
+            {
+                var insufficient = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.InsufficientEnergy,
+                    "Not enough energy.");
+                LogSpecialPowerActivationFailure(power, insufficient);
+                return insufficient;
+            }
+
+            if (!TryValidateSpecialPowerTarget(power, target, out var targetFailure))
+            {
+                var invalidTarget = SpecialPowerActivationResult.Failed(targetFailure, "Invalid target.");
+                LogSpecialPowerActivationFailure(power, invalidTarget);
+                return invalidTarget;
+            }
+
+            if (power.EnergyCost > 0 && !TrySpendEnergy(power.EnergyCost))
+            {
+                var spendFailed = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.InsufficientEnergy,
+                    "Not enough energy.");
+                LogSpecialPowerActivationFailure(power, spendFailed);
+                return spendFailed;
+            }
+
+            isActivatingSpecialPower = true;
+            try
+            {
+                SetSpecialPowerCooldown(power, power.CooldownTurns);
+            }
+            finally
+            {
+                isActivatingSpecialPower = false;
+            }
+
+            UpdateUI();
+            return SpecialPowerActivationResult.Passed();
+        }
+
+        private bool TryValidateSpecialPowerTarget(
+            SpecialPowerDefinition power,
+            SpecialPowerTarget target,
+            out SpecialPowerActivationFailureReason failureReason)
+        {
+            failureReason = SpecialPowerActivationFailureReason.None;
+            if (power == null)
+            {
+                failureReason = SpecialPowerActivationFailureReason.MissingPower;
+                return false;
+            }
+
+            if (power.TargetingMode == SpecialPowerTargetingMode.Self)
+            {
+                if (target.IsBoss)
+                {
+                    failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                    return false;
+                }
+
+                if (board == null || !board.TryGetPlayerPosition(out var playerPosition))
+                {
+                    failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                    return false;
+                }
+
+                if (target.HasPosition && target.Position != playerPosition)
+                {
+                    failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (target.IsBoss)
+            {
+                if (!power.CanTargetBosses)
+                {
+                    failureReason = SpecialPowerActivationFailureReason.BossImmune;
+                    return false;
+                }
+
+                if (!IsBossLevel || !CurrentBossState.bossAlive)
+                {
+                    failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                    return false;
+                }
+
+                if (CurrentBoss != null
+                    && CurrentBoss.specialPowerResistance == SpecialPowerBossResistance.Immune
+                    && !power.IgnoresBossImmunity)
+                {
+                    failureReason = SpecialPowerActivationFailureReason.BossImmune;
+                    return false;
+                }
+
+                return true;
+            }
+
+            if (!target.HasPosition)
+            {
+                failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                return false;
+            }
+
+            if (board == null || !board.TryGetPieceAt(target.Position, out _))
+            {
+                failureReason = SpecialPowerActivationFailureReason.InvalidTarget;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void SetSpecialPowerCooldown(SpecialPowerDefinition power, int turns)
+        {
+            if (power == null)
+            {
+                return;
+            }
+
+            specialPowerCooldowns[power] = Mathf.Max(0, turns);
+        }
+
+        private void LogSpecialPowerActivationFailure(
+            SpecialPowerDefinition power,
+            SpecialPowerActivationResult result)
+        {
+            if (result.Success)
+            {
+                return;
+            }
+
+            var powerName = power != null ? power.Id : "UnknownPower";
+            var reason = result.FailureReason;
+            var message = string.IsNullOrEmpty(result.FailureMessage) ? reason.ToString() : result.FailureMessage;
+            Debug.LogWarning($"Special power activation blocked: {powerName} ({reason}) {message}", this);
         }
 
         public bool CanUseManualAbility()
