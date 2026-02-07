@@ -91,6 +91,7 @@ namespace GameCore
                             {
                                 if (board.TryJetpackDouble(selectedPiece, direction))
                                 {
+                                    manager.RegisterJetpackMove();
                                     manager.RegisterManualAbilityUse();
                                     manager.TriggerJetpackDoubleSuccess();
                                 }
