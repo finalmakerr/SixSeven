@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace GameCore
@@ -27,5 +28,13 @@ namespace GameCore
         public int range = 2;
         // CODEX SPECIAL POWERS PR1
         public SpecialPowerBossResistance specialPowerResistance = SpecialPowerBossResistance.None;
+        // CODEX ENEMY REACTION PR1
+        public bool immuneToSwaps = true;
+        // CODEX ENEMY REACTION PR1
+        public bool preventInstantKillFromPlayerActions = true;
+        // CODEX ENEMY REACTION PR1
+        public List<SpecialPowerTargetingMode> immuneTargetingModes = new List<SpecialPowerTargetingMode>();
+        // CODEX ENEMY REACTION PR1
+        public List<SpecialPowerTargetingMode> resistantTargetingModes = new List<SpecialPowerTargetingMode>();
     }
 }
