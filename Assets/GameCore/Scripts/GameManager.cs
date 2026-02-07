@@ -34,6 +34,7 @@ namespace GameCore
         [SerializeField] private Text shieldIconText;
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
+        [SerializeField] private Text bugadaText;
         // CODEX: LEVEL_LOOP
         [SerializeField] private GameObject winPanel;
         [SerializeField] private GameObject losePanel;
@@ -123,6 +124,9 @@ namespace GameCore
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
+        [Header("Bugada")]
+        [SerializeField] private AudioSource bugadaMusicSource;
+        [SerializeField] private AudioClip bugadaMusicClip;
 
         public static GameManager Instance { get; private set; }
 
@@ -226,6 +230,9 @@ namespace GameCore
         private bool isWorried;
         private bool isTired;
         private bool hasGainedEnergy;
+        private int bugadaTurnsRemaining;
+        private bool bugadaJustActivated;
+        private AudioClip bugadaOriginalMusicClip;
         private int stunnedTurnsRemaining;
         private GameObject monsterAttackMarkerInstance;
         private MonsterAttackTelegraph monsterAttackTelegraph;
@@ -236,6 +243,7 @@ namespace GameCore
         private MonsterEnrageIndicator monsterEnrageIndicator;
         private const int ToxicGraceStacks = 2;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
+        public bool IsBugadaActive => bugadaTurnsRemaining > 0;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -357,6 +365,7 @@ namespace GameCore
             isWorried = false;
             isTired = false;
             hasGainedEnergy = false;
+            ResetBugadaState();
             stunnedTurnsRemaining = 0;
             ResetMonsterAttackState();
             HideComboText();
@@ -680,6 +689,11 @@ namespace GameCore
 
         public bool TryBlockPlayerDamage(PlayerDamageType damageType)
         {
+            if (IsBugadaActive)
+            {
+                return true;
+            }
+
             if (damageType == PlayerDamageType.ToxicDrain)
             {
                 return false;
@@ -870,6 +884,7 @@ namespace GameCore
                 }
             }
 
+            TickBugadaDuration();
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
@@ -908,6 +923,12 @@ namespace GameCore
 
                 if (piece.SpecialType != SpecialType.Item)
                 {
+                    if (piece.SpecialType == SpecialType.Bugada)
+                    {
+                        ActivateBugada();
+                        board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    }
+
                     continue;
                 }
 
@@ -970,6 +991,84 @@ namespace GameCore
 
             var index = UnityEngine.Random.Range(0, options.Count);
             return options[index];
+        }
+
+        // CODEX STAGE 7D: Bugada activation + duration handling.
+        private void ActivateBugada()
+        {
+            bugadaTurnsRemaining = 3;
+            bugadaJustActivated = true;
+            UpdateBugadaMusic(true);
+            UpdateUI();
+        }
+
+        private void TickBugadaDuration()
+        {
+            if (bugadaTurnsRemaining <= 0)
+            {
+                return;
+            }
+
+            if (bugadaJustActivated)
+            {
+                bugadaJustActivated = false;
+                return;
+            }
+
+            bugadaTurnsRemaining -= 1;
+            if (bugadaTurnsRemaining <= 0)
+            {
+                EndBugadaEffect();
+            }
+            else
+            {
+                UpdateUI();
+            }
+        }
+
+        private void EndBugadaEffect()
+        {
+            bugadaTurnsRemaining = 0;
+            bugadaJustActivated = false;
+            UpdateBugadaMusic(false);
+            UpdateUI();
+        }
+
+        private void ResetBugadaState()
+        {
+            bugadaTurnsRemaining = 0;
+            bugadaJustActivated = false;
+            UpdateBugadaMusic(false);
+        }
+
+        private void UpdateBugadaMusic(bool active)
+        {
+            if (bugadaMusicSource == null || bugadaMusicClip == null)
+            {
+                return;
+            }
+
+            if (active)
+            {
+                if (bugadaOriginalMusicClip == null)
+                {
+                    bugadaOriginalMusicClip = bugadaMusicSource.clip;
+                }
+
+                if (bugadaMusicSource.clip != bugadaMusicClip)
+                {
+                    bugadaMusicSource.clip = bugadaMusicClip;
+                    bugadaMusicSource.Play();
+                }
+
+                return;
+            }
+
+            if (bugadaOriginalMusicClip != null && bugadaMusicSource.clip != bugadaOriginalMusicClip)
+            {
+                bugadaMusicSource.clip = bugadaOriginalMusicClip;
+                bugadaMusicSource.Play();
+            }
         }
 
         private void ResetMonsterAttackState(bool delayVisualReset = false)
@@ -1459,7 +1558,7 @@ namespace GameCore
 
         private void ApplyPlayerDamage(int damage)
         {
-            if (damage <= 0 || hasEnded)
+            if (damage <= 0 || hasEnded || IsBugadaActive)
             {
                 return;
             }
@@ -1741,6 +1840,16 @@ namespace GameCore
                 if (showMeditation)
                 {
                     meditationText.text = $"Meditation: {meditationTurnsRemaining}";
+                }
+            }
+
+            if (bugadaText != null)
+            {
+                var showBugada = bugadaTurnsRemaining > 0;
+                bugadaText.enabled = showBugada;
+                if (showBugada)
+                {
+                    bugadaText.text = $"Bugada: {bugadaTurnsRemaining}";
                 }
             }
 

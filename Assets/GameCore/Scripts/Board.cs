@@ -64,6 +64,9 @@ namespace GameCore
         // CODEX STAGE 7B: track item spawns + lifetimes.
         private readonly HashSet<Vector2Int> pendingItemSpawnPositions = new HashSet<Vector2Int>();
         private readonly HashSet<Piece> activeItems = new HashSet<Piece>();
+        // CODEX STAGE 7D: track Bugada spawn.
+        private bool bugadaSpawnedThisLevel;
+        private Vector2Int? pendingBugadaSpawnPosition;
         private int moveId; // CODEX VERIFY 2: monotonic id for accepted swaps.
         private int activeMoveId; // CODEX VERIFY 2: current move id for resolve diagnostics.
         // CODEX CHEST PR1
@@ -146,6 +149,8 @@ namespace GameCore
             pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
             pendingItemSpawnPositions.Clear(); // CODEX STAGE 7B: reset item spawns.
             activeItems.Clear(); // CODEX STAGE 7B: reset item lifetimes.
+            bugadaSpawnedThisLevel = false; // CODEX STAGE 7D: reset Bugada spawn tracking.
+            pendingBugadaSpawnPosition = null; // CODEX STAGE 7D: reset Bugada pending spawn.
             chestCooldownMovesRemaining = 0; // CODEX CHEST PR1
             chestPresent = false; // CODEX CHEST PR1
             CreateBoard();
@@ -519,7 +524,10 @@ namespace GameCore
             SwapPiecesInGrid(first, second);
             var hasMatch = HasMatchAt(first.X, first.Y) || HasMatchAt(second.X, second.Y);
             SwapPiecesInGrid(first, second);
-            return hasMatch || IsSpecialRecipePair(first.SpecialType, second.SpecialType) || IsBombMixPair(first, second);
+            return hasMatch
+                || IsSpecialRecipePair(first.SpecialType, second.SpecialType)
+                || IsBombMixPair(first, second)
+                || ShouldAllowBugadaSwap(first, second);
         }
 
         public bool TryGetPlayerPosition(out Vector2Int position)
@@ -609,8 +617,9 @@ namespace GameCore
             activeMoveId = moveId + 1; // CODEX VERIFY 2: stage upcoming move id for match diagnostics.
             specialRecipeBombPositions.Clear(); // CODEX BOMB PR3: reset per swap to avoid double-trigger.
             var specialRecipeApplied = TryApplySpecialRecipe(first, second);
+            var bugadaSwapApplied = TryApplyBugadaSwapClears(first, second);
             var matches = FindMatches();
-            if (matches.Count == 0 && !specialRecipeApplied)
+            if (matches.Count == 0 && !specialRecipeApplied && !bugadaSwapApplied)
             {
                 SwapPieces(first, second);
                 activeMoveId = moveId; // CODEX VERIFY 2: restore current move id on invalid swaps.
@@ -650,6 +659,7 @@ namespace GameCore
             activeMoveId = moveId + 1; // CODEX VERIFY 2: stage upcoming move id for match diagnostics.
             specialRecipeBombPositions.Clear(); // CODEX BOMB PR3: reset per swap to avoid double-trigger.
             TryApplySpecialRecipe(first, second);
+            TryApplyBugadaSwapClears(first, second);
 
             moveId = activeMoveId; // CODEX VERIFY 2: commit staged move id for accepted swaps.
             if (debugMode)
@@ -717,6 +727,73 @@ namespace GameCore
 
             first.SetPosition(second.X, second.Y, first.transform.position);
             second.SetPosition(firstX, firstY, second.transform.position);
+        }
+
+        // CODEX STAGE 7D: allow Bugada swaps without matches and queue clears.
+        private bool ShouldAllowBugadaSwap(Piece first, Piece second)
+        {
+            if (!IsBugadaActive())
+            {
+                return false;
+            }
+
+            return IsBugadaTarget(first) || IsBugadaTarget(second);
+        }
+
+        private bool TryApplyBugadaSwapClears(Piece first, Piece second)
+        {
+            if (!IsBugadaActive())
+            {
+                return false;
+            }
+
+            var applied = false;
+            if (IsBugadaTarget(first))
+            {
+                pendingSpecialClearPositions.Add(new Vector2Int(first.X, first.Y));
+                applied = true;
+            }
+
+            if (IsBugadaTarget(second))
+            {
+                pendingSpecialClearPositions.Add(new Vector2Int(second.X, second.Y));
+                applied = true;
+            }
+
+            return applied;
+        }
+
+        private bool IsBugadaTarget(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (piece.SpecialType != SpecialType.None)
+            {
+                return false;
+            }
+
+            return !IsBossPiece(piece);
+        }
+
+        private bool IsBugadaActive()
+        {
+            return GameManager.Instance != null && GameManager.Instance.IsBugadaActive;
+        }
+
+        private bool IsBossPiece(Piece piece)
+        {
+            if (piece == null || GameManager.Instance == null || !GameManager.Instance.IsBossLevel)
+            {
+                return false;
+            }
+
+            var bossState = GameManager.Instance.CurrentBossState;
+            return bossState.bossAlive
+                && piece.X == bossState.bossPosition.x
+                && piece.Y == bossState.bossPosition.y;
         }
 
         // CODEX CHEST PR1
@@ -936,7 +1013,14 @@ namespace GameCore
                 var itemSpawnPosition = FindItemSpawnPosition(endX, endY, runLength, direction, bombPosition);
                 if (itemSpawnPosition.HasValue)
                 {
-                    pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7B: item spawn candidate.
+                    if (!bugadaSpawnedThisLevel && !pendingBugadaSpawnPosition.HasValue)
+                    {
+                        pendingBugadaSpawnPosition = itemSpawnPosition.Value; // CODEX STAGE 7D: Bugada spawn candidate.
+                    }
+                    else
+                    {
+                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7B: item spawn candidate.
+                    }
                 }
             }
 
@@ -1143,6 +1227,7 @@ namespace GameCore
         // CODEX STAGE 7B: spawn items at recorded match positions.
         private void SpawnPendingItems()
         {
+            SpawnPendingBugada();
             if (pendingItemSpawnPositions.Count == 0)
             {
                 return;
@@ -1154,6 +1239,23 @@ namespace GameCore
             }
 
             pendingItemSpawnPositions.Clear();
+        }
+
+        // CODEX STAGE 7D: spawn Bugada at recorded match position.
+        private void SpawnPendingBugada()
+        {
+            if (!pendingBugadaSpawnPosition.HasValue)
+            {
+                return;
+            }
+
+            var position = pendingBugadaSpawnPosition.Value;
+            pendingItemSpawnPositions.Remove(position);
+            if (TrySpawnBugadaAt(position))
+            {
+                bugadaSpawnedThisLevel = true;
+                pendingBugadaSpawnPosition = null;
+            }
         }
 
         // CODEX STAGE 7B: try to place an item into an empty cell.
@@ -1178,6 +1280,29 @@ namespace GameCore
             var lifetime = Mathf.Max(1, itemLifetimeTurns);
             itemPiece.ConfigureAsItem(lifetime);
             activeItems.Add(itemPiece);
+        }
+
+        // CODEX STAGE 7D: try to place a Bugada item into an empty cell.
+        private bool TrySpawnBugadaAt(Vector2Int position)
+        {
+            if (!IsInBounds(position.x, position.y) || pieces == null)
+            {
+                return false;
+            }
+
+            if (pieces[position.x, position.y] != null)
+            {
+                return false;
+            }
+
+            var bugadaPiece = CreatePiece(position.x, position.y, GetRandomColorIndex());
+            if (bugadaPiece == null)
+            {
+                return false;
+            }
+
+            bugadaPiece.ConfigureAsBugada();
+            return true;
         }
 
         // CODEX STAGE 7B: decrement item turns at end of each match.
@@ -1906,12 +2031,34 @@ namespace GameCore
 
         private static bool IsMatchable(Piece piece)
         {
-            return piece != null && !piece.IsPlayer && piece.SpecialType != SpecialType.Item;
+            return piece != null
+                && !piece.IsPlayer
+                && piece.SpecialType != SpecialType.Item
+                && piece.SpecialType != SpecialType.Bugada;
         }
 
         private static bool IsSwappable(Piece piece)
         {
-            return piece != null && !piece.IsPlayer && piece.SpecialType != SpecialType.Item;
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada)
+            {
+                return false;
+            }
+
+            if (GameManager.Instance != null && GameManager.Instance.IsBossLevel)
+            {
+                var bossState = GameManager.Instance.CurrentBossState;
+                if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static bool IsRegularMatchable(Piece piece)
