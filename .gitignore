@@ -4,6 +4,7 @@
 #
 
 *.zip
+desktop.ini
 
 /[Ll]ibrary/
 /[Tt]emp/
