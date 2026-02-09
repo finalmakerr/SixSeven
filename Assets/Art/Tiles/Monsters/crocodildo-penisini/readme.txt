@@ -1,0 +1,17 @@
+win             (boss wins / player loses)
+lose            (boss defeated)
+celebrate       (optional, mini-win)
+thinking        (AI / planning turn)
+confused        (wrong move / disrupted)
+angry           (enrage phase)
+calm            (phase reset)
+attack
+enrage          (charging / ability)
+hurt
+stunned         (optional but VERY useful)
+idle            (default, loop)
+idle_blink      (variation, optional)
+move            (generic movement / float)
+meditating      (invulnerable / shielded phase)
+floating        (air phase / untouchable)
+idle_variant    (visual variety without logic)
