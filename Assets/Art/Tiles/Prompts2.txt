@@ -1,0 +1,44 @@
+recreate this photo stunning 2D, head location=middle area, rotate character to face center
+
+Redesign 2D model , fix the align grid center = head Idle state
+
+cute-calm face, Keep everything else the same!
+eye-blink, Keep everything else the same!
+take a breath face, Keep everything else the same!
+idle face, Keep everything else the same!
+happy face, Keep everything else the same!
+"on-the-move" face, Keep everything else the same!
+animate movement, Keep everything else the same! no abstract shapes, no symbols, solid color background
+
+confused face, what u doing-face, Keep everything else the same! no abstract shapes, no symbols
+take a breath face, Keep everything else the same!
+
+sad face, Keep everything else the same!
+cry face, Keep everything else the same!
+
+hurt face, Keep everything else the same!
+got-hit face, Keep everything else the same!
+suprise face, Keep everything else the same!
+stunned-got hit face, Keep everything else the same!
+just got hit face / can't move face, Keep everything else the same! no abstract shapes, no symbols
+
+sleepy-face, Keep everything else the same! no abstract shapes, no symbols
+take a breath face, Keep everything else the same!
+falling a sleep-face, Keep everything else the same!
+
+angry face, Keep everything else the same! no abstract shapes, no symbols
+battle stance face, Keep everything else the same!
+powering-up face, Keep everything else the same!
+enrage face, Keep everything else the same!
+get ready to strike face, Keep everything else the same!
+attack face, Keep everything else the same!
+violent face, Keep everything else the same!
+
+eye-blink, Keep everything else the same!
+
+thinking face, Keep everything else the same! no abstract shapes, no symbols
+thinking face, hand rubbing the head, Keep everything else the same!
+get hand back, Keep everything else the same!
+
+shielded phase, Keep everything else the same!
+shielded fade phase, Keep everything else the same!
