@@ -18,7 +18,7 @@ public sealed class BrainrotRoundEndUIController : MonoBehaviour
 
     public const string EarnedCoinsFormat = "You earned {0} coins!";
     public const string ChestRewardTitle = "Chest Reward!";
-    public const string ChestRewardDetail = "+10 coins +1UP";
+    public static readonly string ChestRewardDetail = $"+{BrainrotStarTracker.ChestConsumeCoinReward} coins +{BrainrotStarTracker.ChestConsumeExtraLifeReward}UP";
     public const string PerfectBonusDetail = "Bonus: +1 coin";
 
     private Coroutine revealRoutine;

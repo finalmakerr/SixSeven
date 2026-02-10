@@ -156,6 +156,24 @@ public sealed class BrainrotTriviaBonusGame
 public sealed class BrainrotStarTracker
 {
     public const int StarsPerChest = 3;
+    public const int ChestConsumeCoinReward = 10;
+    public const int ChestConsumeExtraLifeReward = 1;
+
+    public readonly struct ChestConsumeResult
+    {
+        public ChestConsumeResult(bool consumed, int awardedCoins, int awardedLives, int starsBeforeConsume)
+        {
+            Consumed = consumed;
+            AwardedCoins = awardedCoins;
+            AwardedLives = awardedLives;
+            StarsBeforeConsume = starsBeforeConsume;
+        }
+
+        public bool Consumed { get; }
+        public int AwardedCoins { get; }
+        public int AwardedLives { get; }
+        public int StarsBeforeConsume { get; }
+    }
 
     public int CurrentStars { get; private set; }
     public int StoredCoins { get; private set; }
@@ -165,6 +183,8 @@ public sealed class BrainrotStarTracker
     public event Action<int> StarsChanged;
     public event Action ChestReadyChanged;
     public event Action<int> ExtraLivesChanged;
+    public event Action<int> CoinsChanged;
+    public event Action<ChestConsumeResult> ChestConsumed;
 
     public void AwardBonusRoundStar()
     {
@@ -185,7 +205,11 @@ public sealed class BrainrotStarTracker
 
     public void AddCoins(int amount)
     {
+        if (amount <= 0)
+            return;
+
         StoredCoins += amount;
+        CoinsChanged?.Invoke(StoredCoins);
     }
 
     public void AddExtraLife(int amount)
@@ -196,17 +220,49 @@ public sealed class BrainrotStarTracker
 
     public bool TryConsumeChestAtLevelEnd()
     {
-        if (!ChestReady)
+        var consumed = ConsumeChest();
+        if (!consumed)
             return false;
 
-        ChestReady = false;
-        CurrentStars = 0;
-        StarsChanged?.Invoke(CurrentStars);
-        ChestReadyChanged?.Invoke();
+        AddCoins(ChestConsumeCoinReward);
+        AddExtraLife(ChestConsumeExtraLifeReward);
+        ChestConsumed?.Invoke(new ChestConsumeResult(true, ChestConsumeCoinReward, ChestConsumeExtraLifeReward, StarsPerChest));
         return true;
     }
 
     public bool TryAutoRetryOnDeath()
+    {
+        var starsBeforeConsume = CurrentStars;
+        if (!ConsumeChest())
+            return false;
+
+        ChestConsumed?.Invoke(new ChestConsumeResult(true, 0, 0, starsBeforeConsume));
+        return true;
+    }
+
+    public int getPlayerCoins() => StoredCoins;
+
+    public void addCoins(int amount) => AddCoins(amount);
+
+    public bool spendCoins(int itemCost)
+    {
+        if (itemCost <= 0 || StoredCoins < itemCost)
+            return false;
+
+        StoredCoins -= itemCost;
+        CoinsChanged?.Invoke(StoredCoins);
+        return true;
+    }
+
+    public bool triggerChestConsume() => TryConsumeChestAtLevelEnd();
+
+    public int updateStarCount()
+    {
+        StarsChanged?.Invoke(CurrentStars);
+        return CurrentStars;
+    }
+
+    private bool ConsumeChest()
     {
         if (!ChestReady)
             return false;
