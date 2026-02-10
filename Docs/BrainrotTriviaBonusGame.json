@@ -1,0 +1,39 @@
+{
+  "title": "Brainrot Trivia Bonus Game",
+  "summary": {
+    "mode": "Mobile mini bonus game",
+    "roundStructure": "6 quick multiple-choice questions followed by an optional grand question.",
+    "questionTimerSeconds": 7,
+    "questionTypes": [
+      "Guess character name",
+      "Lore based on Wikipedia facts",
+      "Visual identification"
+    ]
+  },
+  "rewards": {
+    "perCorrectAnswerCoins": 1,
+    "coinsHiddenUntilEnd": true,
+    "perfectRoundBonus": "If all 6 answers are correct, award +1 coin (7 total).",
+    "grandQuestion": {
+      "trigger": "Perfect round only",
+      "rewardOnCorrect": {
+        "coins": 10,
+        "extraLife": 1
+      }
+    }
+  },
+  "stars": {
+    "bonusRoundStar": "Each bonus round completion awards 1 star.",
+    "threeStarChest": "Collecting 3 stars grants a chest consumable at level end for bonus.",
+    "threeStarExtraLife": "Collecting 3 stars also grants 1UP.",
+    "deathWithThreeStars": "Auto-retry level and reset stars to 0."
+  },
+  "flow": [
+    "Start bonus round with 6 questions.",
+    "Run 7-second timer per question; check answer or timeout.",
+    "Accumulate hidden coins; reveal only after the 6-question sequence ends.",
+    "If perfect round, add 1 bonus coin and unlock grand question.",
+    "Resolve grand question for chest reward (10 coins + 1UP) if correct.",
+    "Award star for the bonus round; grant chest + 1UP when stars reach 3."
+  ]
+}
