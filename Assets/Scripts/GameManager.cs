@@ -7,7 +7,18 @@ public class GameManager : MonoBehaviour
     [Header("Timing")]
     [SerializeField] private float loadingDuration = 0.75f;
 
+    [Header("Death Flow")]
+    [SerializeField] private bool allowDeathAutoRetry = true;
+
     public event Action<GameState> StateChanged;
+    public event Action AutoRetryPopupRequested;
+
+    /// <summary>
+    /// Hook this from your level/gameplay systems.
+    /// Return true when auto-retry should happen (e.g., player has 3 stars).
+    /// The hook is also responsible for consuming/resetting those stars.
+    /// </summary>
+    public Func<bool> TryAutoRetryOnDeath;
 
     public GameState CurrentState { get; private set; } = GameState.MainMenu;
 
@@ -48,6 +59,13 @@ public class GameManager : MonoBehaviour
         if (CurrentState != GameState.Playing)
             return;
 
+        if (allowDeathAutoRetry && TryAutoRetryOnDeath?.Invoke() == true)
+        {
+            AutoRetryPopupRequested?.Invoke();
+            StartLoadingFromCurrentLevel();
+            return;
+        }
+
         SetState(GameState.GameOver);
     }
 
@@ -64,6 +82,12 @@ public class GameManager : MonoBehaviour
     {
         StopLoadingRoutine();
         loadingRoutine = StartCoroutine(LoadingRoutine());
+    }
+
+    private void StartLoadingFromCurrentLevel()
+    {
+        SetState(GameState.Loading);
+        BeginLoading();
     }
 
     private IEnumerator LoadingRoutine()
