@@ -9,7 +9,12 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject levelCompletePanel;
     [SerializeField] private GameObject gameOverPanel;
 
+    [Header("Death Flow")]
+    [SerializeField] private GameObject retryPopupPanel;
+    [SerializeField] private float retryPopupDuration = 1.5f;
+
     private GameManager gameManager;
+    private Coroutine retryPopupRoutine;
 
     private void Awake()
     {
@@ -21,6 +26,7 @@ public class UIManager : MonoBehaviour
         if (gameManager != null)
         {
             gameManager.StateChanged += HandleStateChanged;
+            gameManager.AutoRetryPopupRequested += ShowRetryPopup;
             HandleStateChanged(gameManager.CurrentState);
         }
     }
@@ -28,7 +34,10 @@ public class UIManager : MonoBehaviour
     private void OnDisable()
     {
         if (gameManager != null)
+        {
             gameManager.StateChanged -= HandleStateChanged;
+            gameManager.AutoRetryPopupRequested -= ShowRetryPopup;
+        }
     }
 
     private void HandleStateChanged(GameState state)
@@ -68,5 +77,27 @@ public class UIManager : MonoBehaviour
     {
         if (gameManager != null)
             gameManager.StartGame();
+    }
+
+    private void ShowRetryPopup()
+    {
+        if (retryPopupPanel == null)
+            return;
+
+        if (retryPopupRoutine != null)
+            StopCoroutine(retryPopupRoutine);
+
+        retryPopupRoutine = StartCoroutine(ShowRetryPopupRoutine());
+    }
+
+    private System.Collections.IEnumerator ShowRetryPopupRoutine()
+    {
+        retryPopupPanel.SetActive(true);
+
+        if (retryPopupDuration > 0f)
+            yield return new WaitForSeconds(retryPopupDuration);
+
+        retryPopupPanel.SetActive(false);
+        retryPopupRoutine = null;
     }
 }
