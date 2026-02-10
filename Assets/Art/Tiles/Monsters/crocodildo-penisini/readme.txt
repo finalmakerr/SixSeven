@@ -1,17 +1,19 @@
-win             (boss wins / player loses)
-lose            (boss defeated)
-celebrate       (optional, mini-win)
-thinking        (AI / planning turn)
+Monsters Pose (not boss/player):
+
+angry           (prepare to enrage)
+attack          (enrage reset)
 confused        (wrong move / disrupted)
-angry           (enrage phase)
-calm            (phase reset)
-attack
-enrage          (charging / ability)
-hurt
-stunned         (optional but VERY useful)
+enrage          (prepare to attack)
+happy           (player win)
+hurt            (took damage)
 idle            (default, loop)
-idle_blink      (variation, optional)
+sad             (player defeated)
+sleeping        (player afk)
+stunned         (optional but VERY useful)
+
+BOSS:
+calm            (phase reset)
+happy           (player defeated)
 move            (generic movement / float)
-meditating      (invulnerable / shielded phase)
-floating        (air phase / untouchable)
-idle_variant    (visual variety without logic)
+sad             (player win)
+thinking        (AI / planning turn)
