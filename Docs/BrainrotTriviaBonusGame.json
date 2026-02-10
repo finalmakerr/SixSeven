@@ -35,5 +35,90 @@
     "If perfect round, add 1 bonus coin and unlock grand question.",
     "Resolve grand question for chest reward (10 coins + 1UP) if correct.",
     "Award star for the bonus round; grant chest + 1UP when stars reach 3."
+  ],
+  "sampleQuestions": [
+    {
+      "id": 1,
+      "type": "name_guess",
+      "prompt": "Who is this espresso-powered dancer from brainrot lore?",
+      "imageRef": "art/brainrot/ballerina-cappuccina-card.png",
+      "options": [
+        "Ballerina Cappuccina",
+        "Bombombini Gusini",
+        "Tralalero Tralala",
+        "Boneca Ambalabu"
+      ],
+      "correctIndex": 0
+    },
+    {
+      "id": 2,
+      "type": "name_guess",
+      "prompt": "Identify the explosive goose-themed character.",
+      "imageRef": "art/brainrot/bombombini-gusini-card.png",
+      "options": [
+        "Lirilì Larilà",
+        "Bombombini Gusini",
+        "Cappuccino Assassino",
+        "Brr Brr Patapim"
+      ],
+      "correctIndex": 1
+    },
+    {
+      "id": 3,
+      "type": "name_guess",
+      "prompt": "What is the name of this frog-idol style character?",
+      "imageRef": "art/brainrot/boneca-ambalabu-card.png",
+      "options": [
+        "Tung Tung Sahur",
+        "Bobrito Bandito",
+        "Boneca Ambalabu",
+        "Frigo Camelo"
+      ],
+      "correctIndex": 2
+    },
+    {
+      "id": 4,
+      "type": "lore_wiki",
+      "prompt": "Which platform is most commonly credited for the viral spread of Italian brainrot edits in 2024-2025?",
+      "context": "Wikipedia-style summaries describe the trend as accelerating through short-form video remix culture.",
+      "imageRef": "ui/icons/wiki-lore-01.png",
+      "options": [
+        "LinkedIn",
+        "TikTok",
+        "ResearchGate",
+        "Vimeo OTT"
+      ],
+      "correctIndex": 1,
+      "sourceRef": "wiki:Italian_Internet_memes#Italian_brainrot"
+    },
+    {
+      "id": 5,
+      "type": "lore_wiki",
+      "prompt": "Brainrot content is typically characterized by which style element in meme culture references?",
+      "context": "Wikipedia coverage of absurdist and post-ironic memes highlights chaotic repetition and intentionally low-context humor.",
+      "imageRef": "ui/icons/wiki-lore-02.png",
+      "options": [
+        "Formal documentary narration",
+        "Strict educational framing",
+        "Minimalist silent cinema",
+        "Absurdist repetition and remix audio"
+      ],
+      "correctIndex": 3,
+      "sourceRef": "wiki:Absurdist_humour"
+    },
+    {
+      "id": 6,
+      "type": "visual_recognition",
+      "prompt": "Silhouette challenge: who matches this blurred outline and signature hat shape?",
+      "imageRef": "art/brainrot/silhouette-round-01.png",
+      "visualHint": "Heavy blur + black silhouette; only headgear and pose are readable.",
+      "options": [
+        "Brr Brr Patapim",
+        "Bombombini Gusini",
+        "Ballerina Cappuccina",
+        "Boneca Ambalabu"
+      ],
+      "correctIndex": 0
+    }
   ]
 }
