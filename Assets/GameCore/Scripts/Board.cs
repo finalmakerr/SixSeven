@@ -83,6 +83,12 @@ namespace GameCore
         // CODEX BOSS PR1
         public int RandomSeed => randomSeed;
 
+        // CODEX REPLAYABILITY: set run-level seed before initialization for deterministic board generation.
+        public void SetRandomSeed(int seed)
+        {
+            randomSeed = seed;
+        }
+
         private void Awake()
         {
             if (!ValidateConfiguration())
@@ -2208,6 +2214,110 @@ namespace GameCore
         private static bool IsRegularMatchable(Piece piece)
         {
             return piece != null && !piece.IsPlayer && piece.SpecialType == SpecialType.None;
+        }
+
+        // CODEX REPLAYABILITY: apply procedural tumor placements for this run.
+        public int PlaceTumors(IReadOnlyList<TumorSpawnData> tumors)
+        {
+            if (tumors == null || pieces == null)
+            {
+                return 0;
+            }
+
+            var placed = 0;
+            for (var i = 0; i < tumors.Count; i++)
+            {
+                var tumor = tumors[i];
+                if (!TryPlaceTumor(tumor.position, tumor.tier))
+                {
+                    continue;
+                }
+
+                placed++;
+            }
+
+            return placed;
+        }
+
+        public bool HasTumorAt(Vector2Int position)
+        {
+            if (!IsInBounds(position.x, position.y) || pieces == null)
+            {
+                return false;
+            }
+
+            var piece = pieces[position.x, position.y];
+            return piece != null && piece.SpecialType == SpecialType.Tumor;
+        }
+
+        public bool IsPathToBossClearOfTumors(Vector2Int from, Vector2Int to)
+        {
+            if (!IsInBounds(from.x, from.y) || !IsInBounds(to.x, to.y))
+            {
+                return false;
+            }
+
+            var queue = new Queue<Vector2Int>();
+            var visited = new HashSet<Vector2Int>();
+            queue.Enqueue(from);
+            visited.Add(from);
+            var offsets = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (current == to)
+                {
+                    return true;
+                }
+
+                for (var i = 0; i < offsets.Length; i++)
+                {
+                    var next = current + offsets[i];
+                    if (!IsInBounds(next.x, next.y) || visited.Contains(next))
+                    {
+                        continue;
+                    }
+
+                    var piece = pieces[next.x, next.y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType == SpecialType.Tumor)
+                    {
+                        continue;
+                    }
+
+                    visited.Add(next);
+                    queue.Enqueue(next);
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryPlaceTumor(Vector2Int position, int tier)
+        {
+            if (!IsInBounds(position.x, position.y) || pieces == null)
+            {
+                return false;
+            }
+
+            var piece = pieces[position.x, position.y];
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (piece.SpecialType == SpecialType.Bugada || piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.TreasureChest)
+            {
+                return false;
+            }
+
+            piece.ConfigureAsTumor(tier);
+            return true;
         }
 
         private Sprite[] GenerateSprites()

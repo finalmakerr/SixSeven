@@ -31,6 +31,8 @@ namespace GameCore
         public Vector2Int gridSize;
         // CODEX DIFFICULTY PR7
         public int colorCount;
+        public int difficultyTier;
+        public int baseTumorCount;
         // CODEX BOSS PR1
         public bool isBossLevel;
 
@@ -42,6 +44,8 @@ namespace GameCore
             gridSize = new Vector2Int(7, 7),
             // CODEX DIFFICULTY PR7
             colorCount = 5,
+            difficultyTier = 1,
+            baseTumorCount = 2,
             // CODEX BOSS PR1
             isBossLevel = false
         };

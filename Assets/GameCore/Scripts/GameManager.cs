@@ -80,6 +80,7 @@ namespace GameCore
         [SerializeField] private Text bonusStageRouletteText;
         // CODEX BONUS PR4
         [SerializeField] private Text bonusStageResultText;
+        [SerializeField] private Text miniGoalsText; // CODEX REPLAYABILITY
         // CODEX BONUS PR4
         [SerializeField] private Transform bonusStageListRoot;
         // CODEX BONUS PR3
@@ -221,6 +222,11 @@ namespace GameCore
         private BonusMiniGameBase activeBonusMiniGame;
         // CODEX BONUS PR5
         private Coroutine bonusMiniGameCleanupRoutine;
+        private LevelRunDefinition currentRunDefinition; // CODEX REPLAYABILITY
+        private readonly List<MiniGoalDefinition> activeMiniGoals = new List<MiniGoalDefinition>(); // CODEX REPLAYABILITY
+        private int tumorsDestroyedThisLevel; // CODEX REPLAYABILITY
+        private int turnsSurvivedThisLevel; // CODEX REPLAYABILITY
+        private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
         private int energy;
         private bool isShieldActive;
         private bool shieldJustActivated;
@@ -450,6 +456,15 @@ namespace GameCore
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
                 bossAlive = IsBossLevel
             };
+            currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
+            activeMiniGoals.Clear();
+            if (currentRunDefinition.miniGoals != null)
+            {
+                activeMiniGoals.AddRange(currentRunDefinition.miniGoals);
+            }
+            tumorsDestroyedThisLevel = 0;
+            turnsSurvivedThisLevel = 0;
+            clearedPathGoalThisLevel = false;
             // CODEX RAGE SCALE FINAL
             monstersCanAttack = !IsBossLevel;
             // CODEX RAGE SCALE FINAL
@@ -463,10 +478,13 @@ namespace GameCore
             {
                 // CODEX DIFFICULTY PR7
                 board.ConfigureColorCount(level.colorCount);
+                board.SetRandomSeed(currentRunDefinition.seed);
                 board.InitializeBoard(gridSize.x, gridSize.y);
+                board.PlaceTumors(currentRunDefinition.tumors);
             }
 
             ResetGame();
+            UpdateMiniGoalsUI();
 
             // CODEX BOSS PR1
             EnsureBossSelected();
@@ -1029,6 +1047,8 @@ namespace GameCore
 
             TickBugadaDuration();
             TickShieldStatus();
+            turnsSurvivedThisLevel += 1;
+            EvaluateMiniGoalsProgress();
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
@@ -2076,6 +2096,12 @@ namespace GameCore
 
             TryDefeatBossFromDestruction(piece, reason);
 
+            if (piece.SpecialType == SpecialType.Tumor)
+            {
+                tumorsDestroyedThisLevel += 1;
+                EvaluateMiniGoalsProgress();
+            }
+
             if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
             {
                 GrantCrown();
@@ -2088,6 +2114,78 @@ namespace GameCore
                 {
                     Debug.Log("CrownIgnored", this); // CODEX CHEST PR2
                 }
+            }
+        }
+
+
+        private void EvaluateMiniGoalsProgress()
+        {
+            if (activeMiniGoals.Count == 0)
+            {
+                UpdateMiniGoalsUI();
+                return;
+            }
+
+            if (!clearedPathGoalThisLevel && board != null && IsBossLevel && board.TryGetPlayerPosition(out var playerPosition))
+            {
+                var bossPosition = CurrentBossState.bossPosition;
+                clearedPathGoalThisLevel = board.IsPathToBossClearOfTumors(playerPosition, bossPosition);
+            }
+
+            UpdateMiniGoalsUI();
+        }
+
+        private void UpdateMiniGoalsUI()
+        {
+            if (miniGoalsText == null)
+            {
+                return;
+            }
+
+            if (activeMiniGoals.Count == 0)
+            {
+                miniGoalsText.text = string.Empty;
+                return;
+            }
+
+            var lines = new List<string>();
+            for (var i = 0; i < activeMiniGoals.Count; i++)
+            {
+                var goal = activeMiniGoals[i];
+                lines.Add(BuildMiniGoalLine(goal));
+            }
+
+            miniGoalsText.text = string.Join("\n", lines);
+        }
+
+        private string BuildMiniGoalLine(MiniGoalDefinition goal)
+        {
+            switch (goal.type)
+            {
+                case MiniGoalType.DestroyTumors:
+                {
+                    var target = Mathf.Max(1, goal.targetValue);
+                    var progress = Mathf.Clamp(tumorsDestroyedThisLevel, 0, target);
+                    return $"[Mini] Destroy tumors {progress}/{target}";
+                }
+                case MiniGoalType.SurviveTurns:
+                {
+                    var target = Mathf.Max(1, goal.targetValue);
+                    var progress = Mathf.Clamp(turnsSurvivedThisLevel, 0, target);
+                    return $"[Mini] Survive turns {progress}/{target}";
+                }
+                case MiniGoalType.ReachTile:
+                {
+                    var reached = board != null && !board.HasTumorAt(goal.targetTile);
+                    var marker = reached ? "Done" : "Pending";
+                    return $"[Mini] Reach tile ({goal.targetTile.x},{goal.targetTile.y}) {marker}";
+                }
+                case MiniGoalType.ClearPathToBoss:
+                {
+                    return $"[Mini] Clear path to boss {(clearedPathGoalThisLevel ? "Done" : "Pending")}";
+                }
+                default:
+                    return "[Mini] Optional challenge";
             }
         }
 
