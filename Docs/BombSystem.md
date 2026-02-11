@@ -31,3 +31,51 @@ This flow is implemented by `BombSystem.TryPickupBomb(...)`.
 - Manhattan distance **2**: half bomb damage (`max(1, damage/2)`).
 
 This flow is implemented by `BombSystem.BuildExplosionDamageMap(...)`.
+
+
+## Boss bomb damage calculation
+
+- Bomb radius includes boss tile checks.
+- Distance **1** from blast center deals full damage.
+- Distance **2** from blast center deals half damage.
+- Boss phase can reduce incoming bomb damage via resistance %.
+- Final boss damage is rounded down.
+- Boss cannot be one-shot when starting the hit at full HP.
+
+### Pseudocode
+
+```text
+function CalculateBossBombDamage(bombDamage, distance, bossCurrentHp, bossMaxHp, phaseResistancePercent):
+    if bombDamage <= 0 or bossCurrentHp <= 0:
+        return 0
+
+    if distance > 2:
+        return 0
+
+    if distance <= 1:
+        baseDamage = bombDamage
+    else:
+        baseDamage = floor(bombDamage / 2)
+
+    resistance = clamp(phaseResistancePercent, 0, 100)
+    reducedDamage = floor(baseDamage * (100 - resistance) / 100)
+
+    if reducedDamage <= 0:
+        return 0
+
+    isFullHp = bossCurrentHp >= max(1, bossMaxHp)
+    if isFullHp and reducedDamage >= bossCurrentHp:
+        return max(0, bossCurrentHp - 1)
+
+    return min(reducedDamage, bossCurrentHp)
+```
+
+### Edge cases handled
+
+1. **Distance outside bomb radius** (`distance > 2`) returns `0` damage.
+2. **Invalid/empty damage values** (`bombDamage <= 0`) return `0` damage.
+3. **Dead boss state** (`bossCurrentHp <= 0`) returns `0` damage.
+4. **Resistance bounds** are clamped to `[0, 100]`.
+5. **Round down behavior** is applied by integer division in half damage and resistance reduction.
+6. **One-shot protection** leaves boss at `1 HP` when hit from full HP by a lethal bomb.
+7. **Overkill clamp** ensures result never exceeds current HP.
