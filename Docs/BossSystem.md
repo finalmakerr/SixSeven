@@ -306,3 +306,135 @@ Targeting uses deterministic heuristics before random tie-breaks so players can 
   3. `BasicStrike` fallback.
 
 This prevents null turns and keeps boss intent consistent.
+
+## Boss-level outcomes
+
+This section defines post-battle resolution for boss levels (win, defeat, retry, and rewards).
+
+### Outcome contract
+
+- Boss victory and defeat are resolved immediately at end-of-round cleanup.
+- Rewards are granted only on **boss win**.
+- Auto-retry can only trigger on **boss defeat** when player has exactly `3 stars` available to consume.
+- Boss retries always reset boss combat state (HP, phase, cooldowns, spawned boss-only entities).
+- Boss defeats never apply permanent max-stat penalties.
+
+---
+
+### Win flow
+
+1. Detect boss HP `<= 0`.
+2. Lock board input and stop turn simulation.
+3. Calculate and grant rewards:
+   - coins,
+   - +1 star,
+   - optional max HP increase roll,
+   - optional max Energy increase roll,
+   - optional shop unlock roll(s).
+4. Persist account/meta-progression updates.
+5. Show boss-clear summary UI with reward breakdown.
+6. Advance to next level/scene.
+
+Pseudo flow:
+
+```text
+if boss.currentHP <= 0:
+  rewards = RollBossRewards(levelId, difficultyTier)
+  GrantCoins(rewards.coins)
+  GrantStar(1)
+  if rewards.maxHpIncrease > 0: IncreaseMaxHP(rewards.maxHpIncrease)
+  if rewards.maxEnergyIncrease > 0: IncreaseMaxEnergy(rewards.maxEnergyIncrease)
+  UnlockShopItems(rewards.shopUnlocks)
+  SaveProgress()
+  ShowWinFlow(rewards)
+```
+
+---
+
+### Lose flow
+
+1. Detect player death (`HP <= 0`).
+2. Evaluate star-based retry gate:
+   - If player has `3 stars`:
+     - consume/reset stars to `0`,
+     - auto-retry same boss level,
+     - reset boss combat state before restarting.
+   - Otherwise:
+     - enter standard game-over flow.
+3. On boss-level defeat, do **not** reduce max HP or max Energy.
+
+Pseudo flow:
+
+```text
+if player.hp <= 0:
+  if player.stars >= 3:
+    player.stars = 0
+    ResetBossStateForRetry()
+    RestartCurrentLevel(autoRetry=true)
+  else:
+    TriggerGameOverFlow()
+```
+
+---
+
+### Retry logic (boss-specific)
+
+On any retry path (auto-retry or manual retry), apply all of the following:
+
+1. Reset boss HP to computed max HP for current level tier.
+2. Reset boss phase index to phase `0`.
+3. Clear boss cooldowns/runtime statuses.
+4. Despawn boss-summoned entities and clear boss-owned tile effects.
+5. Reinitialize deterministic encounter seed (or same seed policy per design).
+6. Restore player to level-start vitals using current max values (without reducing max HP/Energy).
+
+Explicit non-goals on boss failure:
+
+- No permanent reduction to `MaxHP`.
+- No permanent reduction to `MaxEnergy`.
+- No retention of prior failed attempt boss damage/progress.
+
+---
+
+### Reward tables
+
+Use this baseline table unless a boss has an explicit override profile.
+
+#### Boss win reward table
+
+| Reward type | Rule | Notes |
+|---|---|---|
+| Coins | `baseCoins + (difficultyTier * tierCoins)` where `baseCoins=30`, `tierCoins=10` | Example: tier 0 = 30, tier 3 = 60 |
+| Star | `+1` guaranteed | Counts toward 3-star auto-retry bank/chest systems |
+| Max HP increase | `20%` chance, `+1 heart` | Clamp to global max heart cap |
+| Max Energy increase | `20%` chance, `+1 heart` | Clamp to global max energy-heart cap |
+| Shop unlock | `35%` chance to unlock 1 item from boss pool | Ignore if no locked items remain |
+
+#### Suggested boss reward profile structure
+
+```csharp
+[Serializable]
+public sealed class BossRewardProfile
+{
+    public int baseCoins = 30;
+    public int coinsPerDifficultyTier = 10;
+    [Range(0f, 1f)] public float maxHpIncreaseChance = 0.20f;
+    public int maxHpHeartsGranted = 1;
+    [Range(0f, 1f)] public float maxEnergyIncreaseChance = 0.20f;
+    public int maxEnergyHeartsGranted = 1;
+    [Range(0f, 1f)] public float shopUnlockChance = 0.35f;
+    public int shopUnlockCount = 1;
+    public List<string> shopUnlockPoolItemIds;
+}
+```
+
+#### Reward roll resolution order
+
+1. Compute deterministic reward RNG seed (`playerId + levelId + clearCount`).
+2. Grant guaranteed rewards first (coins, star).
+3. Roll max HP increase chance.
+4. Roll max Energy increase chance.
+5. Roll shop unlock(s).
+6. Persist and broadcast reward payload to UI.
+
+This order keeps reward generation deterministic and auditable.
