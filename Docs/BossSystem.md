@@ -147,3 +147,162 @@ For each incoming hit:
 - Bomb hit with raw damage `18` in phase with multiplier `100` -> boss takes `18`.
 - Special weapon hit with raw damage `30` in resistant phase with multiplier `70` -> boss takes `21`.
 - HP drops from `92` to `58`, crossing threshold at `60` -> enter next phase and trigger phase-start effect.
+
+## Boss ability catalog (by required type)
+
+Bosses use one ability per turn from this shared category set:
+
+1. **Direct grid damage**
+   - `RuptureLine`: deal damage in a row/column crossing the player tile.
+   - `CrushCross`: hit the player tile and the 4 orthogonal adjacent tiles.
+2. **Tumor spawning/upgrading**
+   - `SeedTumor`: spawn a tier-1 tumor on a high-pressure empty tile.
+   - `MutateTumor`: upgrade the oldest/nearest existing tumor by +1 tier.
+3. **Bomb disruption**
+   - `FuseDelay`: increase nearby bomb timers by +1 turn.
+   - `FuseSnap`: decrease selected bomb timers by -1 turn (minimum 0).
+4. **Tile locking/corruption**
+   - `LockRing`: lock a ring of tiles around the player for N turns.
+   - `CorruptLane`: convert a lane into corrupted tiles that penalize movement.
+5. **Player debuffs**
+   - `EnergyLeech`: reduce player energy by a flat amount and prevent regen this turn.
+   - `ShieldShatter`: remove active shield stacks and add a short vulnerability window.
+
+## Ability cooldown system
+
+### Data model
+
+```csharp
+[Serializable]
+public class BossAbilityRuntimeData
+{
+    public string abilityId;
+    public BossAbilityCategory category;
+    public int baseCooldownTurns;   // e.g. 1-4
+    public int currentCooldownTurns;
+    public int minPhaseIndex;
+    public int maxPhaseIndex;       // -1 for no cap
+}
+```
+
+- `currentCooldownTurns == 0` means the ability is available.
+- Cooldowns tick at end of boss turn (after execution).
+- After an ability is used:
+
+  `currentCooldownTurns = baseCooldownTurns`
+
+- At cleanup:
+
+  `currentCooldownTurns = max(0, currentCooldownTurns - 1)`
+
+### Turn contract
+
+1. Gather abilities valid for the current phase.
+2. Filter to `currentCooldownTurns == 0`.
+3. If at least one exists, select exactly one and execute it.
+4. If none are available, execute fallback `BasicStrike` (no cooldown).
+5. Set used ability cooldown, then tick all cooldowns in cleanup.
+
+This enforces the rule **boss uses exactly 1 ability per turn** while ensuring no dead turns.
+
+## Ability selection logic (semi-random, phase-weighted)
+
+### Weight table by phase
+
+Each ability has per-phase weights; `0` disables that entry.
+
+| Category | Phase 1 weight | Phase 2 weight | Phase 3+ weight |
+|---|---:|---:|---:|
+| Direct grid damage | 35 | 30 | 20 |
+| Tumor spawn/upgrade | 25 | 30 | 25 |
+| Bomb disruption | 10 | 20 | 25 |
+| Tile lock/corruption | 15 | 10 | 20 |
+| Player debuffs | 15 | 10 | 10 |
+
+Boss-specific kits can override these values, but this baseline gives early pressure from damage and scaling control later from disruption/corruption.
+
+### Weighted roll algorithm
+
+```csharp
+BossAbilityRuntimeData ChooseAbility(List<BossAbilityRuntimeData> readyAbilities, int phaseIndex, Random rng)
+{
+    var weighted = new List<(BossAbilityRuntimeData ability, int weight)>();
+    foreach (var ability in readyAbilities)
+    {
+        int w = ability.GetWeightForPhase(phaseIndex);
+        if (w > 0)
+            weighted.Add((ability, w));
+    }
+
+    if (weighted.Count == 0)
+        return BasicStrike;
+
+    int total = weighted.Sum(x => x.weight);
+    int roll = rng.Next(0, total);
+
+    foreach (var entry in weighted)
+    {
+        if (roll < entry.weight)
+            return entry.ability;
+        roll -= entry.weight;
+    }
+
+    return weighted[weighted.Count - 1].ability;
+}
+```
+
+### Anti-repeat safety
+
+- If the rolled ability was also used last turn, apply a **repeat penalty** (e.g. `weight *= 0.4`) and reroll once.
+- Never reroll if only one ability is ready.
+
+This keeps behavior readable but not predictable.
+
+## Targeting rules
+
+Targeting uses deterministic heuristics before random tie-breaks so players can learn patterns.
+
+### Shared targeting context
+
+- `playerPosition`
+- active bombs (`position`, `turnsRemaining`)
+- tumor tiles (`position`, `tier`)
+- locked/corrupted tiles
+- board bounds + valid target mask
+
+### Category-specific rules
+
+1. **Direct grid damage**
+   - Primary target: tile maximizing overlap with player path options for next turn.
+   - Tie-breaker: closest to player Manhattan distance.
+   - Final tie-breaker: random among equals.
+
+2. **Tumor spawn/upgrade**
+   - If tumors below cap -> spawn at empty tile with highest adjacency to existing tumors/corruption.
+   - Else upgrade tumor with highest threat score:
+
+     `threat = tier * 3 + proximityToPlayer + clusterBonus`
+
+3. **Bomb disruption**
+   - `FuseSnap` prefers bombs with `turnsRemaining == 1` (immediate threat).
+   - `FuseDelay` prefers bombs inside player's likely collection route.
+   - If no bombs exist, retarget to secondary effect (small direct damage ping).
+
+4. **Tile locking/corruption**
+   - Avoid fully sealing the player (must leave at least one legal move).
+   - Prefer tiles that reduce next-turn match opportunities.
+   - Do not lock already locked tiles unless upgrading duration.
+
+5. **Player debuffs**
+   - `ShieldShatter` only when shield > 0; otherwise weight is treated as 0.
+   - `EnergyLeech` priority increases with player energy above a threshold.
+
+### Validity guardrails
+
+- Every ability validates candidate targets before cast.
+- If target set is invalid, fallback order:
+  1. Retarget within same category.
+  2. Select another ready ability.
+  3. `BasicStrike` fallback.
+
+This prevents null turns and keeps boss intent consistent.
