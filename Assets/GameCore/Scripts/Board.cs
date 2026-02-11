@@ -566,6 +566,125 @@ namespace GameCore
             return piece != null;
         }
 
+        // CODEX RAGE SCALE FINAL
+        public int GetMonsterRageMatchabilityScore(Vector2Int monsterPosition)
+        {
+            if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
+            {
+                return 0;
+            }
+
+            if (CanMatchPieceInTwoSwaps(monsterPosition))
+            {
+                return 2;
+            }
+
+            return CanMatchPieceInOneSwap(monsterPosition) ? 1 : 0;
+        }
+
+        // CODEX RAGE SCALE FINAL
+        private bool CanMatchPieceInOneSwap(Vector2Int monsterPosition)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (!TryGetPieceAt(new Vector2Int(x, y), out var first) || !IsSwappable(first))
+                    {
+                        continue;
+                    }
+
+                    if (WouldSwapCreateMatchIncludingMonster(x, y, x + 1, y, monsterPosition)
+                        || WouldSwapCreateMatchIncludingMonster(x, y, x, y + 1, monsterPosition))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // CODEX RAGE SCALE FINAL
+        private bool CanMatchPieceInTwoSwaps(Vector2Int monsterPosition)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    if (!IsInBounds(x, y) || !IsSwappable(pieces[x, y]))
+                    {
+                        continue;
+                    }
+
+                    if (TryTwoSwapPathForMonster(x, y, x + 1, y, monsterPosition)
+                        || TryTwoSwapPathForMonster(x, y, x, y + 1, monsterPosition))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        // CODEX RAGE SCALE FINAL
+        private bool TryTwoSwapPathForMonster(int x1, int y1, int x2, int y2, Vector2Int monsterPosition)
+        {
+            if (!IsInBounds(x2, y2))
+            {
+                return false;
+            }
+
+            var first = pieces[x1, y1];
+            var second = pieces[x2, y2];
+            if (!IsSwappable(first) || !IsSwappable(second) || first.ColorIndex == second.ColorIndex)
+            {
+                return false;
+            }
+
+            SwapPiecesInGrid(first, second);
+            try
+            {
+                return CanMatchPieceInOneSwap(monsterPosition);
+            }
+            finally
+            {
+                SwapPiecesInGrid(first, second);
+            }
+        }
+
+        // CODEX RAGE SCALE FINAL
+        private bool WouldSwapCreateMatchIncludingMonster(int x1, int y1, int x2, int y2, Vector2Int monsterPosition)
+        {
+            if (!IsInBounds(x2, y2))
+            {
+                return false;
+            }
+
+            var first = pieces[x1, y1];
+            var second = pieces[x2, y2];
+            if (first == null || second == null)
+            {
+                return false;
+            }
+
+            if (!IsSwappable(first) || !IsSwappable(second) || first.ColorIndex == second.ColorIndex)
+            {
+                return false;
+            }
+
+            var isMonsterPieceMoved = (x1 == monsterPosition.x && y1 == monsterPosition.y)
+                || (x2 == monsterPosition.x && y2 == monsterPosition.y);
+            if (isMonsterPieceMoved)
+            {
+                return HasMatchAtSimulated(x1, y1, x1, y1, x2, y2)
+                    || HasMatchAtSimulated(x2, y2, x1, y1, x2, y2);
+            }
+
+            return HasMatchAtSimulated(monsterPosition.x, monsterPosition.y, x1, y1, x2, y2);
+        }
+
         public bool TryDestroyPieceAt(Vector2Int position, DestructionReason reason)
         {
             if (pieces == null || !IsInBounds(position.x, position.y))

@@ -247,6 +247,12 @@ namespace GameCore
         private MonsterAttackAnimationController monsterAttackAnimationController;
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
+        // CODEX RAGE SCALE FINAL
+        private bool monstersCanAttack;
+        // CODEX RAGE SCALE FINAL
+        private int rageCooldownTurns;
+        // CODEX RAGE SCALE FINAL
+        private int rageCooldownRemaining;
         private Piece monsterEnragePiece;
         private MonsterEnrageIndicator monsterEnrageIndicator;
         private const int ToxicGraceStacks = 2;
@@ -409,6 +415,8 @@ namespace GameCore
             stunnedTurnsRemaining = 0;
             skipMoveCostThisSwap = false;
             ResetMonsterAttackState();
+            // CODEX RAGE SCALE FINAL
+            rageCooldownRemaining = 0;
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -442,6 +450,12 @@ namespace GameCore
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
                 bossAlive = IsBossLevel
             };
+            // CODEX RAGE SCALE FINAL
+            monstersCanAttack = !IsBossLevel;
+            // CODEX RAGE SCALE FINAL
+            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(levelIndex / 10f));
+            // CODEX RAGE SCALE FINAL
+            rageCooldownRemaining = 0;
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -1021,6 +1035,7 @@ namespace GameCore
             UpdateMonsterEnrageVisuals();
             if (CanEnemiesReactAtTurnEnd())
             {
+                TickRageCooldown(); // CODEX RAGE SCALE FINAL
                 TickMonsterAttackMarker();
                 TryTriggerMonsterEnrage();
             }
@@ -1355,17 +1370,12 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
+        // CODEX RAGE SCALE FINAL
         private void TickMonsterAttackMarker()
         {
             var bossState = CurrentBossState;
             if (!bossState.IsEnraged)
             {
-                return;
-            }
-
-            if (!bossState.bossAlive)
-            {
-                ResetMonsterAttackState();
                 return;
             }
 
@@ -1387,9 +1397,31 @@ namespace GameCore
             ResetMonsterAttackState(true);
         }
 
+
+        // CODEX RAGE SCALE FINAL
+        private void TickRageCooldown()
+        {
+            if (rageCooldownRemaining <= 0)
+            {
+                return;
+            }
+
+            rageCooldownRemaining = Mathf.Max(0, rageCooldownRemaining - 1);
+            if (debugMode)
+            {
+                Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
+            }
+        }
+
+        // CODEX RAGE SCALE FINAL
         private void TryTriggerMonsterEnrage()
         {
-            if (!IsBossLevel || board == null)
+            if (board == null)
+            {
+                return;
+            }
+
+            if (!monstersCanAttack)
             {
                 return;
             }
@@ -1399,8 +1431,18 @@ namespace GameCore
                 return;
             }
 
+            if (rageCooldownRemaining > 0)
+            {
+                if (debugMode)
+                {
+                    Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
+                }
+
+                return;
+            }
+
             var bossState = CurrentBossState;
-            if (!bossState.bossAlive || bossState.IsEnraged)
+            if (bossState.IsEnraged)
             {
                 return;
             }
@@ -1410,12 +1452,56 @@ namespace GameCore
                 return;
             }
 
-            if (!CanMonsterReachPlayer(bossState.bossPosition, playerPosition))
+            var candidateFound = false;
+            var bestScore = 0;
+            var bestPosition = default(Vector2Int);
+            var adjacentOffsets = new[]
             {
+                Vector2Int.up,
+                Vector2Int.down,
+                Vector2Int.left,
+                Vector2Int.right
+            };
+
+            for (var i = 0; i < adjacentOffsets.Length; i++)
+            {
+                var candidatePosition = playerPosition + adjacentOffsets[i];
+                if (!board.TryGetPieceAt(candidatePosition, out _))
+                {
+                    continue;
+                }
+
+                var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
+                if (score <= 0)
+                {
+                    continue;
+                }
+
+                if (!candidateFound || score > bestScore)
+                {
+                    candidateFound = true;
+                    bestScore = score;
+                    bestPosition = candidatePosition;
+                }
+            }
+
+            if (!candidateFound)
+            {
+                if (debugMode)
+                {
+                    Debug.Log("RageRejected_NoMatchableCandidate", this);
+                }
+
                 return;
             }
 
-            ActivateMonsterAttack(playerPosition);
+            if (debugMode)
+            {
+                Debug.Log($"RageSelected position={bestPosition.x},{bestPosition.y} score={bestScore}", this);
+            }
+
+            rageCooldownRemaining = rageCooldownTurns;
+            ActivateMonsterAttack(bestPosition);
         }
 
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
@@ -1443,14 +1529,10 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
+        // CODEX RAGE SCALE FINAL
         private void ResolveMonsterAttack(Vector2Int targetPosition)
         {
             if (board == null || hasEnded)
-            {
-                return;
-            }
-
-            if (!CurrentBossState.bossAlive)
             {
                 return;
             }
@@ -1460,21 +1542,35 @@ namespace GameCore
             {
                 TriggerMonsterAttackExecuteVisuals();
 
-                if (board.TryGetPlayerPosition(out var playerPosition)
-                    && playerPosition == targetPosition)
+                if (!board.TryGetPieceAt(targetPosition, out var targetPiece)
+                    || monsterEnragePiece == null
+                    || targetPiece != monsterEnragePiece)
                 {
-                    TriggerStunnedAnimation();
-                    if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                    if (debugMode)
                     {
-                        return;
+                        Debug.Log("RageCancelledByMatch", this);
                     }
 
-                    ApplyPlayerDamage(GetCurrentMonsterDamage());
+                    ResetMonsterAttackState(true);
+                    return;
+                }
+
+                TriggerStunnedAnimation();
+                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                {
+                    if (debugMode)
+                    {
+                        Debug.Log("RageBlockedByShield", this);
+                    }
 
                     return;
                 }
 
-                board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
+                ApplyPlayerDamage(Mathf.Max(1, CurrentHP));
+                if (debugMode)
+                {
+                    Debug.Log("RageLethalTriggered", this);
+                }
             }
             finally
             {
@@ -2327,42 +2423,47 @@ namespace GameCore
             }
         }
 
+        // CODEX RAGE SCALE FINAL
         private void UpdateMonsterEnrageVisuals()
         {
-            if (board == null || !IsBossLevel)
+            if (board == null)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
             var bossState = CurrentBossState;
-            if (!bossState.bossAlive || !bossState.IsEnraged)
+            if (!bossState.IsEnraged)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (!board.TryGetPieceAt(bossState.bossPosition, out var bossPiece))
+            if (!board.TryGetPieceAt(bossState.AttackTarget, out var enragedPiece))
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (monsterEnragePiece != bossPiece)
+            if (monsterEnragePiece == null)
             {
-                ClearMonsterEnrageIndicator();
-                monsterEnragePiece = bossPiece;
-                monsterEnrageIndicator = bossPiece.GetComponent<MonsterEnrageIndicator>();
+                monsterEnragePiece = enragedPiece;
+                monsterEnrageIndicator = enragedPiece.GetComponent<MonsterEnrageIndicator>();
                 if (monsterEnrageIndicator == null)
                 {
-                    monsterEnrageIndicator = bossPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
+                    monsterEnrageIndicator = enragedPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
                 }
 
-                monsterAttackAnimationController = bossPiece.GetComponent<MonsterAttackAnimationController>();
+                monsterAttackAnimationController = enragedPiece.GetComponent<MonsterAttackAnimationController>();
                 if (monsterAttackAnimationController == null)
                 {
-                    monsterAttackAnimationController = bossPiece.gameObject.AddComponent<MonsterAttackAnimationController>();
+                    monsterAttackAnimationController = enragedPiece.gameObject.AddComponent<MonsterAttackAnimationController>();
                 }
+            }
+            else if (monsterEnragePiece != enragedPiece)
+            {
+                ClearMonsterEnrageIndicator();
+                return;
             }
 
             monsterEnrageIndicator.SetEnraged(true);
