@@ -14,6 +14,7 @@ namespace GameCore
         public SpecialType SpecialType { get; private set; }
         public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
         public int ItemTurnsRemaining { get; private set; } // CODEX STAGE 7B: track item lifetime.
+        public int TumorTier { get; private set; } // CODEX REPLAYABILITY: optional tumor challenge tier.
         public bool IsPlayer => isPlayerPiece;
 
         private SpriteRenderer spriteRenderer;
@@ -62,6 +63,7 @@ namespace GameCore
             SpecialType = SpecialType.Player;
             ColorIndex = -1;
             BombTier = 0;
+            TumorTier = 0;
             ItemTurnsRemaining = 0;
             baseSprite = null;
             bombSprite = null;
@@ -116,6 +118,10 @@ namespace GameCore
             {
                 ItemTurnsRemaining = 0;
                 ClearItemVisual();
+            }
+            if (type != SpecialType.Tumor)
+            {
+                TumorTier = 0;
             }
             ApplySpecialVisual();
         }
@@ -173,6 +179,26 @@ namespace GameCore
             ApplySpecialVisual();
         }
 
+
+        // CODEX REPLAYABILITY: configure a tumor tile with a tier marker.
+        public void ConfigureAsTumor(int tier)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            SpecialType = SpecialType.Tumor;
+            hasInitializedSpecialType = true;
+            BombTier = 0;
+            bombSprite = null;
+            ItemTurnsRemaining = 0;
+            ClearItemVisual();
+            ClearTreasureChestVisual();
+            TumorTier = Mathf.Max(1, tier);
+            ApplySpecialVisual();
+        }
+
         // CODEX STAGE 7B: update item turns remaining and indicator.
         public void UpdateItemTurns(int remainingTurns)
         {
@@ -224,6 +250,13 @@ namespace GameCore
             else if (baseSprite != null)
             {
                 spriteRenderer.sprite = baseSprite;
+            }
+
+            if (SpecialType == SpecialType.Tumor)
+            {
+                var tint = TumorTier >= 3 ? new Color(0.55f, 0.1f, 0.7f) : TumorTier == 2 ? new Color(0.7f, 0.15f, 0.15f) : new Color(0.85f, 0.3f, 0.3f);
+                spriteRenderer.color = tint;
+                return;
             }
 
             spriteRenderer.color = Color.white;

@@ -42,6 +42,8 @@ namespace GameCore
         [SerializeField] private Text bossLabelText;
         // CODEX BOSS PR4
         [SerializeField] private Text bossPowersText;
+        // CODEX BOSS PHASE PR1
+        [SerializeField] private Text bossStateText;
         // CODEX BOSS PR2
         [SerializeField] private GameObject bossChallengePanel;
         // CODEX BOSS PR2
@@ -80,6 +82,7 @@ namespace GameCore
         [SerializeField] private Text bonusStageRouletteText;
         // CODEX BONUS PR4
         [SerializeField] private Text bonusStageResultText;
+        [SerializeField] private Text miniGoalsText; // CODEX REPLAYABILITY
         // CODEX BONUS PR4
         [SerializeField] private Transform bonusStageListRoot;
         // CODEX BONUS PR3
@@ -150,7 +153,7 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
-        public bool HasMonsterAttackTarget => CurrentBossState.IsEnraged;
+        public bool HasMonsterAttackTarget => CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
@@ -221,6 +224,12 @@ namespace GameCore
         private BonusMiniGameBase activeBonusMiniGame;
         // CODEX BONUS PR5
         private Coroutine bonusMiniGameCleanupRoutine;
+        private LevelRunDefinition currentRunDefinition; // CODEX REPLAYABILITY
+        private readonly List<MiniGoalDefinition> activeMiniGoals = new List<MiniGoalDefinition>(); // CODEX REPLAYABILITY
+        private int tumorsDestroyedThisLevel; // CODEX REPLAYABILITY
+        private int turnsSurvivedThisLevel; // CODEX REPLAYABILITY
+        private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
+        private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
         private int energy;
         private bool isShieldActive;
         private bool shieldJustActivated;
@@ -247,8 +256,16 @@ namespace GameCore
         private MonsterAttackAnimationController monsterAttackAnimationController;
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
+        // CODEX RAGE SCALE FINAL
+        private bool monstersCanAttack;
+        // CODEX RAGE SCALE FINAL
+        private int rageCooldownTurns;
+        // CODEX RAGE SCALE FINAL
+        private int rageCooldownRemaining;
         private Piece monsterEnragePiece;
         private MonsterEnrageIndicator monsterEnrageIndicator;
+        // CODEX BOSS PHASE PR1
+        private readonly List<BossPower> unlockedBossPhasePowers = new List<BossPower>();
         private const int ToxicGraceStacks = 2;
         private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
         private bool isActivatingSpecialPower;
@@ -409,6 +426,8 @@ namespace GameCore
             stunnedTurnsRemaining = 0;
             skipMoveCostThisSwap = false;
             ResetMonsterAttackState();
+            // CODEX RAGE SCALE FINAL
+            rageCooldownRemaining = 0;
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -437,11 +456,32 @@ namespace GameCore
             IsBossLevel = isBossLevel;
             level.isBossLevel = IsBossLevel;
             // CODEX BOSS PR1
+            var initialBossHp = CurrentBoss != null && CurrentBoss.maxHP > 0 ? CurrentBoss.maxHP : 100;
             CurrentBossState = new BossState
             {
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
-                bossAlive = IsBossLevel
+                bossAlive = IsBossLevel,
+                MaxHP = initialBossHp,
+                CurrentHP = initialBossHp,
+                CurrentPhaseIndex = 0,
+                IsPermanentlyEnraged = false,
+                TumorShield = 0
             };
+            currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
+            activeMiniGoals.Clear();
+            if (currentRunDefinition.miniGoals != null)
+            {
+                activeMiniGoals.AddRange(currentRunDefinition.miniGoals);
+            }
+            tumorsDestroyedThisLevel = 0;
+            turnsSurvivedThisLevel = 0;
+            clearedPathGoalThisLevel = false;
+            // CODEX RAGE SCALE FINAL
+            monstersCanAttack = !IsBossLevel;
+            // CODEX RAGE SCALE FINAL
+            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(levelIndex / 10f));
+            // CODEX RAGE SCALE FINAL
+            rageCooldownRemaining = 0;
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -449,10 +489,13 @@ namespace GameCore
             {
                 // CODEX DIFFICULTY PR7
                 board.ConfigureColorCount(level.colorCount);
+                board.SetRandomSeed(currentRunDefinition.seed);
                 board.InitializeBoard(gridSize.x, gridSize.y);
+                board.PlaceTumors(currentRunDefinition.tumors);
             }
 
             ResetGame();
+            UpdateMiniGoalsUI();
 
             // CODEX BOSS PR1
             EnsureBossSelected();
@@ -484,6 +527,27 @@ namespace GameCore
 
             var seed = board != null ? board.RandomSeed : 0;
             bossManager.SelectBossForRun(seed, debugMode);
+            InitializeBossPhaseState();
+        }
+
+        // CODEX BOSS PHASE PR1
+        private void InitializeBossPhaseState()
+        {
+            if (!IsBossLevel)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            var maxHp = CurrentBoss != null && CurrentBoss.maxHP > 0 ? CurrentBoss.maxHP : 100;
+            bossState.MaxHP = maxHp;
+            bossState.CurrentHP = maxHp;
+            bossState.CurrentPhaseIndex = 0;
+            bossState.IsPermanentlyEnraged = false;
+            bossState.TumorShield = 0;
+            CurrentBossState = bossState;
+            unlockedBossPhasePowers.Clear();
+            UpdateUI();
         }
 
         // CODEX BOSS PR7
@@ -1015,16 +1079,95 @@ namespace GameCore
 
             TickBugadaDuration();
             TickShieldStatus();
+            turnsSurvivedThisLevel += 1;
+            EvaluateMiniGoalsProgress();
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
             UpdateMonsterEnrageVisuals();
             if (CanEnemiesReactAtTurnEnd())
             {
+                TickRageCooldown(); // CODEX RAGE SCALE FINAL
                 TickMonsterAttackMarker();
                 TryTriggerMonsterEnrage();
+                ProcessBossTumorTurn();
             }
             isPlayerActionPhase = true;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void ProcessBossTumorTurn()
+        {
+            if (!IsBossLevel || board == null || !CurrentBossState.bossAlive || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var clampedMaxTier = Mathf.Clamp(CurrentBoss.maxBossTumorTier, 1, 4);
+            for (var i = 0; i < Mathf.Max(0, CurrentBoss.tumorsPerTurn); i++)
+            {
+                board.TrySpawnBossTumor(bossTumorRandom, clampedMaxTier, out _);
+            }
+
+            for (var i = 0; i < Mathf.Max(0, CurrentBoss.tumorUpgradeAttemptsPerTurn); i++)
+            {
+                board.TryUpgradeBossTumor(bossTumorRandom, clampedMaxTier, out _, out _);
+            }
+
+            ApplyBossTumorPassiveEffects();
+            EvaluateMiniGoalsProgress();
+            UpdateUI();
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void ApplyBossTumorPassiveEffects()
+        {
+            if (board == null || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var tumorCount = board.CountTumorsAndTotalTier(out var totalTumorTier);
+            if (tumorCount <= 0 || totalTumorTier <= 0)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (CurrentBoss.tumorBehavior == BossTumorBehavior.HealFromTumors)
+            {
+                var healAmount = Mathf.Max(0, CurrentBoss.healPerTumorTier) * totalTumorTier;
+                if (healAmount > 0)
+                {
+                    bossState.CurrentHP = Mathf.Clamp(bossState.CurrentHP + healAmount, 0, bossState.MaxHP);
+                }
+            }
+            else if (CurrentBoss.tumorBehavior == BossTumorBehavior.ShieldFromTumors)
+            {
+                var shieldAmount = Mathf.Max(0, CurrentBoss.shieldPerTumorTier) * totalTumorTier;
+                if (shieldAmount > 0)
+                {
+                    bossState.TumorShield += shieldAmount;
+                }
+            }
+
+            CurrentBossState = bossState;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void HandleBossTumorDestroyed()
+        {
+            if (!IsBossLevel || !CurrentBossState.bossAlive || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (bossState.TumorShield > 0)
+            {
+                bossState.TumorShield = Mathf.Max(0, bossState.TumorShield - 1);
+                CurrentBossState = bossState;
+            }
         }
 
         private bool CanEnemiesReactAtTurnEnd()
@@ -1330,7 +1473,10 @@ namespace GameCore
         private void ResetMonsterAttackState(bool delayVisualReset = false)
         {
             var bossState = CurrentBossState;
-            bossState.IsEnraged = false;
+            if (!bossState.IsPermanentlyEnraged)
+            {
+                bossState.IsEnraged = false;
+            }
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
             CurrentBossState = bossState;
@@ -1355,17 +1501,12 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
+        // CODEX RAGE SCALE FINAL
         private void TickMonsterAttackMarker()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged)
+            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
-                return;
-            }
-
-            if (!bossState.bossAlive)
-            {
-                ResetMonsterAttackState();
                 return;
             }
 
@@ -1387,9 +1528,31 @@ namespace GameCore
             ResetMonsterAttackState(true);
         }
 
+
+        // CODEX RAGE SCALE FINAL
+        private void TickRageCooldown()
+        {
+            if (rageCooldownRemaining <= 0)
+            {
+                return;
+            }
+
+            rageCooldownRemaining = Mathf.Max(0, rageCooldownRemaining - 1);
+            if (debugMode)
+            {
+                Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
+            }
+        }
+
+        // CODEX RAGE SCALE FINAL
         private void TryTriggerMonsterEnrage()
         {
-            if (!IsBossLevel || board == null)
+            if (board == null)
+            {
+                return;
+            }
+
+            if (!monstersCanAttack)
             {
                 return;
             }
@@ -1399,8 +1562,23 @@ namespace GameCore
                 return;
             }
 
+            if (CurrentBossState.IsPermanentlyEnraged)
+            {
+                return;
+            }
+
+            if (rageCooldownRemaining > 0)
+            {
+                if (debugMode)
+                {
+                    Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
+                }
+
+                return;
+            }
+
             var bossState = CurrentBossState;
-            if (!bossState.bossAlive || bossState.IsEnraged)
+            if (bossState.IsEnraged)
             {
                 return;
             }
@@ -1410,12 +1588,56 @@ namespace GameCore
                 return;
             }
 
-            if (!CanMonsterReachPlayer(bossState.bossPosition, playerPosition))
+            var candidateFound = false;
+            var bestScore = 0;
+            var bestPosition = default(Vector2Int);
+            var adjacentOffsets = new[]
             {
+                Vector2Int.up,
+                Vector2Int.down,
+                Vector2Int.left,
+                Vector2Int.right
+            };
+
+            for (var i = 0; i < adjacentOffsets.Length; i++)
+            {
+                var candidatePosition = playerPosition + adjacentOffsets[i];
+                if (!board.TryGetPieceAt(candidatePosition, out _))
+                {
+                    continue;
+                }
+
+                var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
+                if (score <= 0)
+                {
+                    continue;
+                }
+
+                if (!candidateFound || score > bestScore)
+                {
+                    candidateFound = true;
+                    bestScore = score;
+                    bestPosition = candidatePosition;
+                }
+            }
+
+            if (!candidateFound)
+            {
+                if (debugMode)
+                {
+                    Debug.Log("RageRejected_NoMatchableCandidate", this);
+                }
+
                 return;
             }
 
-            ActivateMonsterAttack(playerPosition);
+            if (debugMode)
+            {
+                Debug.Log($"RageSelected position={bestPosition.x},{bestPosition.y} score={bestScore}", this);
+            }
+
+            rageCooldownRemaining = Mathf.Max(1, rageCooldownTurns - CurrentBossState.CurrentPhaseIndex);
+            ActivateMonsterAttack(bestPosition);
         }
 
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
@@ -1433,7 +1655,7 @@ namespace GameCore
             var bossState = CurrentBossState;
             bossState.IsEnraged = true;
             bossState.AttackTarget = targetPosition;
-            bossState.TurnsUntilAttack = 2;
+            bossState.TurnsUntilAttack = Mathf.Max(1, 2 - Mathf.FloorToInt(bossState.CurrentPhaseIndex / 2f));
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
             SpawnMonsterAttackMarker(targetPosition);
@@ -1443,14 +1665,10 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
+        // CODEX RAGE SCALE FINAL
         private void ResolveMonsterAttack(Vector2Int targetPosition)
         {
             if (board == null || hasEnded)
-            {
-                return;
-            }
-
-            if (!CurrentBossState.bossAlive)
             {
                 return;
             }
@@ -1460,21 +1678,35 @@ namespace GameCore
             {
                 TriggerMonsterAttackExecuteVisuals();
 
-                if (board.TryGetPlayerPosition(out var playerPosition)
-                    && playerPosition == targetPosition)
+                if (!board.TryGetPieceAt(targetPosition, out var targetPiece)
+                    || monsterEnragePiece == null
+                    || targetPiece != monsterEnragePiece)
                 {
-                    TriggerStunnedAnimation();
-                    if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                    if (debugMode)
                     {
-                        return;
+                        Debug.Log("RageCancelledByMatch", this);
                     }
 
-                    ApplyPlayerDamage(GetCurrentMonsterDamage());
+                    ResetMonsterAttackState(true);
+                    return;
+                }
+
+                TriggerStunnedAnimation();
+                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                {
+                    if (debugMode)
+                    {
+                        Debug.Log("RageBlockedByShield", this);
+                    }
 
                     return;
                 }
 
-                board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
+                ApplyPlayerDamage(GetCurrentMonsterDamage());
+                if (debugMode)
+                {
+                    Debug.Log("RageLethalTriggered", this);
+                }
             }
             finally
             {
@@ -1980,6 +2212,13 @@ namespace GameCore
 
             TryDefeatBossFromDestruction(piece, reason);
 
+            if (piece.SpecialType == SpecialType.Tumor)
+            {
+                tumorsDestroyedThisLevel += 1;
+                EvaluateMiniGoalsProgress();
+                HandleBossTumorDestroyed();
+            }
+
             if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
             {
                 GrantCrown();
@@ -1992,6 +2231,78 @@ namespace GameCore
                 {
                     Debug.Log("CrownIgnored", this); // CODEX CHEST PR2
                 }
+            }
+        }
+
+
+        private void EvaluateMiniGoalsProgress()
+        {
+            if (activeMiniGoals.Count == 0)
+            {
+                UpdateMiniGoalsUI();
+                return;
+            }
+
+            if (!clearedPathGoalThisLevel && board != null && IsBossLevel && board.TryGetPlayerPosition(out var playerPosition))
+            {
+                var bossPosition = CurrentBossState.bossPosition;
+                clearedPathGoalThisLevel = board.IsPathToBossClearOfTumors(playerPosition, bossPosition);
+            }
+
+            UpdateMiniGoalsUI();
+        }
+
+        private void UpdateMiniGoalsUI()
+        {
+            if (miniGoalsText == null)
+            {
+                return;
+            }
+
+            if (activeMiniGoals.Count == 0)
+            {
+                miniGoalsText.text = string.Empty;
+                return;
+            }
+
+            var lines = new List<string>();
+            for (var i = 0; i < activeMiniGoals.Count; i++)
+            {
+                var goal = activeMiniGoals[i];
+                lines.Add(BuildMiniGoalLine(goal));
+            }
+
+            miniGoalsText.text = string.Join("\n", lines);
+        }
+
+        private string BuildMiniGoalLine(MiniGoalDefinition goal)
+        {
+            switch (goal.type)
+            {
+                case MiniGoalType.DestroyTumors:
+                {
+                    var target = Mathf.Max(1, goal.targetValue);
+                    var progress = Mathf.Clamp(tumorsDestroyedThisLevel, 0, target);
+                    return $"[Mini] Destroy tumors {progress}/{target}";
+                }
+                case MiniGoalType.SurviveTurns:
+                {
+                    var target = Mathf.Max(1, goal.targetValue);
+                    var progress = Mathf.Clamp(turnsSurvivedThisLevel, 0, target);
+                    return $"[Mini] Survive turns {progress}/{target}";
+                }
+                case MiniGoalType.ReachTile:
+                {
+                    var reached = board != null && !board.HasTumorAt(goal.targetTile);
+                    var marker = reached ? "Done" : "Pending";
+                    return $"[Mini] Reach tile ({goal.targetTile.x},{goal.targetTile.y}) {marker}";
+                }
+                case MiniGoalType.ClearPathToBoss:
+                {
+                    return $"[Mini] Clear path to boss {(clearedPathGoalThisLevel ? "Done" : "Pending")}";
+                }
+                default:
+                    return "[Mini] Optional challenge";
             }
         }
 
@@ -2070,12 +2381,16 @@ namespace GameCore
                 return;
             }
 
-            Debug.Log(
-                $"BossHit {source} at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
-                this); // CODEX BOSS PR4
-            bossState.bossAlive = false;
-            CurrentBossState = bossState;
-            ResetMonsterAttackState();
+            var phaseAdvanced = ApplyBossDamageAndPhaseProgress(1, source);
+            if (CurrentBossState.bossAlive)
+            {
+                if (debugMode)
+                {
+                    Debug.Log($"BossHit {source} -> HP {CurrentBossState.CurrentHP}/{CurrentBossState.MaxHP} (phaseAdvanced={phaseAdvanced})", this);
+                }
+
+                return;
+            }
 
             Debug.Log(
                 $"BossDefeated {source} at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
@@ -2083,6 +2398,132 @@ namespace GameCore
 
             TriggerInstantWin();
             TriggerWin();
+        }
+
+
+        // CODEX BOSS PHASE PR1
+        private bool ApplyBossDamageAndPhaseProgress(int damage, string source)
+        {
+            if (damage <= 0)
+            {
+                return false;
+            }
+
+            var bossState = CurrentBossState;
+            if (!bossState.bossAlive)
+            {
+                return false;
+            }
+
+            var previousPhase = bossState.CurrentPhaseIndex;
+            if (bossState.TumorShield > 0)
+            {
+                var absorbed = Mathf.Min(bossState.TumorShield, damage);
+                bossState.TumorShield -= absorbed;
+                damage -= absorbed;
+            }
+
+            if (damage <= 0)
+            {
+                CurrentBossState = bossState;
+                UpdateUI();
+                return false;
+            }
+
+            bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
+            if (bossState.CurrentHP <= 0)
+            {
+                bossState.bossAlive = false;
+                CurrentBossState = bossState;
+                ResetMonsterAttackState();
+                UpdateUI();
+                return false;
+            }
+
+            CurrentBossState = bossState;
+            var phaseAdvanced = EvaluateBossPhaseTransitions();
+            UpdateUI();
+            if (debugMode)
+            {
+                Debug.Log($"BossPhaseCheck source={source} hp={CurrentBossState.CurrentHP}/{CurrentBossState.MaxHP} phase={previousPhase}->{CurrentBossState.CurrentPhaseIndex}", this);
+            }
+
+            return phaseAdvanced;
+        }
+
+        // CODEX BOSS PHASE PR1
+        private bool EvaluateBossPhaseTransitions()
+        {
+            if (CurrentBoss == null)
+            {
+                return false;
+            }
+
+            var thresholds = CurrentBoss.phaseThresholdPercentages;
+            if (thresholds == null || thresholds.Count == 0)
+            {
+                return false;
+            }
+
+            var bossState = CurrentBossState;
+            var hpPercent = bossState.MaxHP > 0
+                ? (bossState.CurrentHP * 100f) / bossState.MaxHP
+                : 0f;
+            var phaseAdvanced = false;
+
+            while (bossState.CurrentPhaseIndex < thresholds.Count)
+            {
+                var threshold = Mathf.Clamp(thresholds[bossState.CurrentPhaseIndex], 1, 100);
+                if (hpPercent > threshold)
+                {
+                    break;
+                }
+
+                bossState.CurrentPhaseIndex += 1;
+                phaseAdvanced = true;
+                UnlockBossPhasePower(bossState.CurrentPhaseIndex - 1);
+            }
+
+            var shouldEnrage = hpPercent <= 25f;
+            if (shouldEnrage && !bossState.IsPermanentlyEnraged)
+            {
+                bossState.IsPermanentlyEnraged = true;
+                bossState.IsEnraged = true;
+                if (CurrentBoss.enragePower != BossPower.None)
+                {
+                    unlockedBossPhasePowers.Add(CurrentBoss.enragePower);
+                }
+            }
+
+            CurrentBossState = bossState;
+            if (phaseAdvanced || shouldEnrage)
+            {
+                UpdateMonsterEnrageVisuals();
+            }
+
+            return phaseAdvanced;
+        }
+
+        // CODEX BOSS PHASE PR1
+        private void UnlockBossPhasePower(int phaseIndex)
+        {
+            if (CurrentBoss == null || CurrentBoss.phaseUnlockedPowers == null)
+            {
+                return;
+            }
+
+            if (phaseIndex < 0 || phaseIndex >= CurrentBoss.phaseUnlockedPowers.Count)
+            {
+                return;
+            }
+
+            var power = CurrentBoss.phaseUnlockedPowers[phaseIndex];
+            if (power == BossPower.None || unlockedBossPhasePowers.Contains(power))
+            {
+                return;
+            }
+
+            unlockedBossPhasePowers.Add(power);
         }
 
         // CODEX CHEST PR2
@@ -2215,12 +2656,18 @@ namespace GameCore
                 return 0;
             }
 
-            if (CurrentBoss.damage > 0)
+            var baseDamage = CurrentBoss.damage > 0
+                ? CurrentBoss.damage
+                : Mathf.Max(1, CurrentBoss.tier);
+
+            if (!CurrentBossState.IsPermanentlyEnraged)
             {
-                return CurrentBoss.damage;
+                return baseDamage;
             }
 
-            return Mathf.Max(1, CurrentBoss.tier);
+            var multiplier = Mathf.Max(1f, CurrentBoss.enrageDamageMultiplier);
+            var bonus = Mathf.Max(0, CurrentBoss.enrageExtraDamage);
+            return Mathf.Max(baseDamage + 1, Mathf.CeilToInt(baseDamage * multiplier) + bonus);
         }
 
         private void ApplyPlayerDamage(int damage)
@@ -2296,7 +2743,7 @@ namespace GameCore
         {
             var isBombAdjacent = board != null && board.IsPlayerAdjacentToBomb();
             var isMonsterThreat = false;
-            if (board != null && CurrentBossState.IsEnraged && CurrentBossState.bossAlive)
+            if (board != null && (CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged) && CurrentBossState.bossAlive)
             {
                 if (board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -2327,42 +2774,47 @@ namespace GameCore
             }
         }
 
+        // CODEX RAGE SCALE FINAL
         private void UpdateMonsterEnrageVisuals()
         {
-            if (board == null || !IsBossLevel)
+            if (board == null)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
             var bossState = CurrentBossState;
-            if (!bossState.bossAlive || !bossState.IsEnraged)
+            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (!board.TryGetPieceAt(bossState.bossPosition, out var bossPiece))
+            if (!board.TryGetPieceAt(bossState.AttackTarget, out var enragedPiece))
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (monsterEnragePiece != bossPiece)
+            if (monsterEnragePiece == null)
             {
-                ClearMonsterEnrageIndicator();
-                monsterEnragePiece = bossPiece;
-                monsterEnrageIndicator = bossPiece.GetComponent<MonsterEnrageIndicator>();
+                monsterEnragePiece = enragedPiece;
+                monsterEnrageIndicator = enragedPiece.GetComponent<MonsterEnrageIndicator>();
                 if (monsterEnrageIndicator == null)
                 {
-                    monsterEnrageIndicator = bossPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
+                    monsterEnrageIndicator = enragedPiece.gameObject.AddComponent<MonsterEnrageIndicator>();
                 }
 
-                monsterAttackAnimationController = bossPiece.GetComponent<MonsterAttackAnimationController>();
+                monsterAttackAnimationController = enragedPiece.GetComponent<MonsterAttackAnimationController>();
                 if (monsterAttackAnimationController == null)
                 {
-                    monsterAttackAnimationController = bossPiece.gameObject.AddComponent<MonsterAttackAnimationController>();
+                    monsterAttackAnimationController = enragedPiece.gameObject.AddComponent<MonsterAttackAnimationController>();
                 }
+            }
+            else if (monsterEnragePiece != enragedPiece)
+            {
+                ClearMonsterEnrageIndicator();
+                return;
             }
 
             monsterEnrageIndicator.SetEnraged(true);
@@ -2489,8 +2941,28 @@ namespace GameCore
             // CODEX BOSS PR1
             if (bossLabelText != null)
             {
-                bossLabelText.text = "BOSS";
+                var bossState = CurrentBossState;
+                var phaseLabel = bossState.CurrentPhaseIndex > 0 ? $" P{bossState.CurrentPhaseIndex + 1}" : string.Empty;
+                var enrageLabel = bossState.IsPermanentlyEnraged ? " ENRAGED" : string.Empty;
+                bossLabelText.text = IsBossLevel ? $"BOSS{phaseLabel}{enrageLabel}" : "BOSS";
                 bossLabelText.enabled = IsBossLevel;
+                bossLabelText.color = bossState.IsPermanentlyEnraged ? new Color(1f, 0.2f, 0.2f, 1f) : Color.white;
+            }
+
+            if (bossStateText != null)
+            {
+                if (!IsBossLevel)
+                {
+                    bossStateText.enabled = false;
+                }
+                else
+                {
+                    var bossState = CurrentBossState;
+                    bossStateText.enabled = true;
+                    var shieldLabel = bossState.TumorShield > 0 ? $"  |  Shield {bossState.TumorShield}" : string.Empty;
+                    bossStateText.text = $"HP {bossState.CurrentHP}/{bossState.MaxHP}{shieldLabel}  |  Phase {bossState.CurrentPhaseIndex + 1}{(bossState.IsPermanentlyEnraged ? "  |  ENRAGE" : string.Empty)}";
+                    bossStateText.color = bossState.IsPermanentlyEnraged ? new Color(1f, 0.35f, 0.35f, 1f) : Color.white;
+                }
             }
 
             // CODEX BOSS PR4
@@ -2628,6 +3100,7 @@ namespace GameCore
             if (fightBoss)
             {
                 EnsureBossSelected();
+                InitializeBossPhaseState();
             }
 
             // CODEX BOSS PR4
