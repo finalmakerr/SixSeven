@@ -4,8 +4,8 @@ take a breath face, Keep everything else the same!
 sad face, Keep everything else the same!
 cry face, Keep everything else the same!
 
+got-hit face, Keep everything else the same! no abstract shapes, no symbols, solid background color
 hurt face, Keep everything else the same!
-got-hit face, Keep everything else the same!
 
 sleepy-face, Keep everything else the same! no abstract shapes, no symbols, solid background color
 take a breath face, Keep everything else the same! , solid background color
@@ -15,5 +15,6 @@ thinking face, Keep everything else the same! no abstract shapes, no symbols, so
 thinking face, hand rubbing the head, Keep everything else the same!
 get hand back, Keep everything else the same!
 
-shielded phase, Keep everything else the same!
-shielded fade phase, Keep everything else the same!
+suprise face, Keep everything else the same!, Keep everything else the same! no abstract shapes, no symbols, no extra eyes, solid background color
+stunned-got hit face, Keep everything else the same!
+just got hit face / can't move face, Keep everything else the same! no abstract shapes, no symbols

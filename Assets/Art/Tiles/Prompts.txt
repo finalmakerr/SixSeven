@@ -7,11 +7,10 @@ eye-blink, Keep everything else the same!
 take a breath face, Keep everything else the same!
 idle face, Keep everything else the same!
 "on-the-move" face, Keep everything else the same!
-animate movement, Keep everything else the same! no abstract shapes, no symbols, solid color background
+start walking face, Keep everything else the same! no abstract shapes, no symbols, solid color background
+show movement, Keep everything else the same! no abstract shapes, no symbols, solid color background
 
-suprise face, Keep everything else the same!, Keep everything else the same! no abstract shapes, no symbols, no extra eyes, solid background color
-stunned-got hit face, Keep everything else the same!
-just got hit face / can't move face, Keep everything else the same! no abstract shapes, no symbols
+animate movement (video), Keep everything else the same! no abstract shapes, no symbols, solid color background
 
 angry face, Keep everything else the same! no abstract shapes, no symbols, solid background color
 battle stance face, Keep everything else the same!
@@ -20,3 +19,5 @@ enrage face, Keep everything else the same!
 get ready to strike face, hands in fighting stance, Keep everything else the same!
 attack face, perform swift strike, Keep everything else the same!
 violent face, Keep everything else the same!
+
+happy face, Keep everything else the same!
