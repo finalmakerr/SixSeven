@@ -40,6 +40,18 @@ namespace GameCore
         public int enrageExtraDamage = 1;
         // CODEX SPECIAL POWERS PR1
         public SpecialPowerBossResistance specialPowerResistance = SpecialPowerBossResistance.None;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        public BossTumorBehavior tumorBehavior = BossTumorBehavior.None;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        [Range(0, 3)] public int tumorsPerTurn = 1;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        [Range(0, 5)] public int tumorUpgradeAttemptsPerTurn = 1;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        [Range(0, 6)] public int maxBossTumorTier = 4;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        [Range(0, 5)] public int healPerTumorTier = 1;
+        // CODEX BOSS TUMOR SYNERGY PR1
+        [Range(0, 8)] public int shieldPerTumorTier = 1;
         // CODEX ENEMY REACTION PR1
         public bool immuneToSwaps = true;
         // CODEX ENEMY REACTION PR1

@@ -2320,6 +2320,122 @@ namespace GameCore
             return true;
         }
 
+        // CODEX BOSS TUMOR SYNERGY PR1
+        public bool TrySpawnBossTumor(System.Random random, int maxTier, out Vector2Int position)
+        {
+            position = default;
+            if (pieces == null || random == null)
+            {
+                return false;
+            }
+
+            var candidates = new List<Vector2Int>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType != SpecialType.None)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(new Vector2Int(x, y));
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return false;
+            }
+
+            var selected = candidates[random.Next(0, candidates.Count)];
+            var pieceToMutate = pieces[selected.x, selected.y];
+            if (pieceToMutate == null)
+            {
+                return false;
+            }
+
+            pieceToMutate.ConfigureAsTumor(Mathf.Clamp(maxTier, 1, 4));
+            position = selected;
+            return true;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        public bool TryUpgradeBossTumor(System.Random random, int maxTier, out Vector2Int position, out int newTier)
+        {
+            position = default;
+            newTier = 0;
+            if (pieces == null || random == null)
+            {
+                return false;
+            }
+
+            var candidates = new List<Piece>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null || piece.SpecialType != SpecialType.Tumor)
+                    {
+                        continue;
+                    }
+
+                    if (piece.TumorTier >= maxTier)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(piece);
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return false;
+            }
+
+            var selected = candidates[random.Next(0, candidates.Count)];
+            newTier = Mathf.Clamp(selected.TumorTier + 1, 1, maxTier);
+            selected.ConfigureAsTumor(newTier);
+            position = new Vector2Int(selected.X, selected.Y);
+            return true;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        public int CountTumorsAndTotalTier(out int totalTier)
+        {
+            totalTier = 0;
+            if (pieces == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null || piece.SpecialType != SpecialType.Tumor)
+                    {
+                        continue;
+                    }
+
+                    count += 1;
+                    totalTier += Mathf.Max(1, piece.TumorTier);
+                }
+            }
+
+            return count;
+        }
+
         private Sprite[] GenerateSprites()
         {
             var palette = new[]

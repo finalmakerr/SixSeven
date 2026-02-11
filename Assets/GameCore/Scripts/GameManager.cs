@@ -229,6 +229,7 @@ namespace GameCore
         private int tumorsDestroyedThisLevel; // CODEX REPLAYABILITY
         private int turnsSurvivedThisLevel; // CODEX REPLAYABILITY
         private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
+        private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
         private int energy;
         private bool isShieldActive;
         private bool shieldJustActivated;
@@ -463,7 +464,8 @@ namespace GameCore
                 MaxHP = initialBossHp,
                 CurrentHP = initialBossHp,
                 CurrentPhaseIndex = 0,
-                IsPermanentlyEnraged = false
+                IsPermanentlyEnraged = false,
+                TumorShield = 0
             };
             currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
             activeMiniGoals.Clear();
@@ -542,6 +544,7 @@ namespace GameCore
             bossState.CurrentHP = maxHp;
             bossState.CurrentPhaseIndex = 0;
             bossState.IsPermanentlyEnraged = false;
+            bossState.TumorShield = 0;
             CurrentBossState = bossState;
             unlockedBossPhasePowers.Clear();
             UpdateUI();
@@ -1087,8 +1090,84 @@ namespace GameCore
                 TickRageCooldown(); // CODEX RAGE SCALE FINAL
                 TickMonsterAttackMarker();
                 TryTriggerMonsterEnrage();
+                ProcessBossTumorTurn();
             }
             isPlayerActionPhase = true;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void ProcessBossTumorTurn()
+        {
+            if (!IsBossLevel || board == null || !CurrentBossState.bossAlive || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var clampedMaxTier = Mathf.Clamp(CurrentBoss.maxBossTumorTier, 1, 4);
+            for (var i = 0; i < Mathf.Max(0, CurrentBoss.tumorsPerTurn); i++)
+            {
+                board.TrySpawnBossTumor(bossTumorRandom, clampedMaxTier, out _);
+            }
+
+            for (var i = 0; i < Mathf.Max(0, CurrentBoss.tumorUpgradeAttemptsPerTurn); i++)
+            {
+                board.TryUpgradeBossTumor(bossTumorRandom, clampedMaxTier, out _, out _);
+            }
+
+            ApplyBossTumorPassiveEffects();
+            EvaluateMiniGoalsProgress();
+            UpdateUI();
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void ApplyBossTumorPassiveEffects()
+        {
+            if (board == null || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var tumorCount = board.CountTumorsAndTotalTier(out var totalTumorTier);
+            if (tumorCount <= 0 || totalTumorTier <= 0)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (CurrentBoss.tumorBehavior == BossTumorBehavior.HealFromTumors)
+            {
+                var healAmount = Mathf.Max(0, CurrentBoss.healPerTumorTier) * totalTumorTier;
+                if (healAmount > 0)
+                {
+                    bossState.CurrentHP = Mathf.Clamp(bossState.CurrentHP + healAmount, 0, bossState.MaxHP);
+                }
+            }
+            else if (CurrentBoss.tumorBehavior == BossTumorBehavior.ShieldFromTumors)
+            {
+                var shieldAmount = Mathf.Max(0, CurrentBoss.shieldPerTumorTier) * totalTumorTier;
+                if (shieldAmount > 0)
+                {
+                    bossState.TumorShield += shieldAmount;
+                }
+            }
+
+            CurrentBossState = bossState;
+        }
+
+        // CODEX BOSS TUMOR SYNERGY PR1
+        private void HandleBossTumorDestroyed()
+        {
+            if (!IsBossLevel || !CurrentBossState.bossAlive || CurrentBoss == null)
+            {
+                return;
+            }
+
+            var bossState = CurrentBossState;
+            if (bossState.TumorShield > 0)
+            {
+                bossState.TumorShield = Mathf.Max(0, bossState.TumorShield - 1);
+                CurrentBossState = bossState;
+            }
         }
 
         private bool CanEnemiesReactAtTurnEnd()
@@ -2137,6 +2216,7 @@ namespace GameCore
             {
                 tumorsDestroyedThisLevel += 1;
                 EvaluateMiniGoalsProgress();
+                HandleBossTumorDestroyed();
             }
 
             if (piece.SpecialType == SpecialType.TreasureChest && reason == DestructionReason.BombExplosion)
@@ -2336,6 +2416,20 @@ namespace GameCore
             }
 
             var previousPhase = bossState.CurrentPhaseIndex;
+            if (bossState.TumorShield > 0)
+            {
+                var absorbed = Mathf.Min(bossState.TumorShield, damage);
+                bossState.TumorShield -= absorbed;
+                damage -= absorbed;
+            }
+
+            if (damage <= 0)
+            {
+                CurrentBossState = bossState;
+                UpdateUI();
+                return false;
+            }
+
             bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
             if (bossState.CurrentHP <= 0)
             {
@@ -2865,7 +2959,8 @@ namespace GameCore
                 {
                     var bossState = CurrentBossState;
                     bossStateText.enabled = true;
-                    bossStateText.text = $"HP {bossState.CurrentHP}/{bossState.MaxHP}  |  Phase {bossState.CurrentPhaseIndex + 1}{(bossState.IsPermanentlyEnraged ? "  |  ENRAGE" : string.Empty)}";
+                    var shieldLabel = bossState.TumorShield > 0 ? $"  |  Shield {bossState.TumorShield}" : string.Empty;
+                    bossStateText.text = $"HP {bossState.CurrentHP}/{bossState.MaxHP}{shieldLabel}  |  Phase {bossState.CurrentPhaseIndex + 1}{(bossState.IsPermanentlyEnraged ? "  |  ENRAGE" : string.Empty)}";
                     bossStateText.color = bossState.IsPermanentlyEnraged ? new Color(1f, 0.35f, 0.35f, 1f) : Color.white;
                 }
             }

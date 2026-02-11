@@ -16,5 +16,6 @@ namespace GameCore
         public bool IsEnraged;
         public Vector2Int AttackTarget;
         public int TurnsUntilAttack;
+        public int TumorShield;
     }
 }
