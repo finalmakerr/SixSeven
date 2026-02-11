@@ -438,3 +438,148 @@ public sealed class BossRewardProfile
 6. Persist and broadcast reward payload to UI.
 
 This order keeps reward generation deterministic and auditable.
+
+---
+
+## Boss encounter replayability framework
+
+This framework introduces controlled run-to-run variance while preserving readability, fairness, and deterministic debugging.
+
+### 1) Randomization rules
+
+#### Seed model
+
+Use one encounter seed per boss attempt, derived from:
+
+`encounterSeed = hash(runSeed, levelId, bossId, attemptIndex)`
+
+Sub-streams should be split so each system is stable when another system changes:
+
+- `abilityRng` for action ordering/variants
+- `spawnRng` for tumor placement
+- `goalRng` for mini-goal selection/parameters
+
+This avoids cross-coupling (e.g., adding one spawn roll should not silently change ability order).
+
+#### Boss behavior variance per run
+
+Define each boss ability with small parameter bands rather than fully different logic:
+
+- Damage abilities: ±5% to ±12% coefficient
+- Utility abilities: cooldown variance `-1/0/+1` turns within safe bounds
+- Status effects: duration variance `±1` turn
+
+Guardrails:
+
+- Never exceed telegraphed one-shot thresholds unless in explicit enrage state.
+- Keep per-run variance bounded by boss tier profile.
+- Keep phase identity intact (Phase 1 should still feel like setup, Phase 3 like climax).
+
+#### Ability order randomization
+
+Use a weighted deck model per phase:
+
+1. Build deck from enabled abilities and phase weights.
+2. Ban exact repeats for `N=1` turn unless only one valid ability exists.
+3. Apply soft anti-streak rule: if a category has been used 2 turns in a row, reduce its weight by 30-50% for next draw.
+4. Keep signature moves on cadence via hard constraints (e.g., must occur once every 4 turns).
+
+Result: order feels different each run, but never chaotic or unreadable.
+
+#### Tumor spawn location randomization
+
+Compute candidate tiles from empty valid cells, then select probabilistically by score:
+
+`spawnScore = pressureWeight * localPressure + adjacencyWeight * tumorAdjacency + objectiveWeight * objectiveInfluence + noise(0..k)`
+
+Rules:
+
+- Exclude blocked/special invalid tiles.
+- Maintain minimum distance from immediate player spawn if required by tutorial or fairness mode.
+- Inject small noise for run variance while preserving tactical logic.
+- Re-roll with fallback if chosen tile becomes invalid before resolution.
+
+Objective influence examples:
+
+- If mini-goal is `ProtectTile`, increase spawn pressure near that tile.
+- If mini-goal is `DestroyTumors`, slightly distribute spawns across multiple lanes instead of single-clump stacking.
+
+### 2) Mini-goal integration
+
+Mini-goals are encounter modifiers with three effects:
+
+1. **Victory-side progress track** (player objective)
+2. **Boss mutation hook** (how boss behavior shifts while goal is active)
+3. **Reward/difficulty budget impact**
+
+#### Goal selection rules
+
+At encounter start:
+
+- Roll 1 primary mini-goal from allowed set by boss + biome + difficulty tier.
+- Optional 20-35% chance for a secondary lightweight modifier on high tiers.
+- Reject combinations that conflict with boss kit (e.g., `Destroy X Tumors` on boss with no tumor actions).
+
+#### Example mini-goals and hooks
+
+1. **Destroy X tumors to weaken boss**
+   - Progress: increment on tumor destruction.
+   - Boss hook: each tumor destroyed applies `-shield`, `-healFromTumor`, or temporary `+damageTaken` stack.
+   - Completion payoff: immediate stagger (skip next utility action) or phase armor break.
+
+2. **Survive Y turns before boss enrages**
+   - Progress: round counter.
+   - Boss hook: pre-enrage pattern uses lower burst and more setup skills.
+   - At Y turns: enrage triggers predictable pattern swap (higher damage, lower control) so players can plan windows.
+
+3. **Protect a specific tile**
+   - Progress: tracked each turn tile remains intact/unoccupied.
+   - Boss hook: boss prioritizes corruption/push effects toward protected tile using `objectiveInfluence` in spawn/action targeting.
+   - Failure state: tile broken -> apply boss buff or remove player boon; do not hard-end run unless explicitly designed.
+
+#### Integration pipeline in turn loop
+
+- Start of encounter: select mini-goal(s), initialize counters, publish UI intent text.
+- End of player turn: evaluate goal progress events.
+- Boss decision step: read mini-goal state and apply behavior modifiers before ability selection.
+- End of round: resolve milestone effects (threshold rewards, warnings, enrage timers).
+
+### 3) Difficulty scaling model
+
+Scale by a total encounter budget so randomness stays fair.
+
+`totalBudget = baseTierBudget + runDepthBudget + mutatorBudget`
+
+Distribute budget across four knobs:
+
+- `B1` Boss power (HP, damage coefficients)
+- `B2` Pattern complexity (ability weights, cadence constraints)
+- `B3` Board pressure (tumor spawn count/tier/frequency)
+- `B4` Mini-goal strictness (X, Y values; penalty severity)
+
+#### Tier recommendations
+
+- **Low tiers**
+  - Small behavior variance bands
+  - One mini-goal only
+  - Tumor spawn noise high but count low
+  - Softer penalties on mini-goal failure
+
+- **Mid tiers**
+  - Moderate variance
+  - Goal parameters tighten (higher X, lower Y)
+  - Ability anti-streak still strong for readability
+  - Add one milestone mutation event
+
+- **High tiers / challenge mode**
+  - Full variance bands with strict guardrails
+  - Possible secondary mini-goal
+  - Faster tumor escalation or higher max tier
+  - Harder enrage breakpoint but explicit telegraphing and deterministic cadence
+
+#### Anti-frustration constraints (all tiers)
+
+- Never randomize away required counterplay tools.
+- Keep at least one predictable recovery window every `M` turns.
+- Cap combined pressure spikes (ability burst + tumor spike + goal penalty) within one round.
+- Prefer visible telegraphs over hidden RNG whenever behavior meaningfully changes.
