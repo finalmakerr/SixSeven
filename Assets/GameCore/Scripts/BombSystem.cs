@@ -121,6 +121,54 @@ namespace GameCore
 
             return damageMap;
         }
+
+        /// <summary>
+        /// Calculate bomb damage dealt to a boss tile based on distance, phase resistance,
+        /// floor rounding, and one-shot protection from full HP.
+        /// </summary>
+        public static int CalculateBossBombDamage(
+            int bombDamage,
+            int distanceFromBomb,
+            int bossCurrentHp,
+            int bossMaxHp,
+            int phaseDamageResistancePercent)
+        {
+            if (bombDamage <= 0 || bossCurrentHp <= 0)
+            {
+                return 0;
+            }
+
+            if (distanceFromBomb > ExplosionRadius)
+            {
+                return 0;
+            }
+
+            // 1 tile: full, 2 tiles: half. Distance 0 is treated as full for safety.
+            var baseDamage = distanceFromBomb <= 1
+                ? bombDamage
+                : bombDamage / 2;
+
+            if (baseDamage <= 0)
+            {
+                return 0;
+            }
+
+            var clampedResistance = Mathf.Clamp(phaseDamageResistancePercent, 0, 100);
+            var resistedDamage = (baseDamage * (100 - clampedResistance)) / 100;
+            if (resistedDamage <= 0)
+            {
+                return 0;
+            }
+
+            // Special rule: boss cannot be one-shot from full HP.
+            var isAtFullHp = bossCurrentHp >= Mathf.Max(1, bossMaxHp);
+            if (isAtFullHp && resistedDamage >= bossCurrentHp)
+            {
+                return Mathf.Max(0, bossCurrentHp - 1);
+            }
+
+            return Mathf.Min(resistedDamage, bossCurrentHp);
+        }
     }
 
     [Serializable]
