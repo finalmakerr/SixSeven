@@ -2,25 +2,25 @@
 
 ```bash
 # Case-only folder renames first (using __tmp)
-git mv Assets/Art Assets/__tmp_art
+git mv Assets/art Assets/__tmp_art
  git mv Assets/__tmp_art Assets/art
 
-git mv Assets/Audio Assets/__tmp_audio
+git mv Assets/audio Assets/__tmp_audio
  git mv Assets/__tmp_audio Assets/audio
 
-git mv Assets/Prefabs Assets/__tmp_prefabs
+git mv Assets/prefabs Assets/__tmp_prefabs
  git mv Assets/__tmp_prefabs Assets/prefabs
 
-git mv Assets/Scenes Assets/__tmp_scenes
+git mv Assets/scenes Assets/__tmp_scenes
  git mv Assets/__tmp_scenes Assets/scenes
 
-git mv Assets/Scripts Assets/__tmp_scripts
+git mv Assets/scripts Assets/__tmp_scripts
  git mv Assets/__tmp_scripts Assets/scripts
 
-git mv Assets/Settings Assets/__tmp_settings
+git mv Assets/settings Assets/__tmp_settings
  git mv Assets/__tmp_settings Assets/settings
 
-git mv Assets/GameCore Assets/__tmp_gamecore
+git mv Assets/gamecore Assets/__tmp_gamecore
  git mv Assets/__tmp_gamecore Assets/gamecore
 ```
 
@@ -98,14 +98,14 @@ git mv Assets/settings/Scenes Assets/settings/__tmp_scenes
 ```diff
 diff --git a/Assets/Editor/SixSevenSetup.cs b/Assets/Editor/SixSevenSetup.cs
 @@
--    private const string ScenesFolder = "Assets/Scenes";
--    private const string PrefabsFolder = "Assets/Prefabs";
--    private const string TilePrefabPath = "Assets/Prefabs/TileUI.prefab";
+-    private const string ScenesFolder = "Assets/scenes";
+-    private const string PrefabsFolder = "Assets/prefabs";
+-    private const string TilePrefabPath = "Assets/prefabs/TileUI.prefab";
 +    private const string ScenesFolder = "Assets/scenes";
 +    private const string PrefabsFolder = "Assets/prefabs";
 +    private const string TilePrefabPath = "Assets/prefabs/TileUI.prefab";
 @@
--        if (!AssetDatabase.IsValidFolder("Assets/Scripts"))
+-        if (!AssetDatabase.IsValidFolder("Assets/scripts"))
 -            AssetDatabase.CreateFolder("Assets", "Scripts");
 +        if (!AssetDatabase.IsValidFolder("Assets/scripts"))
 +            AssetDatabase.CreateFolder("Assets", "scripts");

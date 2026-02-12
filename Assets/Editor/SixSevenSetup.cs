@@ -11,9 +11,9 @@ using UnityEngine.InputSystem.UI;
 
 public static class SixSevenSetup
 {
-    private const string ScenesFolder = "Assets/Scenes";
-    private const string PrefabsFolder = "Assets/Prefabs";
-    private const string TilePrefabPath = "Assets/Prefabs/TileUI.prefab";
+    private const string ScenesFolder = "Assets/scenes";
+    private const string PrefabsFolder = "Assets/prefabs";
+    private const string TilePrefabPath = "Assets/prefabs/TileUI.prefab";
 
     [MenuItem("Tools/SixSeven/Setup")]
     public static void Setup()
@@ -61,11 +61,11 @@ public static class SixSevenSetup
         if (!AssetDatabase.IsValidFolder("Assets/Editor"))
             AssetDatabase.CreateFolder("Assets", "Editor");
         if (!AssetDatabase.IsValidFolder(ScenesFolder))
-            AssetDatabase.CreateFolder("Assets", "Scenes");
+            AssetDatabase.CreateFolder("Assets", "scenes");
         if (!AssetDatabase.IsValidFolder(PrefabsFolder))
-            AssetDatabase.CreateFolder("Assets", "Prefabs");
-        if (!AssetDatabase.IsValidFolder("Assets/Scripts"))
-            AssetDatabase.CreateFolder("Assets", "Scripts");
+            AssetDatabase.CreateFolder("Assets", "prefabs");
+        if (!AssetDatabase.IsValidFolder("Assets/scripts"))
+            AssetDatabase.CreateFolder("Assets", "scripts");
     }
 
     private static void CreateTilePrefab()
