@@ -1,123 +1,183 @@
-# Spell Icon UI Feedback States
+# Spell Icon UI Behavior Specification
 
-This specification defines runtime-only UI feedback for spell icons in the 2D grid magic game.
+This document is the implementation-ready runtime UI spec for spell icon feedback states in the 2D grid magic game.
 
-- Base artwork source for all states: `Assets/Art/overlays/spells/<school>.png`
-- No state creates or edits PNG assets.
-- All visuals are driven by UI layers, shaders/material parameters, and animation curves at runtime.
+- Base artwork for all spell icons: `Assets/Art/overlays/spells/<school>.png`
+- No state requires creating or editing PNG assets.
+- All visuals are driven at runtime with Unity UI layers, shader/material parameters, and animation curves.
 
-## Shared Runtime Setup
+## 1) UI Architecture
 
-- **Base Icon**: `Image` using the school sprite loaded from `Assets/Art/overlays/spells/<school>.png`.
-- **State Controller**: a script/state machine sets visual properties based on gameplay state (`Normal`, `HoverSelected`, `Disabled`, `Cooldown`, `Locked`).
-- **Optional Child Layers**:
-  - `DarkOverlay` (`Image`, black with alpha, raycast off)
-  - `CooldownMask` (`Image`, black with alpha, `Type = Filled`, `Fill Method = Radial360`)
-  - `LockOverlay` (`Image` lock glyph/sprite, anchored center)
-  - `CooldownText` (TMP text centered above icon)
-- **Material Controls** (if shader-based): `_Saturation`, `_Brightness`, `_GlowStrength`, `_OutlineWidth`, `_OutlineColor`.
+Each spell icon is a root `UnityEngine.UI.Image` with optional child layers:
 
-## UI State Definitions
+- `SpellIconImage` (root `Image`)
+- `DarkOverlay` (child `Image`, black, alpha controlled)
+- `CooldownMask` (child `Image`, black, `Image.Type = Filled`, `FillMethod = Radial360`)
+- `LockOverlay` (child `Image`, lock glyph/stamp)
+- `Tooltip / Info Overlay` (child object, optional)
+- `CooldownText` (optional TMP child for numeric countdown)
 
-### 1) Normal (default)
+### Material Parameters (runtime-driven)
 
-- **Scale**: `1.00`
-- **Tint/Color**: `RGBA(1,1,1,1)`
-- **Saturation**: `1.00` (no desaturation)
-- **Brightness**: `1.00` (no boost or dim)
-- **Glow/Outline**: Off (`0` strength or disabled component)
-- **DarkOverlay**: hidden (`alpha = 0`)
-- **CooldownMask**: hidden (`alpha = 0`, fill irrelevant)
-- **LockOverlay**: hidden
-- **Animation**: none
+- `_Saturation` (float)
+- `_Brightness` (float)
+- `_GlowStrength` (float)
+- `_OutlineWidth` (float)
+- `_OutlineColor` (Color)
 
-### 2) Hover / Selected
+## 2) Canonical State Values
 
-- **Scale**: animate from `1.00 -> 1.08` over ~`0.08s` (ease-out)
-- **Tint/Color**: keep white tint unless style guide adds school accent
-- **Saturation**: `1.00`
-- **Brightness**: `1.10` (+10%)
-- **Glow/Outline**:
-  - enable subtle outline/glow
-  - recommended: width `1-2 px`, glow strength `0.15-0.25`, low alpha
-- **DarkOverlay**: hidden
-- **CooldownMask**: hidden unless cooldown is active (cooldown visuals can stack)
-- **LockOverlay**: hidden
-- **Animation**:
-  - optional slow pulse while hovered (e.g., scale oscillates `1.06 <-> 1.08` at `0.8-1.2 Hz`)
-  - optional glow intensity pulse (`±10%`)
+### 2.1 Normal
 
-### 3) Disabled (no mana)
+- Scale: `1.00`
+- Tint (`Image.color`): `RGBA(1,1,1,1)`
+- `_Saturation`: `1.00`
+- `_Brightness`: `1.00`
+- `_GlowStrength`: `0.00`
+- `_OutlineWidth`: `0.00`
+- `_OutlineColor`: transparent/ignored
+- `DarkOverlay.alpha`: `0.00` (hidden)
+- `CooldownMask`: hidden (`alpha = 0`, `fillAmount` unchanged)
+- `LockOverlay`: hidden
+- Animation: none
 
-- **Scale**: `1.00`
-- **Tint/Color**: neutral white tint
-- **Saturation**: `0.20` (80% desaturated, near grayscale)
-- **Brightness**: `0.70` (-30%)
-- **Glow/Outline**: Off
-- **DarkOverlay**:
-  - visible over base icon
-  - color `RGBA(0,0,0,0.35-0.50)`
-- **CooldownMask**: hidden unless cooldown is also active
-- **LockOverlay**: hidden
-- **Animation**: none (static communicates unavailable)
+### 2.2 Hover / Selected
 
-### 4) Cooldown (active cooldown)
+- Enter transition scale: `1.00 -> 1.08` over `0.08s` with ease-out
+- Exit transition scale: `current -> 1.00` over `0.06s` with ease-in
+- Tint: white (optional school accent only via glow/outline)
+- `_Saturation`: `1.00`
+- `_Brightness`: `1.10`
+- `_GlowStrength`: `0.18` (subtle)
+- `_OutlineWidth`: `1.5` px target range `1-2` px
+- `_OutlineColor`: school accent with low alpha (e.g. `a=0.6`)
+- `DarkOverlay`: hidden
+- `CooldownMask`: remains visible if cooldown is active
+- `LockOverlay`: hidden
+- Optional idle hover pulse while hovered:
+  - Scale oscillation: `1.06 <-> 1.08`
+  - Frequency: `1.0 Hz`
+  - Curve: sine/ease-in-out
+  - Keep subtle; do not exceed `1.08`
 
-- **Scale**: typically `1.00` (or keep hover scale if selected)
-- **Base Color/Saturation/Brightness**: inherit from availability state (normal/disabled)
-- **CooldownMask**:
-  - visible
-  - `Image Type = Filled`
-  - `Fill Method = Radial 360`
-  - `Fill Origin` and `Clockwise` set by UX preference
-  - mask color `RGBA(0,0,0,0.45-0.60)`
-  - animate `fillAmount` from `1.0 -> 0.0` as `remainingCooldown / totalCooldown`
-- **DarkOverlay**: optional separate layer not required if mask already provides dimming
-- **CooldownText** (optional):
-  - centered over icon
-  - display remaining seconds (`ceil(remainingCooldown)`)
-  - fade out when cooldown reaches zero
-- **Glow/Outline**: optional off during cooldown, or subtle on when cooldown nearly complete
-- **Animation**:
-  - radial fill update each frame or at fixed UI tick
-  - optional "ready" pop (short scale bump) at cooldown completion
+### 2.3 Disabled / Unavailable
 
-### 5) Locked (spell locked)
+- Scale: `1.00`
+- Tint: unchanged white (`RGBA(1,1,1,1)`) so grayscale comes from material
+- `_Saturation`: `0.20`
+- `_Brightness`: `0.70`
+- `_GlowStrength`: `0.00`
+- `_OutlineWidth`: `0.00`
+- `DarkOverlay`: visible, `RGBA(0,0,0,0.42)` (allowed range `0.35-0.50`)
+- `CooldownMask`: hidden unless also in cooldown
+- `LockOverlay`: hidden
+- Animation: none
 
-- **Base visuals**: use the full **Disabled** treatment
-  - saturation `0.20`
-  - brightness `0.70`
-  - dark overlay visible
-- **LockOverlay**:
-  - visible child UI element on top of icon
-  - small centered lock glyph/sprite
-  - suggested alpha `0.85-1.0`
-- **CooldownMask**: hidden unless design explicitly supports pre-locked cooldown display
-- **Animation**: none by default; optional tiny lock bounce when user attempts to click
+### 2.4 Cooldown
 
-## State Blending/Precedence
+- Scale: `1.00` (or hover scale if hover is allowed by precedence)
+- Base saturation/brightness: inherited from Normal or Disabled base
+- `CooldownMask`: visible
+  - `Image.Type = Filled`
+  - `FillMethod = Radial360`
+  - `fillAmount = remainingCooldown / totalCooldown`
+  - Color: `RGBA(0,0,0,0.52)` (allowed range `0.45-0.60`)
+- `DarkOverlay`: optional additional dimming if readability requires
+- `CooldownText` (optional):
+  - content: `ceil(remainingCooldown)`
+  - hide at `remainingCooldown <= 0`
+- Glow/outline: off during most cooldown
+- Animation:
+  - update `fillAmount` each UI tick/frame
 
-Recommended precedence when multiple flags exist:
+### 2.4B Cooldown Completion Ready Pop
+
+Triggered once when cooldown reaches zero.
+
+- Scale pop: `1.00 -> 1.12 -> 1.00` over `0.15s` total
+  - up phase: `0.05s` ease-out
+  - down phase: `0.10s` ease-in
+- `_Brightness` spike: `+0.20` additive for `0.08s`, then return
+- `_GlowStrength` flash: `0.35` peak, decay to `0` by end
+- Optional audio: ready cue
+
+### 2.5 Locked
+
+- Base visuals: same as Disabled
+  - `_Saturation = 0.20`
+  - `_Brightness = 0.70`
+  - `DarkOverlay.alpha ~= 0.42`
+- `LockOverlay`: visible, centered, alpha `0.9-1.0`
+- `CooldownMask`: hidden
+- Hover glow/scale: suppressed for readability
+- Animation: none (except click rejection feedback)
+
+### 2.6 Insufficient Energy Click Feedback
+
+Triggered when user clicks while Disabled or Locked.
+
+- One-shot rejection feedback (non-stateful, overlay animation on top of current state):
+  - Tint flash: `RGBA(1.0,0.3,0.3,1.0)` then return in `0.15s`
+  - Shake: horizontal jitter `±2px` for `0.08s`
+  - Optional audio: blocked/reject SFX
+- Post-feedback: restore original Disabled or Locked visuals exactly
+- Must not modify cooldown timing/state
+
+## 3) Animation Curves and Timings
+
+Recommended reusable curves:
+
+- `HoverEnterScaleCurve`: ease-out cubic, duration `0.08s`
+- `HoverExitScaleCurve`: ease-in cubic, duration `0.06s`
+- `HoverPulseCurve`: sine wave, period `1.0s`
+- `ReadyPopUpCurve`: ease-out back-like (small overshoot feel), `0.05s`
+- `ReadyPopDownCurve`: ease-in quad, `0.10s`
+- `InsufficientTintCurve`: fast rise (`0.03s`) + smooth decay (`0.12s`)
+- `InsufficientShakeCurve`: damped oscillation at ~`25 Hz` for `0.08s`
+
+## 4) State Precedence and Conflict Rules
+
+Apply visual state in this strict order:
 
 1. `Locked`
 2. `Cooldown`
-3. `Disabled`
-4. `HoverSelected`
+3. `Disabled / Unavailable`
+4. `Hover / Selected`
 5. `Normal`
 
-Notes:
-- `Locked` should always show lock overlay even if hovered.
-- `Cooldown` mask can be layered over `Normal` or `Disabled` base treatment.
-- Hover effects should not override locked/disabled readability.
+Conflict handling:
 
-## Runtime-Driven Property Summary
+- Locked overrides everything (always show lock, suppress hover glamor).
+- Cooldown overlays on top of Normal/Disabled base values.
+- Disabled suppresses glow/outline and keeps readability over hover.
+- Hover can affect scale/brightness only when not Locked; if Disabled+Hover, allow at most subtle scale (`<=1.03`) or suppress entirely per UX readability target.
+- Insufficient Energy feedback is a temporary effect layer; after completion, recompute from precedence stack.
 
-- **Transform**: local scale
-- **Image Color**: alpha/tint
-- **Material Params**: saturation, brightness, glow/outline
-- **Overlay Alpha**: dark layer intensity
-- **Radial Fill**: cooldown progress mask
-- **Text Content/Visibility**: remaining cooldown
-- **Animation Curves**: hover pulse, transition easing, cooldown completion pop
+## 5) Runtime Parameter Summary (Implementation Checklist)
 
-All state feedback is achieved at runtime through UI components, shaders, and animations while reusing the same base spell PNG per school.
+Update these runtime properties only:
+
+- `Transform.localScale`
+- `Image.color` (tint/flash)
+- Material `_Saturation`
+- Material `_Brightness`
+- Material `_GlowStrength`
+- Material `_OutlineWidth`
+- Material `_OutlineColor`
+- `DarkOverlay.color.a`
+- `CooldownMask.color.a`
+- `CooldownMask.fillAmount`
+- `LockOverlay.enabled` / alpha
+- Optional status text (`CooldownText` / Tooltip)
+
+## 6) C# State Application Order (Reference)
+
+1. Resolve logical flags: `isLocked`, `isOnCooldown`, `isAvailable`, `isHovered`, `wasRejectedClick`.
+2. Choose base state by precedence.
+3. Apply base visual constants (scale, material, overlays).
+4. Apply cooldown overlay if active.
+5. Apply hover transition only if allowed by resolved state.
+6. Play transient clips (`ready pop`, `insufficient energy`) as additive one-shots.
+7. On transient end, re-apply resolved state snapshot.
+
+End specification.
