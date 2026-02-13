@@ -228,7 +228,7 @@ public class GameTurnController : MonoBehaviour
             boss.energy = Mathf.Max(0, boss.energy - 1);
             boss.lockedAttackTile = null;
 
-            return; // strict single action
+            return;
         }
 
         // -------------------------------------------------
@@ -240,8 +240,8 @@ public class GameTurnController : MonoBehaviour
 
             boss.specialPower.Execute(boss, board);
 
-            boss.specialCooldown = 7;
             boss.energy -= 3;
+            boss.specialCooldown = 7;
 
             SetBossState(BossState.Tired);
             return;
@@ -262,7 +262,6 @@ public class GameTurnController : MonoBehaviour
 
             SetBossState(BossState.Attack);
 
-            // Lock tile for delayed follow-up
             boss.lockedAttackTile = player.position;
 
             return;
@@ -279,16 +278,22 @@ public class GameTurnController : MonoBehaviour
                 boss.energy = Mathf.Max(0, boss.energy - 1);
                 boss.moveCooldown = 2;
 
-                // Exception: move + prime attack allowed
                 if (GetManhattanDistance(boss.position, player.position) <= 1 &&
                     boss.energy >= 1)
                 {
-                    SetBossState(BossState.Enrage);
+                    int damage = 1;
+
+                    player.HP = Mathf.Max(0, player.HP - damage);
+                    OnPlayerDamaged?.Invoke(damage);
+
+                    boss.energy = Mathf.Max(0, boss.energy - 1);
+
+                    SetBossState(BossState.Attack);
                     boss.lockedAttackTile = player.position;
                 }
-
-                return;
             }
+
+            return;
         }
 
         // -------------------------------------------------
