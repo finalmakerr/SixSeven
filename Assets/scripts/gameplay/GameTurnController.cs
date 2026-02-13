@@ -209,7 +209,9 @@ public class GameTurnController : MonoBehaviour
         if (boss.state == BossState.Sleep)
             return;
 
-        // Priority 1: resolve delayed locked-tile attack.
+        // -------------------------------------------------
+        // 1️⃣ Resolve delayed locked attack (ALWAYS FIRST)
+        // -------------------------------------------------
         if (boss.lockedAttackTile.HasValue)
         {
             Vector2Int attackTile = boss.lockedAttackTile.Value;
@@ -225,10 +227,13 @@ public class GameTurnController : MonoBehaviour
 
             boss.energy = Mathf.Max(0, boss.energy - 1);
             boss.lockedAttackTile = null;
-            return;
+
+            return; // strict single action
         }
 
-        // Priority 2: special power.
+        // -------------------------------------------------
+        // 2️⃣ Special Power (cost 3 energy, cooldown 7)
+        // -------------------------------------------------
         if (boss.energy >= 3 && boss.specialPower != null && boss.specialCooldown == 0)
         {
             SetBossState(BossState.Enrage);
@@ -242,22 +247,31 @@ public class GameTurnController : MonoBehaviour
             return;
         }
 
-        // Priority 3: adjacent attack.
-        if (boss.energy >= 1 && GetManhattanDistance(boss.position, player.position) <= 1)
+        // -------------------------------------------------
+        // 3️⃣ Adjacent Attack (cost 1, lock tile for next turn)
+        // -------------------------------------------------
+        if (boss.energy >= 1 &&
+            GetManhattanDistance(boss.position, player.position) <= 1)
         {
             int damage = 1;
-
-            SetBossState(BossState.Attack);
 
             player.HP = Mathf.Max(0, player.HP - damage);
             OnPlayerDamaged?.Invoke(damage);
 
             boss.energy = Mathf.Max(0, boss.energy - 1);
+
+            SetBossState(BossState.Attack);
+
+            // Lock tile for delayed follow-up
             boss.lockedAttackTile = player.position;
+
             return;
         }
 
-        // Priority 4: movement toward player.
+        // -------------------------------------------------
+        // 4️⃣ Movement Toward Player (cost 1, cooldown 2)
+        //     Exception: may prime delayed attack
+        // -------------------------------------------------
         if (boss.energy >= 1 && boss.moveCooldown == 0)
         {
             if (TryMoveToward(player.position))
@@ -265,8 +279,9 @@ public class GameTurnController : MonoBehaviour
                 boss.energy = Mathf.Max(0, boss.energy - 1);
                 boss.moveCooldown = 2;
 
-                // Allowed exception: move + attack setup in one turn when adjacent after move.
-                if (GetManhattanDistance(boss.position, player.position) <= 1 && boss.energy >= 1)
+                // Exception: move + prime attack allowed
+                if (GetManhattanDistance(boss.position, player.position) <= 1 &&
+                    boss.energy >= 1)
                 {
                     SetBossState(BossState.Enrage);
                     boss.lockedAttackTile = player.position;
@@ -276,14 +291,18 @@ public class GameTurnController : MonoBehaviour
             }
         }
 
-        // Priority 5: throw bomb (0 energy cost).
+        // -------------------------------------------------
+        // 5️⃣ Throw Bomb (0 energy, forces Tired)
+        // -------------------------------------------------
         if (TryThrowBomb())
         {
             SetBossState(BossState.Tired);
             return;
         }
 
-        // Priority 6: idle.
+        // -------------------------------------------------
+        // 6️⃣ Idle (do nothing)
+        // -------------------------------------------------
     }
 
 
