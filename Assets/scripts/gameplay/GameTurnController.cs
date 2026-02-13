@@ -96,7 +96,6 @@ public class Bomb
 {
     public BombState state;
     public int tier;
-    public int turnsUntilExplosion;
     public bool wasAdvancedThisTurn;
 }
 
@@ -197,7 +196,6 @@ public class GameTurnController : MonoBehaviour
         currentPhase = TurnPhase.BossResolve;
         ResolveBossActionResultSkeleton();
 
-        board.IsBoardLocked = false;
         yield break;
     }
 
@@ -205,52 +203,58 @@ public class GameTurnController : MonoBehaviour
     {
         if (boss == null || board == null || player == null)
             return;
-
+    
         if (boss.state == BossState.Sleep)
             return;
-
-        if (boss.energy <= 0)
-            return;
-
-        // Priority 1: pick up an adjacent bomb by stepping into it.
+    
+        // Priority 1: pick up adjacent bomb
         if (TryPickUpBomb())
             return;
-
-        // Priority 2: throw from inventory if placement + forced step-back are valid.
-        if (TryThrowBomb())
-            return;
-
-        // Priority 3: special power when fully charged and off cooldown.
-        if (boss.energy == boss.maxEnergy && boss.specialPower != null && boss.specialCooldown == 0)
+    
+        // Priority 2: special power (cost 3 energy, 7 turn cooldown)
+        if (boss.energy >= 3 && boss.specialPower != null && boss.specialCooldown == 0)
         {
             SetBossState(BossState.Enrage);
+    
             boss.specialPower.Execute(boss, board);
-            boss.specialCooldown = boss.maxEnergy * 2;
-            boss.energy = 0;
+    
+            boss.specialCooldown = 7;
+            boss.energy -= 3;
+    
             SetBossState(BossState.Tired);
             return;
         }
-
-        // Priority 4: attack when in melee range.
+    
+        // Priority 3: attack if adjacent (aggressive behavior)
         if (GetManhattanDistance(boss.position, player.position) <= 1)
         {
             int damage = 1;
+    
             player.HP = Mathf.Max(0, player.HP - damage);
+    
             boss.energy = Mathf.Max(0, boss.energy - 1);
+    
+            SetBossState(BossState.Attack);
             OnPlayerDamaged?.Invoke(damage);
+    
             return;
         }
-
-        // Priority 5: move toward the player first.
+    
+        // Priority 4: throw bomb (0 energy cost but forces Tired)
+        if (TryThrowBomb())
+            return;
+    
+        // Priority 5: move toward player
         if (TryMoveToward(player.position))
             return;
-
-        // Priority 6: if player path is blocked/no move, move toward nearest loot.
+    
+        // Priority 6: move toward nearest loot
         if (TryMoveTowardNearestLoot())
             return;
-
-        // Priority 7: idle.
+    
+        // Priority 7: idle
     }
+
 
     private bool CanThrowBomb(Bomb bomb, out Vector2Int placement, out Vector2Int stepBack)
     {
@@ -321,7 +325,6 @@ public class GameTurnController : MonoBehaviour
         boss.position = stepBack;
         OnBossMoved?.Invoke(boss.position);
 
-        boss.energy = Mathf.Max(0, boss.energy - 1);
         SetBossState(BossState.Tired);
         return true;
     }
@@ -583,27 +586,23 @@ public class GameTurnController : MonoBehaviour
         {
             if (bomb == null)
                 continue;
-
-            if (bomb.turnsUntilExplosion > 0)
-                bomb.turnsUntilExplosion--;
-
-            if (bomb.turnsUntilExplosion <= 0)
-            {
-                bomb.state = BombState.Explode;
-                bomb.wasAdvancedThisTurn = true;
-                OnBombStateChanged?.Invoke(bomb);
-                OnBombExploded?.Invoke(bomb);
+    
+            if (bomb.wasAdvancedThisTurn)
                 continue;
-            }
-
+    
             BombState previousState = bomb.state;
+    
             bomb.state = GetNextBombState(bomb.state);
             bomb.wasAdvancedThisTurn = true;
-
+    
             if (bomb.state != previousState)
                 OnBombStateChanged?.Invoke(bomb);
+    
+            if (bomb.state == BombState.Explode)
+                OnBombExploded?.Invoke(bomb);
         }
     }
+
 
     private BombState GetNextBombState(BombState currentState)
     {
@@ -657,9 +656,23 @@ public class GameTurnController : MonoBehaviour
 
     private void ProgressBossState()
     {
-        // Boss state machine progression placeholder.
-        // Future implementation can set boss.state and raise OnBossStateChanged as needed.
+        if (boss == null)
+            return;
+    
+        if (boss.state == BossState.Tired)
+        {
+            SetBossState(BossState.Sleep);
+            return;
+        }
+    
+        if (boss.state == BossState.Sleep)
+        {
+            // After sleeping 1 turn, return to Calm
+            SetBossState(BossState.Calm);
+            return;
+        }
     }
+
 
     private void DecrementBossSpecialCooldown()
     {
@@ -682,17 +695,17 @@ public class GameTurnController : MonoBehaviour
     private IEnumerator UpdateEnergy()
     {
         currentPhase = TurnPhase.EnergyUpdate;
-
+    
         if (boss == null)
             yield break;
-
-        boss.energy = Mathf.Min(boss.maxEnergy, boss.energy + 1);
-
-        if (boss.state == BossState.Meditate)
-        {
-            // Meditate hook placeholder for future rules.
-        }
-
+    
+        int gain = 1;
+    
+        if (boss.state == BossState.Sleep)
+            gain = 2;
+    
+        boss.energy = Mathf.Min(boss.maxEnergy, boss.energy + gain);
+    
         OnEnergyChanged?.Invoke(boss.energy, boss.maxEnergy);
         yield break;
     }
