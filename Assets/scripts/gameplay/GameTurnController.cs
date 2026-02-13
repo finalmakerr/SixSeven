@@ -114,6 +114,8 @@ public class Boss
     public int maxHP;
     public int energy;
     public int maxEnergy;
+    public Vector2Int position;
+    public List<Bomb> inventory = new List<Bomb>();
     public BossState state;
     public int specialCooldown;
     public BossPower specialPower;
@@ -146,6 +148,7 @@ public class GameTurnController : MonoBehaviour
     public event Action<Vector2Int> OnBossMoved;
     public event Action<BossState> OnBossStateChanged;
     public event Action<int> OnBossDamaged;
+    public event Action<int> OnPlayerDamaged;
     public event Action OnPlayerTurnStarted;
     public event Action OnMatchResolved;
     public event Action OnCascadeTriggered;
@@ -200,8 +203,279 @@ public class GameTurnController : MonoBehaviour
 
     private void ResolveBossActionSkeleton()
     {
-        // AI decision placeholder only (move / attack / throw bomb / special).
-        // This method should only choose and execute gameplay logic, then raise events.
+        if (boss == null || board == null || player == null)
+            return;
+
+        if (boss.state == BossState.Sleep)
+            return;
+
+        if (boss.energy <= 0)
+            return;
+
+        // Priority 1: pick up an adjacent bomb by stepping into it.
+        if (TryPickUpBomb())
+            return;
+
+        // Priority 2: throw from inventory if placement + forced step-back are valid.
+        if (TryThrowBomb())
+            return;
+
+        // Priority 3: special power when fully charged and off cooldown.
+        if (boss.energy == boss.maxEnergy && boss.specialPower != null && boss.specialCooldown == 0)
+        {
+            SetBossState(BossState.Enrage);
+            boss.specialPower.Execute(boss, board);
+            boss.specialCooldown = boss.maxEnergy * 2;
+            boss.energy = 0;
+            SetBossState(BossState.Tired);
+            return;
+        }
+
+        // Priority 4: attack when in melee range.
+        if (GetManhattanDistance(boss.position, player.position) <= 1)
+        {
+            int damage = 1;
+            player.HP = Mathf.Max(0, player.HP - damage);
+            boss.energy = Mathf.Max(0, boss.energy - 1);
+            OnPlayerDamaged?.Invoke(damage);
+            return;
+        }
+
+        // Priority 5: move toward the player first.
+        if (TryMoveToward(player.position))
+            return;
+
+        // Priority 6: if player path is blocked/no move, move toward nearest loot.
+        if (TryMoveTowardNearestLoot())
+            return;
+
+        // Priority 7: idle.
+    }
+
+    private bool CanThrowBomb(Bomb bomb, out Vector2Int placement, out Vector2Int stepBack)
+    {
+        placement = boss.position;
+        stepBack = boss.position;
+
+        if (bomb == null || board == null)
+            return false;
+
+        Vector2Int[] cardinalDirections =
+        {
+            new Vector2Int(1, 0),
+            new Vector2Int(-1, 0),
+            new Vector2Int(0, 1),
+            new Vector2Int(0, -1)
+        };
+
+        foreach (Vector2Int dir in cardinalDirections)
+        {
+            Vector2Int candidatePlacement = boss.position + (dir * 2);
+            Vector2Int candidateStepBack = boss.position - dir;
+
+            if (!board.IsInsideBounds(candidatePlacement.y, candidatePlacement.x))
+                continue;
+
+            if (!board.IsInsideBounds(candidateStepBack.y, candidateStepBack.x))
+                continue;
+
+            if (candidatePlacement == player.position || candidatePlacement == boss.position)
+                continue;
+
+            if (candidateStepBack == player.position)
+                continue;
+
+            Tile placementTile = board.GetTile(candidatePlacement.y, candidatePlacement.x);
+            if (placementTile != null && placementTile.type == TileType.Bomb)
+                continue;
+
+            placement = candidatePlacement;
+            stepBack = candidateStepBack;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryThrowBomb()
+    {
+        if (boss?.inventory == null || boss.inventory.Count == 0)
+            return false;
+
+        Bomb bombToThrow = boss.inventory[0];
+        if (!CanThrowBomb(bombToThrow, out Vector2Int placement, out Vector2Int stepBack))
+            return false;
+
+        Tile placedBombTile = new Tile
+        {
+            row = placement.y,
+            col = placement.x,
+            type = TileType.Bomb,
+            tileData = bombToThrow
+        };
+        board.SetTile(placement.y, placement.x, placedBombTile);
+
+        boss.inventory.RemoveAt(0);
+        OnBombStateChanged?.Invoke(bombToThrow);
+
+        boss.position = stepBack;
+        OnBossMoved?.Invoke(boss.position);
+
+        boss.energy = Mathf.Max(0, boss.energy - 1);
+        SetBossState(BossState.Tired);
+        return true;
+    }
+
+    private bool TryPickUpBomb()
+    {
+        if (board?.grid == null || boss == null)
+            return false;
+
+        Vector2Int[] cardinalDirections =
+        {
+            new Vector2Int(1, 0),
+            new Vector2Int(-1, 0),
+            new Vector2Int(0, 1),
+            new Vector2Int(0, -1)
+        };
+
+        foreach (Vector2Int dir in cardinalDirections)
+        {
+            Vector2Int target = boss.position + dir;
+            if (!board.IsInsideBounds(target.y, target.x))
+                continue;
+
+            if (target == player.position)
+                continue;
+
+            Tile tile = board.GetTile(target.y, target.x);
+            if (tile == null || tile.type != TileType.Bomb)
+                continue;
+
+            Bomb bomb = tile.tileData as Bomb;
+            if (bomb == null)
+                continue;
+
+            board.SetTile(target.y, target.x, null);
+            boss.inventory.Add(bomb);
+            OnBombStateChanged?.Invoke(bomb);
+
+            boss.position = target;
+            OnBossMoved?.Invoke(boss.position);
+
+            boss.energy = Mathf.Max(0, boss.energy - 1);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryMoveToward(Vector2Int target)
+    {
+        if (boss == null || board == null)
+            return false;
+
+        Vector2Int delta = target - boss.position;
+        Vector2Int horizontalStep = Vector2Int.zero;
+        Vector2Int verticalStep = Vector2Int.zero;
+
+        if (delta.x != 0)
+            horizontalStep = new Vector2Int(Math.Sign(delta.x), 0);
+
+        if (delta.y != 0)
+            verticalStep = new Vector2Int(0, Math.Sign(delta.y));
+
+        if (horizontalStep != Vector2Int.zero && TryMoveByStep(horizontalStep))
+            return true;
+
+        if (verticalStep != Vector2Int.zero && TryMoveByStep(verticalStep))
+            return true;
+
+        return false;
+    }
+
+    private bool TryMoveByStep(Vector2Int step)
+    {
+        if (boss == null || board == null || player == null)
+            return false;
+
+        Vector2Int target = boss.position + step;
+        if (!board.IsInsideBounds(target.y, target.x))
+            return false;
+
+        if (target == player.position || target == boss.position)
+            return false;
+
+        boss.position = target;
+        boss.energy = Mathf.Max(0, boss.energy - 1);
+        OnBossMoved?.Invoke(boss.position);
+        return true;
+    }
+
+    private bool TryMoveTowardNearestLoot()
+    {
+        if (boss == null || player == null)
+            return false;
+
+        Vector2Int? nearestLoot = FindNearestLootPosition();
+        if (!nearestLoot.HasValue)
+            return false;
+
+        int lootDistance = GetManhattanDistance(boss.position, nearestLoot.Value);
+        int playerDistance = GetManhattanDistance(boss.position, player.position);
+
+        if (lootDistance >= playerDistance)
+            return false;
+
+        return TryMoveToward(nearestLoot.Value);
+    }
+
+    private Vector2Int? FindNearestLootPosition()
+    {
+        if (board?.grid == null)
+            return null;
+
+        int rows = board.grid.GetLength(0);
+        int cols = board.grid.GetLength(1);
+
+        int bestDistance = int.MaxValue;
+        Vector2Int best = default;
+        bool found = false;
+
+        for (int row = 0; row < rows; row++)
+        {
+            for (int col = 0; col < cols; col++)
+            {
+                Tile tile = board.grid[row, col];
+                if (tile == null || tile.type != TileType.Bomb)
+                    continue;
+
+                Vector2Int bombPos = new Vector2Int(col, row);
+                int distance = GetManhattanDistance(boss.position, bombPos);
+                if (distance >= bestDistance)
+                    continue;
+
+                bestDistance = distance;
+                best = bombPos;
+                found = true;
+            }
+        }
+
+        return found ? best : (Vector2Int?)null;
+    }
+
+    private static int GetManhattanDistance(Vector2Int a, Vector2Int b)
+    {
+        return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
+    }
+
+    private void SetBossState(BossState nextState)
+    {
+        if (boss == null || boss.state == nextState)
+            return;
+
+        boss.state = nextState;
+        OnBossStateChanged?.Invoke(boss.state);
     }
 
     private void ResolveBossActionResultSkeleton()
