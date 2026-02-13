@@ -117,6 +117,8 @@ public class Boss
     public List<Bomb> inventory = new List<Bomb>();
     public BossState state;
     public int specialCooldown;
+    public int moveCooldown;
+    public Vector2Int? lockedAttackTile;
     public BossPower specialPower;
 }
 
@@ -203,56 +205,97 @@ public class GameTurnController : MonoBehaviour
     {
         if (boss == null || board == null || player == null)
             return;
-    
+
         if (boss.state == BossState.Sleep)
             return;
-    
-        // Priority 1: pick up adjacent bomb
-        if (TryPickUpBomb())
-            return;
-    
-        // Priority 2: special power (cost 3 energy, 7 turn cooldown)
-        if (boss.energy >= 3 && boss.specialPower != null && boss.specialCooldown == 0)
+
+        // Locked tile attacks are delayed follow-ups from previous turns and always resolve first.
+        if (boss.lockedAttackTile.HasValue)
         {
-            SetBossState(BossState.Enrage);
-    
-            boss.specialPower.Execute(boss, board);
-    
-            boss.specialCooldown = 7;
-            boss.energy -= 3;
-    
-            SetBossState(BossState.Tired);
-            return;
-        }
-    
-        // Priority 3: attack if adjacent (aggressive behavior)
-        if (GetManhattanDistance(boss.position, player.position) <= 1)
-        {
-            int damage = 1;
-    
-            player.HP = Mathf.Max(0, player.HP - damage);
-    
-            boss.energy = Mathf.Max(0, boss.energy - 1);
-    
+            Vector2Int attackTile = boss.lockedAttackTile.Value;
+
             SetBossState(BossState.Attack);
-            OnPlayerDamaged?.Invoke(damage);
-    
+
+            if (player.position == attackTile)
+            {
+                int damage = 1;
+                player.HP = Mathf.Max(0, player.HP - damage);
+                OnPlayerDamaged?.Invoke(damage);
+            }
+
+            boss.energy = Mathf.Max(0, boss.energy - 1);
+            boss.lockedAttackTile = null;
             return;
         }
-    
-        // Priority 4: throw bomb (0 energy cost but forces Tired)
-        if (TryThrowBomb())
-            return;
-    
-        // Priority 5: move toward player
-        if (TryMoveToward(player.position))
-            return;
-    
-        // Priority 6: move toward nearest loot
-        if (TryMoveTowardNearestLoot())
-            return;
-    
-        // Priority 7: idle
+
+        while (boss.energy > 0)
+        {
+            // Priority 1: pick up adjacent bomb
+            if (TryPickUpBomb())
+                continue;
+
+            // Priority 2: special power (cost 3 energy, 7 turn cooldown)
+            if (boss.energy >= 3 && boss.specialPower != null && boss.specialCooldown == 0)
+            {
+                SetBossState(BossState.Enrage);
+
+                boss.specialPower.Execute(boss, board);
+
+                boss.specialCooldown = 7;
+                boss.energy -= 3;
+
+                SetBossState(BossState.Tired);
+                return;
+            }
+
+            // Priority 3: attack if adjacent (cost 1, and lock current target tile for follow-up)
+            if (boss.energy >= 1 && GetManhattanDistance(boss.position, player.position) <= 1)
+            {
+                int damage = 1;
+
+                player.HP = Mathf.Max(0, player.HP - damage);
+                boss.energy = Mathf.Max(0, boss.energy - 1);
+
+                SetBossState(BossState.Attack);
+                OnPlayerDamaged?.Invoke(damage);
+
+                boss.lockedAttackTile = player.position;
+                continue;
+            }
+
+            // Priority 4: move toward player if not on movement cooldown.
+            if (boss.energy >= 1 && boss.moveCooldown == 0)
+            {
+                if (TryMoveToward(player.position))
+                {
+                    boss.moveCooldown = 2;
+
+                    // If the move put the boss adjacent to the player, prime a delayed enrage strike.
+                    if (GetManhattanDistance(boss.position, player.position) <= 1)
+                    {
+                        SetBossState(BossState.Enrage);
+                        boss.lockedAttackTile = player.position;
+                        return;
+                    }
+
+                    continue;
+                }
+            }
+
+            // Priority 5: throw bomb (0 energy cost but forces Tired)
+            if (TryThrowBomb())
+                return;
+
+            // Priority 6: move toward nearest loot
+            if (boss.energy >= 1 && boss.moveCooldown == 0 && TryMoveTowardNearestLoot())
+            {
+                boss.moveCooldown = 2;
+                continue;
+            }
+
+            // No legal action remains.
+            break;
+        }
     }
 
 
@@ -574,6 +617,10 @@ public class GameTurnController : MonoBehaviour
 
         ProgressBombStates();
         ProgressBossState();
+
+        if (boss != null && boss.moveCooldown > 0)
+            boss.moveCooldown--;
+
         DecrementBossSpecialCooldown();
         ResetBombAdvanceFlags();
 
