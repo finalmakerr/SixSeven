@@ -12,14 +12,10 @@ namespace GameCore
 
         private void OnEnable()
         {
-            if (GameBootstrap.LevelDatabase == null)
+            if (levelDatabase == null)
             {
-                Debug.LogError("LevelDatabase not initialized.");
-                return;
+                Debug.LogError("LevelDatabase not assigned. Ensure SceneAssetLoader has finished loading before enabling gameplay systems.");
             }
-
-            var levelDB = GameBootstrap.LevelDatabase;
-            levelDatabase = levelDB;
         }
 
         public void LoadStartingLevel(GameManager gameManager)
