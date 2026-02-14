@@ -8,15 +8,13 @@ namespace GameCore
 {
     /// <summary>
     /// Authoritative pooled spell-impact feedback.
-    /// Uses one sprite per school at: Resources/Art/overlays/spells/&lt;school&gt;/spell
-    /// Falls back to: Resources/Art/overlays/spells/_default/spell
+    /// Uses one sprite per school from a SpellImpactSpriteCatalog loaded by SceneAssetLoader.
     /// </summary>
     public sealed class SpellImpactVisualSystem : MonoBehaviour
     {
         public const int TierNormal = 1;
         public const int TierImportant = 2;
 
-        private const string ResourceBasePath = "Art/overlays/spells";
         private const string FallbackSchool = "_default";
 
         [Header("Render")]
@@ -46,6 +44,9 @@ namespace GameCore
         [SerializeField] private AudioSource defaultAudioSource;
         [SerializeField] private float tier2VolumeMultiplier = 1.2f;
 
+        [Header("Assets")]
+        [SerializeField] private SceneAssetLoader sceneAssetLoader;
+
         [Header("Pool")]
         [SerializeField] private int prewarmOverlayCount = 16;
         [SerializeField] private int prewarmPulseCount = 8;
@@ -56,6 +57,7 @@ namespace GameCore
         private readonly Queue<PooledVisual> overlayPool = new Queue<PooledVisual>();
         private readonly Queue<PooledVisual> pulsePool = new Queue<PooledVisual>();
         private readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
+        private SpellImpactSpriteCatalog spriteCatalog;
 
         private uint randomState = 0x12345678u;
         private float importantPriorityUntil;
@@ -277,14 +279,35 @@ namespace GameCore
                 return cached;
             }
 
-            var sprite = Resources.Load<Sprite>($"{ResourceBasePath}/{key}/spell");
-            if (sprite == null)
+            EnsureSpriteCatalogLoaded();
+            Sprite sprite = null;
+
+            if (spriteCatalog != null)
             {
-                sprite = Resources.Load<Sprite>($"{ResourceBasePath}/{FallbackSchool}/spell");
+                sprite = spriteCatalog.GetSchoolSprite(key);
+                if (sprite == null)
+                {
+                    sprite = spriteCatalog.GetSchoolSprite(FallbackSchool);
+                }
             }
 
             spriteCache[key] = sprite;
             return sprite;
+        }
+
+        private void EnsureSpriteCatalogLoaded()
+        {
+            if (spriteCatalog != null)
+            {
+                return;
+            }
+
+            if (sceneAssetLoader == null)
+            {
+                return;
+            }
+
+            spriteCatalog = sceneAssetLoader.GetLoadedAsset<SpellImpactSpriteCatalog>();
         }
 
         private static string NormalizeSchool(string school)
