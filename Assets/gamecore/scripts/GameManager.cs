@@ -222,6 +222,8 @@ namespace GameCore
         private readonly Dictionary<string, Func<BonusMiniGameBase>> bonusMiniGameFactories = new Dictionary<string, Func<BonusMiniGameBase>>();
         // CODEX BONUS PR5
         private BonusMiniGameBase activeBonusMiniGame;
+        private const string BonusStageFontKey = "MemoryBonusFont";
+        private Font bonusStageFont;
         // CODEX BONUS PR5
         private Coroutine bonusMiniGameCleanupRoutine;
         private LevelRunDefinition currentRunDefinition; // CODEX REPLAYABILITY
@@ -348,6 +350,8 @@ namespace GameCore
             {
                 screenShakeTarget = Camera.main.transform;
             }
+
+            LoadBonusStageAssetsFromSceneAssetLoader();
 
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
@@ -3270,6 +3274,23 @@ namespace GameCore
             bonusStagePanel.SetActive(false);
         }
 
+        private void LoadBonusStageAssetsFromSceneAssetLoader()
+        {
+            var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+            if (sceneAssetLoader == null)
+            {
+                return;
+            }
+
+            var catalog = sceneAssetLoader.GetLoadedAsset<MemoryBonusAssetCatalog>();
+            if (catalog == null)
+            {
+                return;
+            }
+
+            bonusStageFont = catalog.GetFont(BonusStageFontKey);
+        }
+
         // CODEX BONUS PR4
         private Text CreateBonusStageText(
             Transform parent,
@@ -3293,7 +3314,10 @@ namespace GameCore
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = Color.white;
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (bonusStageFont != null)
+            {
+                text.font = bonusStageFont;
+            }
             return text;
         }
 
@@ -3342,7 +3366,10 @@ namespace GameCore
             text.fontSize = 26;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.black;
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (bonusStageFont != null)
+            {
+                text.font = bonusStageFont;
+            }
             return text;
         }
 

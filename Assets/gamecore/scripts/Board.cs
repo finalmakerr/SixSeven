@@ -72,12 +72,13 @@ namespace GameCore
         // CODEX CHEST PR1
         private Sprite treasureChestSprite;
 
-        // CODEX BOMB TIERS: sprite cache for bomb tiers (Resources.Load paths).
+        // CODEX BOMB TIERS: sprite cache for bomb tiers loaded from scene assets.
         private Sprite bomb4Sprite;
         private Sprite bomb7Sprite;
         private Sprite bombXXSprite;
         private Sprite bomb6SpriteA;
         private Sprite bomb6SpriteB;
+        private BoardSpecialSpriteCatalog boardSpecialSpriteCatalog;
 
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
         // CODEX BOSS PR1
@@ -98,8 +99,7 @@ namespace GameCore
             }
 
             sprites = GenerateSprites();
-            LoadBombSprites(); // CODEX BOMB TIERS: cache special bomb sprites.
-            LoadTreasureChestSprite(); // CODEX CHEST PR1
+            CacheSpecialSpritesFromSceneAssets();
         }
 
         private void Start()
@@ -988,7 +988,7 @@ namespace GameCore
 
             if (treasureChestSprite == null) // CODEX CHEST PR1
             {
-                LoadTreasureChestSprite(); // CODEX CHEST PR1
+                CacheSpecialSpritesFromSceneAssets();
             }
 
             piece.SetSpecialType(SpecialType.TreasureChest);
@@ -2492,34 +2492,44 @@ namespace GameCore
             return reason != DestructionReason.MonsterAttack;
         }
 
-        // CODEX BOMB TIERS: load bomb sprites from Resources.
-        private void LoadBombSprites()
+        private void CacheSpecialSpritesFromSceneAssets()
         {
-            bomb4Sprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-X4");
-            bomb7Sprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-X7");
-            bombXXSprite = Resources.Load<Sprite>("Tiles/Specials/Svinino-Bombondino-XX");
-            bomb6SpriteA = Resources.Load<Sprite>("Tiles/Specials/Crocodilio-Sixventilio");
-            bomb6SpriteB = Resources.Load<Sprite>("Tiles/Specials/Brainio-Sixventilio");
+            if (boardSpecialSpriteCatalog == null)
+            {
+                var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+                if (sceneAssetLoader != null)
+                {
+                    boardSpecialSpriteCatalog = sceneAssetLoader.GetLoadedAsset<BoardSpecialSpriteCatalog>();
+                }
+            }
+
+            if (boardSpecialSpriteCatalog == null)
+            {
+                return;
+            }
+
+            bomb4Sprite = boardSpecialSpriteCatalog.Bomb4Sprite;
+            bomb7Sprite = boardSpecialSpriteCatalog.Bomb7Sprite;
+            bombXXSprite = boardSpecialSpriteCatalog.BombXXSprite;
+            bomb6SpriteA = boardSpecialSpriteCatalog.Bomb6SpriteA;
+            bomb6SpriteB = boardSpecialSpriteCatalog.Bomb6SpriteB;
+            treasureChestSprite = boardSpecialSpriteCatalog.TreasureChestSprite;
 
             if (debugMode)
             {
-                WarnIfMissingSprite(bomb4Sprite, "Tiles/Specials/Svinino-Bombondino-X4");
-                WarnIfMissingSprite(bomb7Sprite, "Tiles/Specials/Svinino-Bombondino-X7");
-                WarnIfMissingSprite(bombXXSprite, "Tiles/Specials/Svinino-Bombondino-XX");
-                WarnIfMissingSprite(bomb6SpriteA, "Tiles/Specials/Crocodilio-Sixventilio");
-                WarnIfMissingSprite(bomb6SpriteB, "Tiles/Specials/Brainio-Sixventilio");
+                WarnIfMissingSprite(bomb4Sprite, nameof(boardSpecialSpriteCatalog.Bomb4Sprite));
+                WarnIfMissingSprite(bomb7Sprite, nameof(boardSpecialSpriteCatalog.Bomb7Sprite));
+                WarnIfMissingSprite(bombXXSprite, nameof(boardSpecialSpriteCatalog.BombXXSprite));
+                WarnIfMissingSprite(bomb6SpriteA, nameof(boardSpecialSpriteCatalog.Bomb6SpriteA));
+                WarnIfMissingSprite(bomb6SpriteB, nameof(boardSpecialSpriteCatalog.Bomb6SpriteB));
+                WarnIfMissingSprite(treasureChestSprite, nameof(boardSpecialSpriteCatalog.TreasureChestSprite));
             }
-        }
-
-        // CODEX CHEST PR1
-        private void LoadTreasureChestSprite() // CODEX CHEST PR1
-        {
-            treasureChestSprite = Resources.Load<Sprite>("Tiles/Specials/Chest"); // CODEX CHEST PR1
         }
 
         // CODEX BOMB TIERS: sprite selection per tier with safe fallback.
         private Sprite GetBombSpriteForTier(int bombTier)
         {
+            CacheSpecialSpritesFromSceneAssets();
             switch (bombTier)
             {
                 case 4:
@@ -2542,7 +2552,7 @@ namespace GameCore
         {
             if (sprite == null)
             {
-                Debug.LogWarning($"Missing bomb sprite at Resources path '{resourcePath}'.", this);
+                Debug.LogWarning($"Missing board special sprite '{resourcePath}' in BoardSpecialSpriteCatalog.", this);
             }
         }
 

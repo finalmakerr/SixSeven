@@ -18,15 +18,32 @@ public class Board : MonoBehaviour
     [SerializeField] private Vector2Int playerGridPosition = new Vector2Int(3, 3);
 
     private Sprite[] sprites;
+    private TileSpriteCatalog tileSpriteCatalog;
     private Tile[,] tiles;
     private int cachedScreenWidth;
     private int cachedScreenHeight;
 
     private void Awake()
     {
-        sprites = Resources.LoadAll<Sprite>("Tiles");
-        if (sprites == null || sprites.Length == 0)
-            Debug.LogError("No sprites found in Assets/Resources/Tiles");
+        var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+        if (sceneAssetLoader != null)
+        {
+            tileSpriteCatalog = sceneAssetLoader.GetLoadedAsset<TileSpriteCatalog>();
+        }
+
+        if (tileSpriteCatalog != null && tileSpriteCatalog.Sprites != null && tileSpriteCatalog.Sprites.Count > 0)
+        {
+            sprites = new Sprite[tileSpriteCatalog.Sprites.Count];
+            for (var i = 0; i < tileSpriteCatalog.Sprites.Count; i++)
+            {
+                sprites[i] = tileSpriteCatalog.Sprites[i];
+            }
+        }
+        else
+        {
+            Debug.LogWarning("TileSpriteCatalog missing from SceneAssetLoader; using generated fallback sprites.");
+            sprites = CreateFallbackSprites();
+        }
 
         if (layoutCamera == null)
             layoutCamera = Camera.main;
@@ -71,6 +88,38 @@ public class Board : MonoBehaviour
                 tiles[x, y] = tile;
             }
         }
+    }
+
+
+    private static Sprite[] CreateFallbackSprites()
+    {
+        var palette = new[]
+        {
+            new Color(0.9f, 0.2f, 0.2f),
+            new Color(0.2f, 0.6f, 0.9f),
+            new Color(0.2f, 0.8f, 0.4f),
+            new Color(0.9f, 0.8f, 0.2f),
+            new Color(0.7f, 0.3f, 0.9f),
+            new Color(0.9f, 0.5f, 0.2f)
+        };
+
+        var fallbackSprites = new Sprite[palette.Length];
+        for (var i = 0; i < palette.Length; i++)
+        {
+            var texture = new Texture2D(32, 32);
+            var pixels = new Color[32 * 32];
+            for (var pIndex = 0; pIndex < pixels.Length; pIndex++)
+            {
+                pixels[pIndex] = palette[i];
+            }
+
+            texture.SetPixels(pixels);
+            texture.Apply();
+            texture.filterMode = FilterMode.Point;
+            fallbackSprites[i] = Sprite.Create(texture, new Rect(0, 0, 32, 32), new Vector2(0.5f, 0.5f), 32f);
+        }
+
+        return fallbackSprites;
     }
 
     private void ApplyResponsiveLayout(bool forceUpdate)
