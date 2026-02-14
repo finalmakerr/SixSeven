@@ -351,6 +351,8 @@ namespace GameCore
                 screenShakeTarget = Camera.main.transform;
             }
 
+            LoadLevelDatabaseFromSceneAssetLoader();
+
             LoadBonusStageAssetsFromSceneAssetLoader();
 
             ConfigureBossChallengeButtons();
@@ -365,7 +367,12 @@ namespace GameCore
         {
             if (levelDatabase == null)
             {
-                Debug.LogError("LevelDatabase not assigned. Ensure SceneAssetLoader has finished loading before enabling gameplay systems.");
+                LoadLevelDatabaseFromSceneAssetLoader();
+            }
+
+            if (levelDatabase == null)
+            {
+                Debug.LogError("LevelDatabase not assigned. Ensure SceneAssetLoader has finished loading before enabling gameplay systems.", this);
             }
 
             RegisterBoardEvents();
@@ -3295,6 +3302,30 @@ namespace GameCore
             {
                 Debug.LogWarning($"Missing font key '{BonusStageFontKey}' in MemoryBonusAssetCatalog; using default UI font for bonus stage.", this);
             }
+        }
+
+        private void LoadLevelDatabaseFromSceneAssetLoader()
+        {
+            var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+            if (sceneAssetLoader == null)
+            {
+                Debug.LogWarning("SceneAssetLoader not found; LevelDatabase must be assigned manually.", this);
+                return;
+            }
+
+            if (!sceneAssetLoader.IsLoaded)
+            {
+                Debug.LogWarning("SceneAssetLoader has not finished loading; LevelDatabase may not be available yet.", this);
+            }
+
+            var loadedLevelDatabase = sceneAssetLoader.GetLoadedAsset<LevelDatabase>();
+            if (loadedLevelDatabase == null)
+            {
+                Debug.LogWarning("LevelDatabase not found in SceneAssetGroup.", this);
+                return;
+            }
+
+            levelDatabase = loadedLevelDatabase;
         }
 
         // CODEX BONUS PR4
