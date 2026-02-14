@@ -25,10 +25,10 @@ public class Board : MonoBehaviour
 
     private void Awake()
     {
-        var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
-        if (sceneAssetLoader != null)
+        var loader = FindObjectOfType<SceneAssetLoader>();
+        if (loader != null)
         {
-            tileSpriteCatalog = sceneAssetLoader.GetLoadedAsset<TileSpriteCatalog>();
+            tileSpriteCatalog = loader.GetLoadedAsset<TileSpriteCatalog>();
         }
 
         if (tileSpriteCatalog != null && tileSpriteCatalog.Sprites != null && tileSpriteCatalog.Sprites.Count > 0)
