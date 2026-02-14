@@ -46,7 +46,7 @@ namespace GameCore
         [SerializeField] private float tierTwoVolumeMultiplier = 1.2f;
 
         [Header("Scene Assets")]
-        [SerializeField] private SceneAssetLoader sceneAssetLoader;
+        [SerializeField] private AudioService audioService;
         [SerializeField] private float tierOneButtonPopScale = 1.08f;
         [SerializeField] private float tierTwoButtonPopScale = 1.16f;
         [SerializeField] private float buttonPopDuration = 0.12f;
@@ -68,7 +68,11 @@ namespace GameCore
         {
             BuildPool(overlayPrefab, overlayPoolSize, overlayPool);
             BuildPool(groundPulsePrefab, groundPulsePoolSize, groundPulsePool);
-            LoadImpactAudioFromCatalog();
+
+            if (audioService == null)
+            {
+                audioService = AudioService.Instance;
+            }
         }
 
         private void Start()
@@ -107,37 +111,6 @@ namespace GameCore
             var key = string.IsNullOrWhiteSpace(schoolKey) ? defaultSchoolKey : schoolKey.Trim().ToLowerInvariant();
             _ = StartCoroutine(AssignButtonSpriteWhenReady(targetImage, key));
             _ = StartCoroutine(ButtonPopRoutine(targetImage.rectTransform, importantTier));
-        }
-
-
-        private void LoadImpactAudioFromCatalog()
-        {
-            if (sceneAssetLoader == null)
-            {
-                sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
-            }
-
-            if (sceneAssetLoader == null)
-            {
-                Debug.LogWarning("SpellImpactVisualSystem: SceneAssetLoader not found; using serialized impact clip fallback.", this);
-                return;
-            }
-
-            var audioCatalog = sceneAssetLoader.GetLoadedAsset<AudioAssetCatalog>();
-            if (audioCatalog == null)
-            {
-                Debug.LogWarning("SpellImpactVisualSystem: AudioAssetCatalog not loaded; using serialized impact clip fallback.", this);
-                return;
-            }
-
-            var loadedClip = audioCatalog.Get(impactAudioKey);
-            if (loadedClip == null)
-            {
-                Debug.LogWarning($"SpellImpactVisualSystem: Missing audio key '{impactAudioKey}'; using serialized impact clip fallback.", this);
-                return;
-            }
-
-            impactClip = loadedClip;
         }
         private IEnumerator PreloadRoutine()
         {
@@ -360,9 +333,17 @@ namespace GameCore
                 return;
             }
 
-            if (impactClip == null)
+            var volume = importantTier ? tierTwoVolumeMultiplier : 1f;
+
+            if (audioService == null)
             {
-                LoadImpactAudioFromCatalog();
+                audioService = AudioService.Instance;
+            }
+
+            if (audioService != null)
+            {
+                audioService.PlaySfx(impactAudioKey, volume);
+                return;
             }
 
             if (impactClip == null)
@@ -371,7 +352,6 @@ namespace GameCore
                 return;
             }
 
-            var volume = importantTier ? tierTwoVolumeMultiplier : 1f;
             impactAudioSource.PlayOneShot(impactClip, volume);
         }
 
