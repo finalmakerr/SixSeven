@@ -1,0 +1,35 @@
+cute-calm 	face, Keep everything else the same! solid background color
+eye-blink, Keep everything else the same!
+take a breath face, Keep everything else the same!
+idle face, Keep everything else the same!
+"on-the-move" face, Keep everything else the same!
+start walking face, Keep everything else the same! no abstract shapes, no symbols, solid color background
+show movement, Keep everything else the same! no abstract shapes, no symbols, solid color background
+
+animate movement (video), Keep everything else the same! no abstract shapes, no symbols, solid color background
+
+<CHANGE PICTURE!>
+angry face, Keep everything else the same! no abstract shapes, no symbols, solid background color
+battle stance face, Keep everything else the same!
+powering-up face, Keep everything else the same!
+enrage face, Keep everything else the same!
+get ready to strike face, hands in fighting stance, Keep everything else the same!
+attack face, perform swift strike, Keep everything else the same!
+violent face, Keep everything else the same!
+
+<CHANGE PICTURE!>
+happy face, Keep everything else the same!
+animate movement (video), Keep everything else the same! no abstract shapes, no symbols, solid color background
+
+
+
+
+
+--------------------------------------------------
+recreate this photo stunning 2D, head location=middle area, rotate character to face center
+
+Redesign 2D model , fix the align grid center = head Idle state
+
+generate identical photo but some/few frames ahead/back for continue effect, Keep everything else the same!
+generate identical photo but stronger tier effect (1->2), Keep everything else the same!
+--------------------------------------------------
