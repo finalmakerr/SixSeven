@@ -42,7 +42,11 @@ namespace GameCore
         [Header("Feedback")]
         [SerializeField] private AudioSource impactAudioSource;
         [SerializeField] private AudioClip impactClip;
+        [SerializeField] private string impactAudioKey = "sfx/spell-impact";
         [SerializeField] private float tierTwoVolumeMultiplier = 1.2f;
+
+        [Header("Scene Assets")]
+        [SerializeField] private SceneAssetLoader sceneAssetLoader;
         [SerializeField] private float tierOneButtonPopScale = 1.08f;
         [SerializeField] private float tierTwoButtonPopScale = 1.16f;
         [SerializeField] private float buttonPopDuration = 0.12f;
@@ -64,6 +68,7 @@ namespace GameCore
         {
             BuildPool(overlayPrefab, overlayPoolSize, overlayPool);
             BuildPool(groundPulsePrefab, groundPulsePoolSize, groundPulsePool);
+            LoadImpactAudioFromCatalog();
         }
 
         private void Start()
@@ -104,6 +109,36 @@ namespace GameCore
             _ = StartCoroutine(ButtonPopRoutine(targetImage.rectTransform, importantTier));
         }
 
+
+        private void LoadImpactAudioFromCatalog()
+        {
+            if (sceneAssetLoader == null)
+            {
+                sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+            }
+
+            if (sceneAssetLoader == null)
+            {
+                Debug.LogWarning("SpellImpactVisualSystem: SceneAssetLoader not found; using serialized impact clip fallback.", this);
+                return;
+            }
+
+            var audioCatalog = sceneAssetLoader.GetLoadedAsset<AudioAssetCatalog>();
+            if (audioCatalog == null)
+            {
+                Debug.LogWarning("SpellImpactVisualSystem: AudioAssetCatalog not loaded; using serialized impact clip fallback.", this);
+                return;
+            }
+
+            var loadedClip = audioCatalog.Get(impactAudioKey);
+            if (loadedClip == null)
+            {
+                Debug.LogWarning($"SpellImpactVisualSystem: Missing audio key '{impactAudioKey}'; using serialized impact clip fallback.", this);
+                return;
+            }
+
+            impactClip = loadedClip;
+        }
         private IEnumerator PreloadRoutine()
         {
             yield return LoadSpriteWithFallback(defaultSchoolKey);
@@ -320,8 +355,19 @@ namespace GameCore
 
         private void PlayImpactSound(bool importantTier)
         {
-            if (impactAudioSource == null || impactClip == null)
+            if (impactAudioSource == null)
             {
+                return;
+            }
+
+            if (impactClip == null)
+            {
+                LoadImpactAudioFromCatalog();
+            }
+
+            if (impactClip == null)
+            {
+                Debug.LogWarning($"SpellImpactVisualSystem: No clip available for key '{impactAudioKey}'. Skipping playback.", this);
                 return;
             }
 
