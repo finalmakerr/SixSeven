@@ -355,7 +355,7 @@ namespace GameCore
             LoadLevelDatabaseFromSceneAssetLoader();
 
             LoadBonusStageAssetsFromSceneAssetLoader();
-            LoadAudioAssetsFromSceneAssetLoader();
+            TryLoadBugadaMusicFromAudioService();
 
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
@@ -374,7 +374,7 @@ namespace GameCore
 
             if (bugadaMusicClip == null)
             {
-                LoadAudioAssetsFromSceneAssetLoader();
+                TryLoadBugadaMusicFromAudioService();
             }
 
             if (levelDatabase == null)
@@ -3312,26 +3312,22 @@ namespace GameCore
         }
 
 
-        private void LoadAudioAssetsFromSceneAssetLoader()
+        private void TryLoadBugadaMusicFromAudioService()
         {
-            var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
-            if (sceneAssetLoader == null)
+            if (bugadaMusicClip != null)
             {
-                Debug.LogWarning("SceneAssetLoader not found; using serialized bugada music clip fallback.", this);
                 return;
             }
 
-            var audioCatalog = sceneAssetLoader.GetLoadedAsset<AudioAssetCatalog>();
-            if (audioCatalog == null)
+            var audioService = AudioService.Instance;
+            if (audioService == null)
             {
-                Debug.LogWarning("AudioAssetCatalog not found in SceneAssetGroup; using serialized bugada music clip fallback.", this);
                 return;
             }
 
-            var loadedClip = audioCatalog.Get(bugadaMusicKey);
+            var loadedClip = audioService.GetClip(bugadaMusicKey);
             if (loadedClip == null)
             {
-                Debug.LogWarning($"Missing audio key '{bugadaMusicKey}' in AudioAssetCatalog; using serialized bugada music clip fallback.", this);
                 return;
             }
 
