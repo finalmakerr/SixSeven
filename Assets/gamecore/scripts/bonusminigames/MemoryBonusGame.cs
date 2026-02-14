@@ -139,16 +139,22 @@ namespace GameCore
             var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
             if (sceneAssetLoader == null)
             {
+                Debug.LogWarning("SceneAssetLoader not found; using default UI font for memory bonus game.", this);
                 return;
             }
 
             var catalog = sceneAssetLoader.GetLoadedAsset<MemoryBonusAssetCatalog>();
             if (catalog == null)
             {
+                Debug.LogWarning("MemoryBonusAssetCatalog not found in SceneAssetGroup; using default UI font for memory bonus game.", this);
                 return;
             }
 
             bonusFont = catalog.GetFont(BonusFontKey);
+            if (bonusFont == null)
+            {
+                Debug.LogWarning($"Missing font key '{BonusFontKey}' in MemoryBonusAssetCatalog; using default UI font for memory bonus game.", this);
+            }
         }
 
         private void SetupCards()
