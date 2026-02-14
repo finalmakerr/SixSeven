@@ -13,11 +13,17 @@ public class SceneAssetLoader : MonoBehaviour
     [SerializeField] private UnityEvent onAssetsLoaded;
 
     private readonly List<AsyncOperationHandle<object>> loadHandles = new();
+    private readonly Dictionary<Type, object> loadedAssets = new();
     private CancellationTokenSource destroyCancellationTokenSource;
 
     public bool IsLoaded { get; private set; }
     public float LoadProgress { get; private set; }
     public UnityEvent OnAssetsLoaded => onAssetsLoaded;
+
+    public T GetLoadedAsset<T>() where T : class
+    {
+        return loadedAssets.TryGetValue(typeof(T), out object asset) ? asset as T : null;
+    }
 
     private async void Start()
     {
@@ -60,6 +66,7 @@ public class SceneAssetLoader : MonoBehaviour
                 continue;
 
             AsyncOperationHandle<object> handle = assetReference.LoadAssetAsync<object>();
+            handle.Completed += OnAssetLoadCompleted;
             loadHandles.Add(handle);
             handlesToAwait.Add(handle);
         }
@@ -102,6 +109,15 @@ public class SceneAssetLoader : MonoBehaviour
         return true;
     }
 
+    private void OnAssetLoadCompleted(AsyncOperationHandle<object> handle)
+    {
+        if (handle.Status != AsyncOperationStatus.Succeeded || handle.Result == null)
+            return;
+
+        Type runtimeType = handle.Result.GetType();
+        loadedAssets[runtimeType] = handle.Result;
+    }
+
     private void OnDestroy()
     {
         destroyCancellationTokenSource?.Cancel();
@@ -111,6 +127,7 @@ public class SceneAssetLoader : MonoBehaviour
         for (int i = 0; i < loadHandles.Count; i++)
         {
             AsyncOperationHandle<object> handle = loadHandles[i];
+            handle.Completed -= OnAssetLoadCompleted;
             if (handle.IsValid())
             {
                 Addressables.Release(handle);
@@ -118,5 +135,6 @@ public class SceneAssetLoader : MonoBehaviour
         }
 
         loadHandles.Clear();
+        loadedAssets.Clear();
     }
 }
