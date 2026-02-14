@@ -132,6 +132,7 @@ namespace GameCore
         [Header("Bugada")]
         [SerializeField] private AudioSource bugadaMusicSource;
         [SerializeField] private AudioClip bugadaMusicClip;
+        [SerializeField] private string bugadaMusicKey = "music/bugada";
 
         public static GameManager Instance { get; private set; }
 
@@ -354,6 +355,7 @@ namespace GameCore
             LoadLevelDatabaseFromSceneAssetLoader();
 
             LoadBonusStageAssetsFromSceneAssetLoader();
+            LoadAudioAssetsFromSceneAssetLoader();
 
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
@@ -368,6 +370,11 @@ namespace GameCore
             if (levelDatabase == null)
             {
                 LoadLevelDatabaseFromSceneAssetLoader();
+            }
+
+            if (bugadaMusicClip == null)
+            {
+                LoadAudioAssetsFromSceneAssetLoader();
             }
 
             if (levelDatabase == null)
@@ -3304,6 +3311,32 @@ namespace GameCore
             }
         }
 
+
+        private void LoadAudioAssetsFromSceneAssetLoader()
+        {
+            var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+            if (sceneAssetLoader == null)
+            {
+                Debug.LogWarning("SceneAssetLoader not found; using serialized bugada music clip fallback.", this);
+                return;
+            }
+
+            var audioCatalog = sceneAssetLoader.GetLoadedAsset<AudioAssetCatalog>();
+            if (audioCatalog == null)
+            {
+                Debug.LogWarning("AudioAssetCatalog not found in SceneAssetGroup; using serialized bugada music clip fallback.", this);
+                return;
+            }
+
+            var loadedClip = audioCatalog.Get(bugadaMusicKey);
+            if (loadedClip == null)
+            {
+                Debug.LogWarning($"Missing audio key '{bugadaMusicKey}' in AudioAssetCatalog; using serialized bugada music clip fallback.", this);
+                return;
+            }
+
+            bugadaMusicClip = loadedClip;
+        }
         private void LoadLevelDatabaseFromSceneAssetLoader()
         {
             var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();

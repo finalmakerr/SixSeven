@@ -6,6 +6,21 @@ using UnityEngine.AddressableAssets;
 public class SceneAssetGroup : ScriptableObject
 {
     [SerializeField] private List<AssetReference> assetReferences = new();
+    [SerializeField] private AssetReferenceT<AudioAssetCatalog> audioAssetCatalog;
 
-    public IReadOnlyList<AssetReference> AssetReferences => assetReferences;
+    public IReadOnlyList<AssetReference> AssetReferences
+    {
+        get
+        {
+            var merged = new List<AssetReference>(assetReferences);
+            if (audioAssetCatalog != null && !merged.Contains(audioAssetCatalog))
+            {
+                merged.Add(audioAssetCatalog);
+            }
+
+            return merged;
+        }
+    }
+
+    public AssetReferenceT<AudioAssetCatalog> AudioAssetCatalog => audioAssetCatalog;
 }
