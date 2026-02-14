@@ -15,13 +15,13 @@ namespace GameCore
             var loader = FindObjectOfType<SceneAssetLoader>();
             if (loader == null)
             {
-                Debug.LogError("SceneAssetLoader not found in scene.");
+                Debug.LogWarning("SceneAssetLoader not found in scene; cannot load LevelDatabase yet.");
                 return;
             }
 
             if (!loader.IsLoaded)
             {
-                Debug.LogError("SceneAssetLoader has not finished loading assets.");
+                Debug.LogWarning("SceneAssetLoader has not finished loading assets; cannot load LevelDatabase yet.");
                 return;
             }
 
@@ -29,7 +29,7 @@ namespace GameCore
 
             if (levelDatabase == null)
             {
-                Debug.LogError("LevelDatabase not found in SceneAssetGroup.");
+                Debug.LogWarning("LevelDatabase not found in SceneAssetGroup.");
                 return;
             }
         }

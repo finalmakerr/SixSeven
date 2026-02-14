@@ -2536,15 +2536,12 @@ namespace GameCore
             bomb6SpriteB = boardSpecialSpriteCatalog.Bomb6SpriteB;
             treasureChestSprite = boardSpecialSpriteCatalog.TreasureChestSprite;
 
-            if (debugMode)
-            {
-                WarnIfMissingSprite(bomb4Sprite, nameof(boardSpecialSpriteCatalog.Bomb4Sprite));
-                WarnIfMissingSprite(bomb7Sprite, nameof(boardSpecialSpriteCatalog.Bomb7Sprite));
-                WarnIfMissingSprite(bombXXSprite, nameof(boardSpecialSpriteCatalog.BombXXSprite));
-                WarnIfMissingSprite(bomb6SpriteA, nameof(boardSpecialSpriteCatalog.Bomb6SpriteA));
-                WarnIfMissingSprite(bomb6SpriteB, nameof(boardSpecialSpriteCatalog.Bomb6SpriteB));
-                WarnIfMissingSprite(treasureChestSprite, nameof(boardSpecialSpriteCatalog.TreasureChestSprite));
-            }
+            WarnIfMissingSprite(bomb4Sprite, nameof(boardSpecialSpriteCatalog.Bomb4Sprite));
+            WarnIfMissingSprite(bomb7Sprite, nameof(boardSpecialSpriteCatalog.Bomb7Sprite));
+            WarnIfMissingSprite(bombXXSprite, nameof(boardSpecialSpriteCatalog.BombXXSprite));
+            WarnIfMissingSprite(bomb6SpriteA, nameof(boardSpecialSpriteCatalog.Bomb6SpriteA));
+            WarnIfMissingSprite(bomb6SpriteB, nameof(boardSpecialSpriteCatalog.Bomb6SpriteB));
+            WarnIfMissingSprite(treasureChestSprite, nameof(boardSpecialSpriteCatalog.TreasureChestSprite));
         }
 
         // CODEX BOMB TIERS: sprite selection per tier with safe fallback.
