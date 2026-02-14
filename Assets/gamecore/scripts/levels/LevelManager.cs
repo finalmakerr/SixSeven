@@ -30,6 +30,7 @@ namespace GameCore
             if (levelDatabase == null)
             {
                 Debug.LogError("LevelDatabase not found in SceneAssetGroup.");
+                return;
             }
         }
 
