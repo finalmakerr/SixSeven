@@ -342,7 +342,7 @@ namespace GameCore
 
             if (audioService != null)
             {
-                audioService.PlaySfx(impactAudioKey, volume);
+                audioService.play_sfx(impactAudioKey, volume);
                 return;
             }
 
