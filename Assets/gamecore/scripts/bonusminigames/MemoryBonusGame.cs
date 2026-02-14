@@ -13,6 +13,7 @@ namespace GameCore
         private const int Rows = 3;
         private const float TotalTimeSeconds = 10f;
         private const float CountdownStepSeconds = 0.8f;
+        private const string BonusFontKey = "MemoryBonusFont";
 
         private readonly List<MemoryCard> cards = new List<MemoryCard>();
         private readonly List<int> cardValues = new List<int>();
@@ -28,6 +29,7 @@ namespace GameCore
         private GridLayoutGroup grid;
         private AudioSource audioSource;
         private AudioClip tickClip;
+        private Font bonusFont;
         private bool inputLocked = true;
         private bool gameComplete;
         private Coroutine timerRoutine;
@@ -40,6 +42,7 @@ namespace GameCore
         {
             this.uiParent = uiParent;
             this.randomSeed = randomSeed ?? new System.Random();
+            LoadAssetsFromSceneAssetLoader();
             BuildUI();
             SetupCards();
             StartCoroutine(CountdownRoutine());
@@ -120,11 +123,32 @@ namespace GameCore
             rectTransform.sizeDelta = size;
 
             var text = textObject.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (bonusFont != null)
+            {
+                text.font = bonusFont;
+            }
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = Color.white;
             return text;
+        }
+
+
+        private void LoadAssetsFromSceneAssetLoader()
+        {
+            var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
+            if (sceneAssetLoader == null)
+            {
+                return;
+            }
+
+            var catalog = sceneAssetLoader.GetLoadedAsset<MemoryBonusAssetCatalog>();
+            if (catalog == null)
+            {
+                return;
+            }
+
+            bonusFont = catalog.GetFont(BonusFontKey);
         }
 
         private void SetupCards()
@@ -174,7 +198,10 @@ namespace GameCore
             rectTransform.offsetMax = Vector2.zero;
 
             var text = textObject.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            if (bonusFont != null)
+            {
+                text.font = bonusFont;
+            }
             text.fontSize = 36;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.black;
