@@ -44,6 +44,7 @@ namespace GameCore
 
         private Piece[,] pieces;
         private Sprite[] sprites;
+        private TileSpriteCatalog tileSpriteCatalog;
         private bool isBusy;
         // CODEX BOSS PR2
         private bool externalInputLock;
@@ -79,6 +80,7 @@ namespace GameCore
         private Sprite bomb6SpriteA;
         private Sprite bomb6SpriteB;
         private BoardSpecialSpriteCatalog boardSpecialSpriteCatalog;
+        private SceneAssetLoader sceneAssetLoader;
 
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
         // CODEX BOSS PR1
@@ -98,6 +100,7 @@ namespace GameCore
                 return;
             }
 
+            CacheSceneAssetLoader();
             sprites = GenerateSprites();
             CacheSpecialSpritesFromSceneAssets();
         }
@@ -996,7 +999,7 @@ namespace GameCore
             {
                 if (debugMode) // CODEX CHEST PR1
                 {
-                    Debug.LogWarning("Treasure chest sprite missing at Resources path 'Tiles/Specials/Chest'.", this); // CODEX CHEST PR1
+                    Debug.LogWarning("Treasure chest sprite missing from BoardSpecialSpriteCatalog.", this); // CODEX CHEST PR1
                 }
                 piece.SetTreasureChestVisual(null, false); // CODEX CHEST PR1
             }
@@ -2438,6 +2441,24 @@ namespace GameCore
 
         private Sprite[] GenerateSprites()
         {
+            if (tileSpriteCatalog == null)
+            {
+                CacheTileSpriteCatalogFromSceneAssets();
+            }
+
+            if (tileSpriteCatalog != null && tileSpriteCatalog.Sprites != null && tileSpriteCatalog.Sprites.Count > 0)
+            {
+                var catalogSprites = new Sprite[tileSpriteCatalog.Sprites.Count];
+                for (var i = 0; i < tileSpriteCatalog.Sprites.Count; i++)
+                {
+                    catalogSprites[i] = tileSpriteCatalog.Sprites[i];
+                }
+
+                return catalogSprites;
+            }
+
+            Debug.LogWarning("TileSpriteCatalog missing from SceneAssetLoader; using generated fallback sprites.", this);
+
             var palette = new[]
             {
                 new Color(0.9f, 0.2f, 0.2f),
@@ -2494,9 +2515,9 @@ namespace GameCore
 
         private void CacheSpecialSpritesFromSceneAssets()
         {
+            CacheSceneAssetLoader();
             if (boardSpecialSpriteCatalog == null)
             {
-                var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
                 if (sceneAssetLoader != null)
                 {
                     boardSpecialSpriteCatalog = sceneAssetLoader.GetLoadedAsset<BoardSpecialSpriteCatalog>();
@@ -2553,6 +2574,30 @@ namespace GameCore
             if (sprite == null)
             {
                 Debug.LogWarning($"Missing board special sprite '{resourcePath}' in BoardSpecialSpriteCatalog.", this);
+            }
+        }
+
+
+        private void CacheTileSpriteCatalogFromSceneAssets()
+        {
+            CacheSceneAssetLoader();
+            if (sceneAssetLoader == null)
+            {
+                return;
+            }
+
+            tileSpriteCatalog = sceneAssetLoader.GetLoadedAsset<TileSpriteCatalog>();
+            if (tileSpriteCatalog == null && debugMode)
+            {
+                Debug.LogWarning("TileSpriteCatalog not found in SceneAssetGroup.", this);
+            }
+        }
+
+        private void CacheSceneAssetLoader()
+        {
+            if (sceneAssetLoader == null)
+            {
+                sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
             }
         }
 

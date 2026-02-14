@@ -3279,16 +3279,22 @@ namespace GameCore
             var sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
             if (sceneAssetLoader == null)
             {
+                Debug.LogWarning("SceneAssetLoader not found; using default UI font for bonus stage.", this);
                 return;
             }
 
             var catalog = sceneAssetLoader.GetLoadedAsset<MemoryBonusAssetCatalog>();
             if (catalog == null)
             {
+                Debug.LogWarning("MemoryBonusAssetCatalog not found in SceneAssetGroup; using default UI font for bonus stage.", this);
                 return;
             }
 
             bonusStageFont = catalog.GetFont(BonusStageFontKey);
+            if (bonusStageFont == null)
+            {
+                Debug.LogWarning($"Missing font key '{BonusStageFontKey}' in MemoryBonusAssetCatalog; using default UI font for bonus stage.", this);
+            }
         }
 
         // CODEX BONUS PR4
