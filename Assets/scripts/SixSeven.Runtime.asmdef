@@ -1,6 +1,8 @@
 {
   "name": "SixSeven.Runtime",
-  "references": [],
+  "references": [
+    "Unity.Addressables"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
