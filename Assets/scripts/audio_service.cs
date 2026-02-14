@@ -24,6 +24,7 @@ public sealed class AudioService : MonoBehaviour
         }
 
         Instance = this;
+        DontDestroyOnLoad(gameObject);
 
         EnsureAudioSources();
         sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
@@ -35,9 +36,9 @@ public sealed class AudioService : MonoBehaviour
         }
 
         CacheCatalog();
-        if (audioCatalog == null)
+        if (audioCatalog == null && !sceneAssetLoader.IsLoaded)
         {
-            sceneAssetLoader.OnAssetsLoaded.AddListener(CacheCatalog);
+            sceneAssetLoader.OnAssetsLoaded.AddListener(HandleAssetsLoaded);
         }
     }
 
@@ -50,8 +51,28 @@ public sealed class AudioService : MonoBehaviour
 
         if (sceneAssetLoader != null)
         {
-            sceneAssetLoader.OnAssetsLoaded.RemoveListener(CacheCatalog);
+            sceneAssetLoader.OnAssetsLoaded.RemoveListener(HandleAssetsLoaded);
         }
+    }
+
+    public void play_sfx(string key, float volume = 1f)
+    {
+        PlaySfx(key, volume);
+    }
+
+    public void play_music(string key, bool loop = true)
+    {
+        PlayMusic(key, loop);
+    }
+
+    public void stop_music()
+    {
+        StopMusic();
+    }
+
+    public AudioClip get_clip(string key)
+    {
+        return GetClip(key);
     }
 
     public void PlaySfx(string key, float volume = 1f)
@@ -83,13 +104,14 @@ public sealed class AudioService : MonoBehaviour
             return;
         }
 
-        if (musicSource.clip != clip)
+        var clipChanged = musicSource.clip != clip;
+        if (clipChanged)
         {
             musicSource.clip = clip;
         }
 
         musicSource.loop = loop;
-        if (!musicSource.isPlaying)
+        if (clipChanged || !musicSource.isPlaying)
         {
             musicSource.Play();
         }
@@ -151,6 +173,15 @@ public sealed class AudioService : MonoBehaviour
             musicSource = gameObject.AddComponent<AudioSource>();
             musicSource.playOnAwake = false;
             musicSource.loop = true;
+        }
+    }
+
+    private void HandleAssetsLoaded()
+    {
+        CacheCatalog();
+        if (sceneAssetLoader != null)
+        {
+            sceneAssetLoader.OnAssetsLoaded.RemoveListener(HandleAssetsLoaded);
         }
     }
 

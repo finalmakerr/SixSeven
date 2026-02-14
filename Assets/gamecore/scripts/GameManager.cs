@@ -133,6 +133,7 @@ namespace GameCore
         [SerializeField] private AudioSource bugadaMusicSource;
         [SerializeField] private AudioClip bugadaMusicClip;
         [SerializeField] private string bugadaMusicKey = "music/bugada";
+        [SerializeField] private AudioService audioService;
 
         public static GameManager Instance { get; private set; }
 
@@ -355,7 +356,7 @@ namespace GameCore
             LoadLevelDatabaseFromSceneAssetLoader();
 
             LoadBonusStageAssetsFromSceneAssetLoader();
-            TryLoadBugadaMusicFromAudioService();
+            EnsureAudioServiceReference();
 
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
@@ -372,10 +373,7 @@ namespace GameCore
                 LoadLevelDatabaseFromSceneAssetLoader();
             }
 
-            if (bugadaMusicClip == null)
-            {
-                TryLoadBugadaMusicFromAudioService();
-            }
+            EnsureAudioServiceReference();
 
             if (levelDatabase == null)
             {
@@ -1460,6 +1458,21 @@ namespace GameCore
 
         private void UpdateBugadaMusic(bool active)
         {
+            EnsureAudioServiceReference();
+            if (audioService != null)
+            {
+                if (active)
+                {
+                    audioService.play_music(bugadaMusicKey);
+                }
+                else
+                {
+                    audioService.stop_music();
+                }
+
+                return;
+            }
+
             if (bugadaMusicSource == null || bugadaMusicClip == null)
             {
                 return;
@@ -3312,26 +3325,12 @@ namespace GameCore
         }
 
 
-        private void TryLoadBugadaMusicFromAudioService()
+        private void EnsureAudioServiceReference()
         {
-            if (bugadaMusicClip != null)
-            {
-                return;
-            }
-
-            var audioService = AudioService.Instance;
             if (audioService == null)
             {
-                return;
+                audioService = AudioService.Instance;
             }
-
-            var loadedClip = audioService.GetClip(bugadaMusicKey);
-            if (loadedClip == null)
-            {
-                return;
-            }
-
-            bugadaMusicClip = loadedClip;
         }
         private void LoadLevelDatabaseFromSceneAssetLoader()
         {
