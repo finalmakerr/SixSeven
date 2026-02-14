@@ -4,17 +4,32 @@ namespace GameCore
 {
     public class LevelManager : MonoBehaviour
     {
-        [SerializeField] private LevelDatabase levelDatabase;
+        private LevelDatabase levelDatabase;
         [SerializeField] private int startingLevelIndex;
 
         public int CurrentLevelIndex { get; private set; }
         public int LevelCount => levelDatabase != null ? levelDatabase.LevelCount : 0;
 
-        private void OnEnable()
+        private void Start()
         {
+            var loader = FindObjectOfType<SceneAssetLoader>();
+            if (loader == null)
+            {
+                Debug.LogError("SceneAssetLoader not found in scene.");
+                return;
+            }
+
+            if (!loader.IsLoaded)
+            {
+                Debug.LogError("SceneAssetLoader has not finished loading assets.");
+                return;
+            }
+
+            levelDatabase = loader.GetLoadedAsset<LevelDatabase>();
+
             if (levelDatabase == null)
             {
-                Debug.LogError("LevelDatabase not assigned. Ensure SceneAssetLoader has finished loading before enabling gameplay systems.");
+                Debug.LogError("LevelDatabase not found in SceneAssetGroup.");
             }
         }
 
