@@ -46,7 +46,7 @@ namespace GameCore
         [SerializeField] private float tierTwoVolumeMultiplier = 1.2f;
 
         [Header("Scene Assets")]
-        [SerializeField] private AudioService audioService;
+        [SerializeField] private audio_service audioService;
         [SerializeField] private float tierOneButtonPopScale = 1.08f;
         [SerializeField] private float tierTwoButtonPopScale = 1.16f;
         [SerializeField] private float buttonPopDuration = 0.12f;
@@ -71,7 +71,7 @@ namespace GameCore
 
             if (audioService == null)
             {
-                audioService = AudioService.Instance;
+                audioService = audio_service.Instance;
             }
         }
 
@@ -337,7 +337,7 @@ namespace GameCore
 
             if (audioService == null)
             {
-                audioService = AudioService.Instance;
+                audioService = audio_service.Instance;
             }
 
             if (audioService != null)

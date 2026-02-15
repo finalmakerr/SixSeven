@@ -2,18 +2,18 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public sealed class AudioService : MonoBehaviour
+public sealed class audio_service : MonoBehaviour
 {
     [SerializeField] private AudioSource sfxSource;
     [SerializeField] private AudioSource musicSource;
+    [SerializeField] private SceneAssetLoader sceneAssetLoader;
+    [SerializeField] private AudioAssetCatalog audioCatalog;
 
-    public static AudioService Instance { get; private set; }
+    public static audio_service Instance { get; private set; }
 
     private readonly HashSet<string> missingKeysLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    private SceneAssetLoader sceneAssetLoader;
-    private AudioAssetCatalog audioCatalog;
     private bool catalogWarningLogged;
+    private bool subscribedToAssetsLoaded;
 
     private void Awake()
     {
@@ -27,19 +27,9 @@ public sealed class AudioService : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         EnsureAudioSources();
-        sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
-
-        if (sceneAssetLoader == null)
-        {
-            LogCatalogMissingWarning();
-            return;
-        }
-
+        sceneAssetLoader = sceneAssetLoader != null ? sceneAssetLoader : FindObjectOfType<SceneAssetLoader>();
         CacheCatalog();
-        if (audioCatalog == null && !sceneAssetLoader.IsLoaded)
-        {
-            sceneAssetLoader.OnAssetsLoaded.AddListener(HandleAssetsLoaded);
-        }
+        SubscribeIfWaitingOnAssets();
     }
 
     private void OnDestroy()
@@ -49,10 +39,7 @@ public sealed class AudioService : MonoBehaviour
             Instance = null;
         }
 
-        if (sceneAssetLoader != null)
-        {
-            sceneAssetLoader.OnAssetsLoaded.RemoveListener(HandleAssetsLoaded);
-        }
+        UnsubscribeFromAssetsLoaded();
     }
 
     public void play_sfx(string key, float volume = 1f)
@@ -72,17 +59,18 @@ public sealed class AudioService : MonoBehaviour
 
     public AudioClip get_clip(string key)
     {
-        return GetClip(key);
+        var clip = ResolveClip(key);
+        return clip;
     }
 
-    public void PlaySfx(string key, float volume = 1f)
+    private void PlaySfx(string key, float volume = 1f)
     {
         if (sfxSource == null)
         {
             return;
         }
 
-        var clip = GetClip(key);
+        var clip = ResolveClip(key);
         if (clip == null)
         {
             return;
@@ -91,14 +79,14 @@ public sealed class AudioService : MonoBehaviour
         sfxSource.PlayOneShot(clip, Mathf.Clamp01(volume));
     }
 
-    public void PlayMusic(string key, bool loop = true)
+    private void PlayMusic(string key, bool loop = true)
     {
         if (musicSource == null)
         {
             return;
         }
 
-        var clip = GetClip(key);
+        var clip = ResolveClip(key);
         if (clip == null)
         {
             return;
@@ -117,7 +105,7 @@ public sealed class AudioService : MonoBehaviour
         }
     }
 
-    public void StopMusic()
+    private void StopMusic()
     {
         if (musicSource == null)
         {
@@ -127,11 +115,12 @@ public sealed class AudioService : MonoBehaviour
         musicSource.Stop();
     }
 
-    public AudioClip GetClip(string key)
+    private AudioClip ResolveClip(string key)
     {
         if (audioCatalog == null)
         {
             CacheCatalog();
+            SubscribeIfWaitingOnAssets();
         }
 
         if (audioCatalog == null)
@@ -145,7 +134,7 @@ public sealed class AudioService : MonoBehaviour
             return null;
         }
 
-        var normalizedKey = key.Trim();
+        var normalizedKey = key.Trim().ToLowerInvariant();
         var clip = audioCatalog.Get(normalizedKey);
         if (clip != null)
         {
@@ -154,7 +143,7 @@ public sealed class AudioService : MonoBehaviour
 
         if (missingKeysLogged.Add(normalizedKey))
         {
-            Debug.LogWarning($"AudioService: Missing audio key '{normalizedKey}'.", this);
+            Debug.LogWarning($"audio_service: missing audio key '{normalizedKey}'.", this);
         }
 
         return null;
@@ -179,10 +168,7 @@ public sealed class AudioService : MonoBehaviour
     private void HandleAssetsLoaded()
     {
         CacheCatalog();
-        if (sceneAssetLoader != null)
-        {
-            sceneAssetLoader.OnAssetsLoaded.RemoveListener(HandleAssetsLoaded);
-        }
+        UnsubscribeFromAssetsLoaded();
     }
 
     private void CacheCatalog()
@@ -195,6 +181,28 @@ public sealed class AudioService : MonoBehaviour
         audioCatalog = sceneAssetLoader.GetLoadedAsset<AudioAssetCatalog>();
     }
 
+    private void SubscribeIfWaitingOnAssets()
+    {
+        if (sceneAssetLoader == null || sceneAssetLoader.IsLoaded || subscribedToAssetsLoaded)
+        {
+            return;
+        }
+
+        sceneAssetLoader.OnAssetsLoaded.AddListener(HandleAssetsLoaded);
+        subscribedToAssetsLoaded = true;
+    }
+
+    private void UnsubscribeFromAssetsLoaded()
+    {
+        if (sceneAssetLoader == null || !subscribedToAssetsLoaded)
+        {
+            return;
+        }
+
+        sceneAssetLoader.OnAssetsLoaded.RemoveListener(HandleAssetsLoaded);
+        subscribedToAssetsLoaded = false;
+    }
+
     private void LogCatalogMissingWarning()
     {
         if (catalogWarningLogged)
@@ -203,6 +211,6 @@ public sealed class AudioService : MonoBehaviour
         }
 
         catalogWarningLogged = true;
-        Debug.LogWarning("AudioService: AudioAssetCatalog unavailable. Audio playback will use caller fallbacks.", this);
+        Debug.LogWarning("audio_service: audioassetcatalog unavailable.", this);
     }
 }

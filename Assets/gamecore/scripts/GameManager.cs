@@ -130,10 +130,8 @@ namespace GameCore
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
         [Header("Bugada")]
-        [SerializeField] private AudioSource bugadaMusicSource;
-        [SerializeField] private AudioClip bugadaMusicClip;
         [SerializeField] private string bugadaMusicKey = "music/bugada";
-        [SerializeField] private AudioService audioService;
+        [SerializeField] private audio_service audioService;
 
         public static GameManager Instance { get; private set; }
 
@@ -252,7 +250,6 @@ namespace GameCore
         private bool hasGainedEnergy;
         private int bugadaTurnsRemaining;
         private bool bugadaJustActivated;
-        private AudioClip bugadaOriginalMusicClip;
         private int stunnedTurnsRemaining;
         private bool skipMoveCostThisSwap;
         private GameObject monsterAttackMarkerInstance;
@@ -1459,45 +1456,18 @@ namespace GameCore
         private void UpdateBugadaMusic(bool active)
         {
             EnsureAudioServiceReference();
-            if (audioService != null)
-            {
-                if (active)
-                {
-                    audioService.play_music(bugadaMusicKey);
-                }
-                else
-                {
-                    audioService.stop_music();
-                }
-
-                return;
-            }
-
-            if (bugadaMusicSource == null || bugadaMusicClip == null)
+            if (audioService == null)
             {
                 return;
             }
 
             if (active)
             {
-                if (bugadaOriginalMusicClip == null)
-                {
-                    bugadaOriginalMusicClip = bugadaMusicSource.clip;
-                }
-
-                if (bugadaMusicSource.clip != bugadaMusicClip)
-                {
-                    bugadaMusicSource.clip = bugadaMusicClip;
-                    bugadaMusicSource.Play();
-                }
-
-                return;
+                audioService.play_music(bugadaMusicKey);
             }
-
-            if (bugadaOriginalMusicClip != null && bugadaMusicSource.clip != bugadaOriginalMusicClip)
+            else
             {
-                bugadaMusicSource.clip = bugadaOriginalMusicClip;
-                bugadaMusicSource.Play();
+                audioService.stop_music();
             }
         }
 
@@ -3329,7 +3299,7 @@ namespace GameCore
         {
             if (audioService == null)
             {
-                audioService = AudioService.Instance;
+                audioService = audio_service.Instance;
             }
         }
         private void LoadLevelDatabaseFromSceneAssetLoader()

@@ -41,8 +41,5 @@ public class AudioAssetCatalog : ScriptableObject
         return null;
     }
 
-    // Usage examples:
-    // - UI click: uiAudioSource.PlayOneShot(audioCatalog.Get("ui/click"));
-    // - Monster SFX: monsterAudioSource.PlayOneShot(audioCatalog.Get($"monster/{monsterId}/attack"));
-    // - Background music: bgmAudioSource.clip = audioCatalog.Get("music/main-theme"); bgmAudioSource.Play();
+
 }
