@@ -80,3 +80,5 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+export-last-commit.ps1
+last_commit_a7a96ad_20260215_024955.patch

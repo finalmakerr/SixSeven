@@ -1,0 +1,17 @@
+Create 2D game item
+Create 2D game consumable item
+Create 2D game weapon item
+Create 2D head gear item
+Create 2D chest gear item
+Create 2D feet gear item
+Create 2D magic staff item
+Create 2D potion item
+Create 2D charm item
+Create 2D gold coins
+Create 2D gold pouch
+Create 2D heart HP life game
+Create 2D Energy bar game
+Create 2D Energy icon
+Create 2D items slots
+Create 2D main menu: Continue, New, Leaderboard, Shop
+Create 2D 
