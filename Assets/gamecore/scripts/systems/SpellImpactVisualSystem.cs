@@ -41,7 +41,6 @@ namespace GameCore
 
         [Header("Feedback")]
         [SerializeField] private AudioSource impactAudioSource;
-        [SerializeField] private AudioClip impactClip;
         [SerializeField] private string impactAudioKey = "sfx/spell-impact";
         [SerializeField] private float tierTwoVolumeMultiplier = 1.2f;
 
@@ -328,11 +327,6 @@ namespace GameCore
 
         private void PlayImpactSound(bool importantTier)
         {
-            if (impactAudioSource == null)
-            {
-                return;
-            }
-
             var volume = importantTier ? tierTwoVolumeMultiplier : 1f;
 
             if (audioService == null)
@@ -346,13 +340,13 @@ namespace GameCore
                 return;
             }
 
-            if (impactClip == null)
+            if (impactAudioSource == null || impactAudioSource.clip == null)
             {
-                Debug.LogWarning($"SpellImpactVisualSystem: No clip available for key '{impactAudioKey}'. Skipping playback.", this);
                 return;
             }
 
-            impactAudioSource.PlayOneShot(impactClip, volume);
+            impactAudioSource.volume = Mathf.Clamp01(volume);
+            impactAudioSource.Play();
         }
 
         private static IEnumerator CascadeSafeFreeze(float duration)

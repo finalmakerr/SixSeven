@@ -42,7 +42,9 @@ namespace GameCore
 
         [Header("Audio")]
         [SerializeField] private AudioSource defaultAudioSource;
+        [SerializeField] private string impactAudioKey = "sfx/spell-impact";
         [SerializeField] private float tier2VolumeMultiplier = 1.2f;
+        [SerializeField] private audio_service audioService;
 
         [Header("Assets")]
         [SerializeField] private SceneAssetLoader sceneAssetLoader;
@@ -72,6 +74,11 @@ namespace GameCore
             }
 
             Instance = this;
+            if (audioService == null)
+            {
+                audioService = audio_service.Instance;
+            }
+
             PrewarmPool(overlayPool, prewarmOverlayCount, "SpellOverlay");
             PrewarmPool(pulsePool, prewarmPulseCount, "SpellGroundPulse");
         }
@@ -239,19 +246,28 @@ namespace GameCore
 
         private void PlayImpactAudio(SpellImpactRequest request, bool important)
         {
-            if (request.ImpactClip == null)
+            var volume = Mathf.Clamp01(request.Volume * (important ? tier2VolumeMultiplier : 1f));
+
+            if (audioService == null)
             {
+                audioService = audio_service.Instance;
+            }
+
+            if (audioService != null)
+            {
+                audioService.play_sfx(impactAudioKey, volume);
                 return;
             }
 
             var source = request.AudioSourceOverride != null ? request.AudioSourceOverride : defaultAudioSource;
-            if (source == null)
+            if (source == null || request.ImpactClip == null)
             {
                 return;
             }
 
-            var volume = Mathf.Clamp01(request.Volume * (important ? tier2VolumeMultiplier : 1f));
-            source.PlayOneShot(request.ImpactClip, volume);
+            source.clip = request.ImpactClip;
+            source.volume = volume;
+            source.Play();
         }
 
         private IEnumerator DoCameraShake()

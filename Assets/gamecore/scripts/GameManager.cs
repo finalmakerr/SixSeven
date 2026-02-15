@@ -130,8 +130,6 @@ namespace GameCore
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
         [Header("Bugada")]
-        [SerializeField] private string bugadaMusicKey = "music/bugada";
-        [SerializeField] private audio_service audioService;
 
         public static GameManager Instance { get; private set; }
 
@@ -353,8 +351,6 @@ namespace GameCore
             LoadLevelDatabaseFromSceneAssetLoader();
 
             LoadBonusStageAssetsFromSceneAssetLoader();
-            EnsureAudioServiceReference();
-
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
             ConfigureBonusStageButton();
@@ -369,8 +365,6 @@ namespace GameCore
             {
                 LoadLevelDatabaseFromSceneAssetLoader();
             }
-
-            EnsureAudioServiceReference();
 
             if (levelDatabase == null)
             {
@@ -1455,19 +1449,19 @@ namespace GameCore
 
         private void UpdateBugadaMusic(bool active)
         {
-            EnsureAudioServiceReference();
-            if (audioService == null)
+            var runtimeAudioService = audio_service.Instance;
+            if (runtimeAudioService == null)
             {
                 return;
             }
 
             if (active)
             {
-                audioService.play_music(bugadaMusicKey);
+                runtimeAudioService.play_music("music/bugada");
             }
             else
             {
-                audioService.stop_music();
+                runtimeAudioService.stop_music();
             }
         }
 
@@ -3291,15 +3285,6 @@ namespace GameCore
             if (bonusStageFont == null)
             {
                 Debug.LogWarning($"Missing font key '{BonusStageFontKey}' in MemoryBonusAssetCatalog; using default UI font for bonus stage.", this);
-            }
-        }
-
-
-        private void EnsureAudioServiceReference()
-        {
-            if (audioService == null)
-            {
-                audioService = audio_service.Instance;
             }
         }
         private void LoadLevelDatabaseFromSceneAssetLoader()
