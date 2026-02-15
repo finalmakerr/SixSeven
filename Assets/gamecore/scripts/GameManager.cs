@@ -230,6 +230,7 @@ namespace GameCore
         private int turnsSurvivedThisLevel; // CODEX REPLAYABILITY
         private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
         private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
+        private readonly List<ItemDropOption> itemDropOptionsBuffer = new List<ItemDropOption>();
         private int energy;
         private bool isShieldActive;
         private bool shieldJustActivated;
@@ -1250,27 +1251,18 @@ namespace GameCore
 
         private bool TryPickupItem()
         {
-            var itemType = RollItemTypeForPickup();
+            if (!TryRollItemTypeForPickup(out var itemType))
+            {
+                return false;
+            }
+
             switch (itemType)
             {
                 case PlayerItemType.BasicHeal:
-                    if (CurrentHP >= maxHP)
-                    {
-                        return false;
-                    }
-
                     HealPlayer(1);
                     return true;
-                case PlayerItemType.EnergyItem:
-                    GainEnergy(1);
-                    return true;
                 case PlayerItemType.EnergyPack:
-                    if (playerItemInventory == null)
-                    {
-                        playerItemInventory = new PlayerItemInventory(3);
-                    }
-
-                    if (!playerItemInventory.TryAddItem(itemType))
+                    if (!TryAddInventoryItem(itemType))
                     {
                         return false;
                     }
@@ -1279,12 +1271,7 @@ namespace GameCore
                     return true;
                 case PlayerItemType.Shield:
                 case PlayerItemType.SecondChance:
-                    if (playerItemInventory == null)
-                    {
-                        playerItemInventory = new PlayerItemInventory(3);
-                    }
-
-                    if (!playerItemInventory.TryAddItem(itemType))
+                    if (!TryAddInventoryItem(itemType))
                     {
                         return false;
                     }
@@ -1297,35 +1284,25 @@ namespace GameCore
             }
         }
 
-        private PlayerItemType RollItemTypeForPickup()
+        public bool CanRollItemDrop()
         {
-            var options = new List<ItemDropOption>
-            {
-                new ItemDropOption(PlayerItemType.Shield, 1),
-                new ItemDropOption(PlayerItemType.SecondChance, 1),
-                new ItemDropOption(PlayerItemType.EnergyItem, 1)
-            };
+            BuildWeightedItemDropOptions();
+            return itemDropOptionsBuffer.Count > 0;
+        }
 
-            if (CurrentHP < maxHP)
-            {
-                options.Add(new ItemDropOption(PlayerItemType.BasicHeal, 1));
-            }
-
-            var missingEnergy = Mathf.Max(0, maxEnergy - energy);
-            if (missingEnergy > 0)
-            {
-                options.Add(new ItemDropOption(PlayerItemType.EnergyPack, missingEnergy));
-            }
-
+        private bool TryRollItemTypeForPickup(out PlayerItemType itemType)
+        {
+            var options = BuildWeightedItemDropOptions();
             var totalWeight = 0;
             for (var i = 0; i < options.Count; i++)
             {
-                totalWeight += Mathf.Max(0, options[i].Weight);
+                totalWeight += options[i].Weight;
             }
 
             if (totalWeight <= 0)
             {
-                return PlayerItemType.Shield;
+                itemType = PlayerItemType.BasicHeal;
+                return false;
             }
 
             var roll = UnityEngine.Random.Range(0, totalWeight);
@@ -1334,13 +1311,77 @@ namespace GameCore
                 var option = options[i];
                 if (roll < option.Weight)
                 {
-                    return option.Type;
+                    itemType = option.Type;
+                    return true;
                 }
 
                 roll -= option.Weight;
             }
 
-            return options[0].Type;
+            itemType = options[options.Count - 1].Type;
+            return true;
+        }
+
+        private List<ItemDropOption> BuildWeightedItemDropOptions()
+        {
+            itemDropOptionsBuffer.Clear();
+
+            var missingHp = Mathf.Max(0, maxHP - CurrentHP);
+            var missingEnergy = Mathf.Max(0, maxEnergy - energy);
+            var shieldCount = GetShieldCount();
+
+            AddWeightedDropOption(PlayerItemType.BasicHeal, missingHp > 0 ? missingHp * 2 : 0);
+            AddWeightedDropOption(PlayerItemType.EnergyPack, missingEnergy > 0 ? missingEnergy : 0);
+            AddWeightedDropOption(PlayerItemType.Shield, CanCarryItem(PlayerItemType.Shield) ? (shieldCount == 0 ? 3 : 1) : 0);
+            AddWeightedDropOption(PlayerItemType.SecondChance, CanCarryItem(PlayerItemType.SecondChance) ? (CurrentHP <= 1 ? 5 : 1) : 0);
+
+            return itemDropOptionsBuffer;
+        }
+
+        private void AddWeightedDropOption(PlayerItemType itemType, int weight)
+        {
+            if (weight <= 0)
+            {
+                return;
+            }
+
+            itemDropOptionsBuffer.Add(new ItemDropOption(itemType, weight));
+        }
+
+        private bool TryAddInventoryItem(PlayerItemType itemType)
+        {
+            if (playerItemInventory == null)
+            {
+                playerItemInventory = new PlayerItemInventory(3);
+            }
+
+            return playerItemInventory.TryAddItem(itemType);
+        }
+
+        private bool CanCarryItem(PlayerItemType itemType)
+        {
+            if (itemType != PlayerItemType.Shield && itemType != PlayerItemType.SecondChance && itemType != PlayerItemType.EnergyPack)
+            {
+                return false;
+            }
+
+            if (playerItemInventory == null)
+            {
+                return true;
+            }
+
+            return playerItemInventory.Count < playerItemInventory.MaxSlots;
+        }
+
+        private int GetShieldCount()
+        {
+            var inventoryShieldCount = playerItemInventory != null ? playerItemInventory.CountOf(PlayerItemType.Shield) : 0;
+            if (isShieldActive)
+            {
+                inventoryShieldCount += 1;
+            }
+
+            return inventoryShieldCount;
         }
 
         // CODEX STAGE 7D: Bugada activation + duration handling.
