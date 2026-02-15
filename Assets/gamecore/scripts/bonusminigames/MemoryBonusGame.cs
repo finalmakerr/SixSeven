@@ -386,7 +386,8 @@ namespace GameCore
         {
             if (audioSource != null && tickClip != null)
             {
-                audioSource.PlayOneShot(tickClip);
+                audioSource.clip = tickClip;
+                audioSource.Play();
             }
         }
 

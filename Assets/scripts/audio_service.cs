@@ -27,7 +27,7 @@ public sealed class audio_service : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         EnsureAudioSources();
-        sceneAssetLoader = sceneAssetLoader != null ? sceneAssetLoader : FindObjectOfType<SceneAssetLoader>();
+        EnsureSceneAssetLoader();
         CacheCatalog();
         SubscribeIfWaitingOnAssets();
     }
@@ -119,6 +119,7 @@ public sealed class audio_service : MonoBehaviour
     {
         if (audioCatalog == null)
         {
+            EnsureSceneAssetLoader();
             CacheCatalog();
             SubscribeIfWaitingOnAssets();
         }
@@ -169,6 +170,16 @@ public sealed class audio_service : MonoBehaviour
     {
         CacheCatalog();
         UnsubscribeFromAssetsLoaded();
+    }
+
+    private void EnsureSceneAssetLoader()
+    {
+        if (sceneAssetLoader != null)
+        {
+            return;
+        }
+
+        sceneAssetLoader = FindObjectOfType<SceneAssetLoader>();
     }
 
     private void CacheCatalog()
