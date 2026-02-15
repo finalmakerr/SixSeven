@@ -1150,9 +1150,9 @@ namespace GameCore
                     {
                         pendingBugadaSpawnPosition = itemSpawnPosition.Value; // CODEX STAGE 7D: Bugada spawn candidate.
                     }
-                    else
+                    else if (GameManager.Instance == null || GameManager.Instance.CanRollItemDrop())
                     {
-                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7B: item spawn candidate.
+                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7I-A: weighted item drop candidate only when a valid drop exists.
                     }
                 }
             }
