@@ -60,7 +60,6 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
-        ResetWeeklyIfNeeded();
         OneUps = Mathf.Max(0, startingOneUps);
         nextTipIndex = Mathf.Max(0, PlayerPrefs.GetInt(TipsCycleIndexPrefsKey, 0));
         SetState(GameState.MainMenu);
@@ -262,16 +261,32 @@ public class GameManager : MonoBehaviour
 
     private void ResetWeeklyIfNeeded()
     {
+        if (profile == null)
+            return;
+
+        if (profile.weeklyModeStats == null)
+            profile.weeklyModeStats = new WeeklyModeStats();
+
         var stats = profile.weeklyModeStats;
+
         var now = DateTime.UtcNow;
+
         int diff = (7 + (int)now.DayOfWeek - (int)DayOfWeek.Monday) % 7;
         var monday = now.Date.AddDays(-diff);
 
-        if (stats.weekStartUtc.Date != monday.Date)
+        if (stats.weekStartUtc == default)
+        {
+            stats.weekStartUtc = monday;
+            SaveProfile();
+            return;
+        }
+
+        if (stats.weekStartUtc.Date != monday)
         {
             stats.normalCompleted = 0;
             stats.hardcoreCompleted = 0;
             stats.ironmanCompleted = 0;
+
             stats.weekStartUtc = monday;
             SaveProfile();
         }
