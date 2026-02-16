@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 public sealed class BrainrotShopLogic
 {
@@ -8,12 +9,14 @@ public sealed class BrainrotShopLogic
     public const int MaxOneUpStack = 7;
 
     private readonly BrainrotStarTracker starTracker;
+    private readonly ShopConfig shopConfig;
     private readonly HashSet<string> purchasedItems = new();
     private readonly Dictionary<string, int> ownedItemCounts = new();
 
-    public BrainrotShopLogic(BrainrotStarTracker tracker)
+    public BrainrotShopLogic(BrainrotStarTracker tracker, ShopConfig config = null)
     {
         starTracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
+        shopConfig = config;
         starTracker.CoinsChanged += coins => CoinBalanceChanged?.Invoke(coins);
         starTracker.StarsChanged += stars => StarCountChanged?.Invoke(stars);
         starTracker.ChestConsumed += result => ChestConsumed?.Invoke(result);
@@ -100,9 +103,12 @@ public sealed class BrainrotShopLogic
 
     public float GetShopSpawnChancePercent()
     {
-        var lives = Math.Max(0, starTracker.ExtraLives);
-        var chance = 100f - (20f * lives);
-        return Math.Max(40f, chance);
+        int lives = Mathf.Max(0, starTracker.ExtraLives);
+        if (shopConfig != null)
+            return shopConfig.GetOneUpSpawnChancePercent(lives);
+
+        float fallback = 100f - (20f * lives);
+        return Mathf.Max(40f, fallback);
     }
 
     public bool HasItem(string itemId) => purchasedItems.Contains(itemId);
