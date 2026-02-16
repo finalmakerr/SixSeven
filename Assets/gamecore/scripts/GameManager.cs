@@ -130,6 +130,7 @@ namespace GameCore
         [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
+        [SerializeField] private MonsterAngerConfig monsterAngerConfig = new MonsterAngerConfig();
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
         [Header("Bugada")]
@@ -155,8 +156,13 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
-        public bool HasMonsterAttackTarget => CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
+        public bool HasMonsterAttackTarget => CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
+
+        public bool IsMonsterSwapLockedAtPosition(Vector2Int position)
+        {
+            return CurrentBossState.IsAngry && CurrentBossState.AggressorPosition == position;
+        }
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
         public IReadOnlyList<SpecialPowerDefinition> PlayerSpecialPowers => playerSpecialPowers;
@@ -267,6 +273,7 @@ namespace GameCore
         private MonsterAttackAnimationController monsterAttackAnimationController;
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
+        private bool pendingMinorDamageAggro;
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
         // CODEX RAGE SCALE FINAL
@@ -455,6 +462,7 @@ namespace GameCore
             ResetMonsterAttackState();
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
+            pendingMinorDamageAggro = false;
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -492,6 +500,12 @@ namespace GameCore
                 CurrentHP = initialBossHp,
                 CurrentPhaseIndex = 0,
                 IsPermanentlyEnraged = false,
+                IsAngry = false,
+                IsEnraged = false,
+                HasCharmResistance = false,
+                AggressorPosition = default,
+                AttackTarget = default,
+                TurnsUntilAttack = 0,
                 TumorShield = 0
             };
             currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
@@ -509,6 +523,7 @@ namespace GameCore
             rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(levelIndex / 10f));
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
+            pendingMinorDamageAggro = false;
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -571,6 +586,12 @@ namespace GameCore
             bossState.CurrentHP = maxHp;
             bossState.CurrentPhaseIndex = 0;
             bossState.IsPermanentlyEnraged = false;
+            bossState.IsAngry = false;
+            bossState.IsEnraged = false;
+            bossState.HasCharmResistance = false;
+            bossState.AggressorPosition = default;
+            bossState.AttackTarget = default;
+            bossState.TurnsUntilAttack = 0;
             bossState.TumorShield = 0;
             CurrentBossState = bossState;
             unlockedBossPhasePowers.Clear();
@@ -1558,7 +1579,10 @@ namespace GameCore
             var bossState = CurrentBossState;
             if (!bossState.IsPermanentlyEnraged)
             {
+                bossState.IsAngry = false;
                 bossState.IsEnraged = false;
+                bossState.HasCharmResistance = false;
+                bossState.AggressorPosition = default;
             }
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
@@ -1588,21 +1612,27 @@ namespace GameCore
         private void TickMonsterAttackMarker()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
+            if (!bossState.IsAngry && !bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
                 return;
             }
 
-            bossState.TurnsUntilAttack = Mathf.Max(0, bossState.TurnsUntilAttack - 1);
-            CurrentBossState = bossState;
-            UpdateMonsterAttackTelegraph();
-            if (bossState.TurnsUntilAttack == 1 && !hasTriggeredMonsterWindup)
+            if (!IsAggressorAlive(bossState))
             {
+                ResetMonsterAttackState();
+                return;
+            }
+
+            if (bossState.IsAngry)
+            {
+                bossState.IsAngry = false;
+                bossState.IsEnraged = true;
+                bossState.TurnsUntilAttack = 1;
+                CurrentBossState = bossState;
                 TriggerMonsterAttackWindup();
                 hasTriggeredMonsterWindup = true;
-            }
-            if (bossState.TurnsUntilAttack > 0)
-            {
+                UpdateMonsterAttackTelegraph();
+                UpdateMonsterEnrageVisuals();
                 return;
             }
 
@@ -1650,18 +1680,13 @@ namespace GameCore
                 return;
             }
 
-            if (rageCooldownRemaining > 0)
+            if (monsterAngerConfig != null && monsterAngerConfig.maxAngryPerTurn <= 0)
             {
-                if (debugMode)
-                {
-                    Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
-                }
-
                 return;
             }
 
             var bossState = CurrentBossState;
-            if (bossState.IsEnraged)
+            if (bossState.IsAngry || bossState.IsEnraged)
             {
                 return;
             }
@@ -1671,7 +1696,8 @@ namespace GameCore
                 return;
             }
 
-            var candidateFound = false;
+            var canUseAdjacency = monsterAngerConfig == null || monsterAngerConfig.angerAdjacencyRequired;
+            var adjacencyCandidateFound = false;
             var bestScore = 0;
             var bestPosition = default(Vector2Int);
             var adjacentOffsets = new[]
@@ -1682,45 +1708,101 @@ namespace GameCore
                 Vector2Int.right
             };
 
-            for (var i = 0; i < adjacentOffsets.Length; i++)
+            if (canUseAdjacency)
             {
-                var candidatePosition = playerPosition + adjacentOffsets[i];
-                if (!board.TryGetPieceAt(candidatePosition, out _))
+                for (var i = 0; i < adjacentOffsets.Length; i++)
                 {
-                    continue;
-                }
+                    var candidatePosition = playerPosition + adjacentOffsets[i];
+                    if (!board.TryGetPieceAt(candidatePosition, out _))
+                    {
+                        continue;
+                    }
 
-                var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
-                if (score <= 0)
-                {
-                    continue;
-                }
+                    var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
+                    if (score <= 0)
+                    {
+                        continue;
+                    }
 
-                if (!candidateFound || score > bestScore)
-                {
-                    candidateFound = true;
-                    bestScore = score;
-                    bestPosition = candidatePosition;
+                    if (!adjacencyCandidateFound || score > bestScore || (score == bestScore && (candidatePosition.y < bestPosition.y || (candidatePosition.y == bestPosition.y && candidatePosition.x < bestPosition.x))))
+                    {
+                        adjacencyCandidateFound = true;
+                        bestScore = score;
+                        bestPosition = candidatePosition;
+                    }
                 }
             }
 
-            if (!candidateFound)
-            {
-                if (debugMode)
-                {
-                    Debug.Log("RageRejected_NoMatchableCandidate", this);
-                }
+            var damageTriggered = (monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && pendingMinorDamageAggro;
+            var scalingTriggered = monsterAngerConfig != null && CurrentLevelIndex >= monsterAngerConfig.aggressionScalingByLevel;
 
+            if (!adjacencyCandidateFound && !damageTriggered && !scalingTriggered)
+            {
                 return;
             }
 
-            if (debugMode)
+            var aggressorPosition = adjacencyCandidateFound ? bestPosition : FindNearestMonsterPosition(playerPosition);
+            if (!aggressorPosition.HasValue)
             {
-                Debug.Log($"RageSelected position={bestPosition.x},{bestPosition.y} score={bestScore}", this);
+                pendingMinorDamageAggro = false;
+                return;
             }
 
-            rageCooldownRemaining = Mathf.Max(1, rageCooldownTurns - CurrentBossState.CurrentPhaseIndex);
-            ActivateMonsterAttack(bestPosition);
+            pendingMinorDamageAggro = false;
+            ActivateMonsterAnger(aggressorPosition.Value, playerPosition);
+        }
+
+        private bool IsAggressorAlive(BossState bossState)
+        {
+            if (bossState.IsPermanentlyEnraged)
+            {
+                return true;
+            }
+
+            if (board == null)
+            {
+                return false;
+            }
+
+            if (!board.TryGetPieceAt(bossState.AggressorPosition, out var aggressor))
+            {
+                return false;
+            }
+
+            return !aggressor.IsPlayer;
+        }
+
+        private Vector2Int? FindNearestMonsterPosition(Vector2Int playerPosition)
+        {
+            if (board == null)
+            {
+                return null;
+            }
+
+            var bestDistance = int.MaxValue;
+            Vector2Int? bestPosition = null;
+            var width = board.Width;
+            var height = board.Height;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var position = new Vector2Int(x, y);
+                    if (!board.TryGetPieceAt(position, out var piece) || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    var distance = Mathf.Abs(playerPosition.x - x) + Mathf.Abs(playerPosition.y - y);
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        bestPosition = position;
+                    }
+                }
+            }
+
+            return bestPosition;
         }
 
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
@@ -1733,12 +1815,15 @@ namespace GameCore
             return CurrentBoss != null && CurrentBoss.preventInstantKillFromPlayerActions;
         }
 
-        private void ActivateMonsterAttack(Vector2Int targetPosition)
+        private void ActivateMonsterAnger(Vector2Int aggressorPosition, Vector2Int targetPosition)
         {
             var bossState = CurrentBossState;
-            bossState.IsEnraged = true;
+            bossState.IsAngry = true;
+            bossState.IsEnraged = false;
+            bossState.HasCharmResistance = true;
+            bossState.AggressorPosition = aggressorPosition;
             bossState.AttackTarget = targetPosition;
-            bossState.TurnsUntilAttack = Mathf.Max(1, 2 - Mathf.FloorToInt(bossState.CurrentPhaseIndex / 2f));
+            bossState.TurnsUntilAttack = 2;
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
             SpawnMonsterAttackMarker(targetPosition);
@@ -1761,35 +1846,23 @@ namespace GameCore
             {
                 TriggerMonsterAttackExecuteVisuals();
 
-                if (!board.TryGetPieceAt(targetPosition, out var targetPiece)
-                    || monsterEnragePiece == null
-                    || targetPiece != monsterEnragePiece)
+                if (!board.TryGetPieceAt(targetPosition, out var targetPiece))
                 {
-                    if (debugMode)
-                    {
-                        Debug.Log("RageCancelledByMatch", this);
-                    }
-
-                    ResetMonsterAttackState(true);
                     return;
                 }
 
-                TriggerStunnedAnimation();
-                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                if (targetPiece.IsPlayer)
                 {
-                    if (debugMode)
+                    TriggerStunnedAnimation();
+                    if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
                     {
-                        Debug.Log("RageBlockedByShield", this);
+                        ApplyPlayerDamage(GetCurrentMonsterDamage());
                     }
 
                     return;
                 }
 
-                ApplyPlayerDamage(GetCurrentMonsterDamage());
-                if (debugMode)
-                {
-                    Debug.Log("RageLethalTriggered", this);
-                }
+                board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
             }
             finally
             {
@@ -2295,6 +2368,11 @@ namespace GameCore
 
             TryDefeatBossFromDestruction(piece, reason);
 
+            if ((CurrentBossState.IsAngry || CurrentBossState.IsEnraged) && monsterEnragePiece == piece)
+            {
+                ResetMonsterAttackState();
+            }
+
             if (piece.SpecialType == SpecialType.Tumor)
             {
                 tumorsDestroyedThisLevel += 1;
@@ -2513,6 +2591,12 @@ namespace GameCore
                 return false;
             }
 
+            var minorDamageThreshold = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.minorDamageThreshold) : 1;
+            if (damage <= minorDamageThreshold)
+            {
+                pendingMinorDamageAggro = true;
+            }
+
             bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
             if (bossState.CurrentHP <= 0)
             {
@@ -2571,7 +2655,9 @@ namespace GameCore
             if (shouldEnrage && !bossState.IsPermanentlyEnraged)
             {
                 bossState.IsPermanentlyEnraged = true;
+                bossState.IsAngry = false;
                 bossState.IsEnraged = true;
+                bossState.HasCharmResistance = true;
                 if (CurrentBoss.enragePower != BossPower.None)
                 {
                     unlockedBossPhasePowers.Add(CurrentBoss.enragePower);
@@ -2867,7 +2953,7 @@ namespace GameCore
         {
             var isBombAdjacent = board != null && board.IsPlayerAdjacentToBomb();
             var isMonsterThreat = false;
-            if (board != null && (CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged) && CurrentBossState.bossAlive)
+            if (board != null && (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged))
             {
                 if (board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -2880,7 +2966,7 @@ namespace GameCore
         private void UpdateMonsterAttackTelegraph()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged || !bossState.bossAlive || board == null)
+            if ((!bossState.IsAngry && !bossState.IsEnraged) || board == null)
             {
                 return;
             }
@@ -2908,13 +2994,14 @@ namespace GameCore
             }
 
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
+            if (!bossState.IsAngry && !bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (!board.TryGetPieceAt(bossState.AttackTarget, out var enragedPiece))
+            var indicatorPosition = bossState.IsPermanentlyEnraged ? bossState.bossPosition : bossState.AggressorPosition;
+            if (!board.TryGetPieceAt(indicatorPosition, out var enragedPiece))
             {
                 ClearMonsterEnrageIndicator();
                 return;

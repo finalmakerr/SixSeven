@@ -83,6 +83,8 @@ namespace GameCore
         private SceneAssetLoader sceneAssetLoader;
 
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
+        public int Width => width;
+        public int Height => height;
         // CODEX BOSS PR1
         public int RandomSeed => randomSeed;
 
@@ -2198,15 +2200,23 @@ namespace GameCore
                 return false;
             }
 
-            if (GameManager.Instance != null && GameManager.Instance.IsBossLevel)
+            if (GameManager.Instance != null)
             {
-                var bossState = GameManager.Instance.CurrentBossState;
-                if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
+                if (GameManager.Instance.IsMonsterSwapLockedAtPosition(new Vector2Int(piece.X, piece.Y)))
                 {
-                    var boss = GameManager.Instance.CurrentBoss;
-                    if (boss == null || boss.immuneToSwaps)
+                    return false;
+                }
+
+                if (GameManager.Instance.IsBossLevel)
+                {
+                    var bossState = GameManager.Instance.CurrentBossState;
+                    if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
                     {
-                        return false;
+                        var boss = GameManager.Instance.CurrentBoss;
+                        if (boss == null || boss.immuneToSwaps)
+                        {
+                            return false;
+                        }
                     }
                 }
             }
