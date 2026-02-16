@@ -123,6 +123,9 @@ namespace GameCore
         [SerializeField] private int maxHP = 3;
         [Header("Player Inventory")]
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
+        [Header("Pickup Radius")]
+        [SerializeField] private int maxPickupRadius = 3;
+        private const int BasePickupRadius = 1;
         [Header("Player Special Powers")]
         [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
@@ -141,6 +144,7 @@ namespace GameCore
         public int Energy => energy;
         public int MaxHP => maxHP;
         public int CurrentHP { get; private set; }
+        public int PickupRadius => pickupRadius;
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
         // CODEX BOSS PR1
@@ -235,6 +239,9 @@ namespace GameCore
         private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
         private readonly List<ItemDropOption> itemDropOptionsBuffer = new List<ItemDropOption>();
         private int energy;
+        private int pickupRadius;
+        private bool hasBossPickupRadiusUpgrade;
+        private bool hasShopPickupRadiusUpgrade;
         private bool isShieldActive;
         private bool shieldJustActivated;
         private bool shieldCooldownJustStarted;
@@ -420,6 +427,7 @@ namespace GameCore
             awaitingBossStatRewardChoice = false;
             energy = 0;
             ResetPlayerHealth();
+            ResetPickupRadius();
             playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
@@ -1225,36 +1233,42 @@ namespace GameCore
                 return;
             }
 
-            var offsets = new[]
+            var effectivePickupRadius = Mathf.Max(1, pickupRadius);
+            for (var dx = -effectivePickupRadius; dx <= effectivePickupRadius; dx++)
             {
-                Vector2Int.left,
-                Vector2Int.right,
-                Vector2Int.up,
-                Vector2Int.down
-            };
-
-            foreach (var offset in offsets)
-            {
-                var position = playerPosition + offset;
-                if (!board.TryGetPieceAt(position, out var piece))
+                for (var dy = -effectivePickupRadius; dy <= effectivePickupRadius; dy++)
                 {
-                    continue;
-                }
-
-                if (piece.SpecialType != SpecialType.Item)
-                {
-                    if (piece.SpecialType == SpecialType.Bugada)
+                    if (dx == 0 && dy == 0)
                     {
-                        ActivateBugada();
-                        board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                        continue;
                     }
 
-                    continue;
-                }
+                    var position = playerPosition + new Vector2Int(dx, dy);
+                    if (DistanceManhattan(playerPosition, position) > effectivePickupRadius)
+                    {
+                        continue;
+                    }
 
-                if (TryPickupItem())
-                {
-                    board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    if (!board.TryGetPieceAt(position, out var piece))
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType != SpecialType.Item)
+                    {
+                        if (piece.SpecialType == SpecialType.Bugada)
+                        {
+                            ActivateBugada();
+                            board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                        }
+
+                        continue;
+                    }
+
+                    if (TryPickupItem())
+                    {
+                        board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    }
                 }
             }
         }
@@ -2655,6 +2669,7 @@ namespace GameCore
                 playerItemInventory?.Clear();
             }
 
+            ResetPickupRadius();
             CompleteLoseFlow();
         }
 
@@ -2676,6 +2691,43 @@ namespace GameCore
         private static int DistanceManhattan(Vector2Int a, Vector2Int b)
         {
             return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
+        }
+
+        private void ResetPickupRadius()
+        {
+            pickupRadius = BasePickupRadius;
+            hasBossPickupRadiusUpgrade = false;
+            hasShopPickupRadiusUpgrade = false;
+        }
+
+        private bool TryApplyPickupRadiusUpgrade(bool fromShop)
+        {
+            if (fromShop)
+            {
+                if (hasShopPickupRadiusUpgrade)
+                {
+                    return false;
+                }
+
+                hasShopPickupRadiusUpgrade = true;
+            }
+            else
+            {
+                if (hasBossPickupRadiusUpgrade)
+                {
+                    return false;
+                }
+
+                hasBossPickupRadiusUpgrade = true;
+            }
+
+            pickupRadius = Mathf.Min(Mathf.Max(1, maxPickupRadius), pickupRadius + 1);
+            return true;
+        }
+
+        public bool TryApplyShopPickupRadiusUpgrade()
+        {
+            return TryApplyPickupRadiusUpgrade(true);
         }
 
         private void ResetPlayerHealth()
@@ -4786,6 +4838,10 @@ namespace GameCore
             if (added)
             {
                 bossPowerCooldowns[power] = 0;
+                if (power == BossPower.PickupMagnet)
+                {
+                    TryApplyPickupRadiusUpgrade(false);
+                }
             }
             if (!added)
             {
