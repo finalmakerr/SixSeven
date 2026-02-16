@@ -13,6 +13,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private TipsConfig tipsConfig;
     [SerializeField] private int startingOneUps;
     [SerializeField] private bool hardcoreModeEnabled;
+    [SerializeField] private GameMode startingGameMode = GameMode.Normal;
+    [SerializeField] private ModeAuraController modeAuraController;
 
     public event Action<GameState> StateChanged;
     public event Action AutoRetryPopupRequested;
@@ -30,6 +32,7 @@ public class GameManager : MonoBehaviour
 
     public GameState CurrentState { get; private set; } = GameState.MainMenu;
     public int OneUps { get; private set; }
+    public GameMode CurrentGameMode { get; private set; } = GameMode.Normal;
 
     private Coroutine loadingRoutine;
     private Coroutine resurrectionRoutine;
@@ -47,6 +50,9 @@ public class GameManager : MonoBehaviour
     {
         if (CurrentState == GameState.Loading || CurrentState == GameState.Playing)
             return;
+
+        CurrentGameMode = ResolveCurrentGameMode();
+        modeAuraController?.ApplyModeAura(CurrentGameMode);
 
         SetState(GameState.Loading);
         BeginLoading();
@@ -106,6 +112,14 @@ public class GameManager : MonoBehaviour
 
         StopLoadingRoutine();
         SetState(GameState.MainMenu);
+    }
+
+    private GameMode ResolveCurrentGameMode()
+    {
+        if (hardcoreModeEnabled)
+            return GameMode.Hardcore;
+
+        return startingGameMode;
     }
 
     private void BeginLoading()
