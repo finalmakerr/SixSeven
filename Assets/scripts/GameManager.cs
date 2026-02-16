@@ -92,6 +92,26 @@ public class GameManager : MonoBehaviour
         if (CurrentState != GameState.Playing)
             return;
 
+        bool playerBeatRun = true;
+        if (playerBeatRun)
+        {
+            ResetWeeklyIfNeeded();
+            switch (CurrentGameMode)
+            {
+                case GameMode.Normal:
+                    profile.weeklyModeStats.normalCompleted++;
+                    break;
+                case GameMode.Hardcore:
+                    profile.weeklyModeStats.hardcoreCompleted++;
+                    break;
+                case GameMode.Ironman:
+                    profile.weeklyModeStats.ironmanCompleted++;
+                    break;
+            }
+
+            SaveProfile();
+        }
+
         SetState(GameState.LevelComplete);
     }
 
