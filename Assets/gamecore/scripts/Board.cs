@@ -905,12 +905,12 @@ namespace GameCore
                 return false;
             }
 
-            if (piece.SpecialType != SpecialType.None)
+            if (IsBossPiece(piece))
             {
                 return false;
             }
 
-            return !IsBossPiece(piece);
+            return piece.SpecialType == SpecialType.None || piece.SpecialType == SpecialType.Tumor;
         }
 
         private bool IsBugadaActive()
@@ -2212,11 +2212,7 @@ namespace GameCore
                     var bossState = GameManager.Instance.CurrentBossState;
                     if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
                     {
-                        var boss = GameManager.Instance.CurrentBoss;
-                        if (boss == null || boss.immuneToSwaps)
-                        {
-                            return false;
-                        }
+                        return false;
                     }
                 }
             }
