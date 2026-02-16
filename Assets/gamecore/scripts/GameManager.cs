@@ -504,6 +504,7 @@ namespace GameCore
                 IsEnraged = false,
                 HasCharmResistance = false,
                 AggressorPosition = default,
+                AggressorPieceId = 0,
                 AttackTarget = default,
                 TurnsUntilAttack = 0,
                 TumorShield = 0
@@ -590,6 +591,7 @@ namespace GameCore
             bossState.IsEnraged = false;
             bossState.HasCharmResistance = false;
             bossState.AggressorPosition = default;
+            bossState.AggressorPieceId = 0;
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
             bossState.TumorShield = 0;
@@ -1583,6 +1585,7 @@ namespace GameCore
                 bossState.IsEnraged = false;
                 bossState.HasCharmResistance = false;
                 bossState.AggressorPosition = default;
+                bossState.AggressorPieceId = 0;
             }
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
@@ -1748,6 +1751,12 @@ namespace GameCore
                 return;
             }
 
+            if (!CanMonsterReachPlayer(aggressorPosition.Value, playerPosition))
+            {
+                pendingMinorDamageAggro = false;
+                return;
+            }
+
             pendingMinorDamageAggro = false;
             ActivateMonsterAnger(aggressorPosition.Value, playerPosition);
         }
@@ -1759,17 +1768,7 @@ namespace GameCore
                 return true;
             }
 
-            if (board == null)
-            {
-                return false;
-            }
-
-            if (!board.TryGetPieceAt(bossState.AggressorPosition, out var aggressor))
-            {
-                return false;
-            }
-
-            return !aggressor.IsPlayer;
+            return TryResolveAggressorPiece(ref bossState, out _);
         }
 
         private Vector2Int? FindNearestMonsterPosition(Vector2Int playerPosition)
@@ -1805,6 +1804,48 @@ namespace GameCore
             return bestPosition;
         }
 
+        private bool TryResolveAggressorPiece(ref BossState bossState, out Piece aggressor)
+        {
+            aggressor = null;
+            if (board == null || bossState.AggressorPieceId == 0)
+            {
+                return false;
+            }
+
+            if (board.TryGetPieceAt(bossState.AggressorPosition, out var occupant)
+                && !occupant.IsPlayer
+                && occupant.GetInstanceID() == bossState.AggressorPieceId)
+            {
+                aggressor = occupant;
+                return true;
+            }
+
+            var width = board.Width;
+            var height = board.Height;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var position = new Vector2Int(x, y);
+                    if (!board.TryGetPieceAt(position, out var candidate) || candidate.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (candidate.GetInstanceID() != bossState.AggressorPieceId)
+                    {
+                        continue;
+                    }
+
+                    bossState.AggressorPosition = position;
+                    aggressor = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
         {
             return DistanceManhattan(monsterPosition, playerPosition) <= GetCurrentMonsterRange();
@@ -1821,7 +1862,13 @@ namespace GameCore
             bossState.IsAngry = true;
             bossState.IsEnraged = false;
             bossState.HasCharmResistance = true;
+            if (!board.TryGetPieceAt(aggressorPosition, out var aggressorPiece) || aggressorPiece.IsPlayer)
+            {
+                return;
+            }
+
             bossState.AggressorPosition = aggressorPosition;
+            bossState.AggressorPieceId = aggressorPiece.GetInstanceID();
             bossState.AttackTarget = targetPosition;
             bossState.TurnsUntilAttack = 2;
             CurrentBossState = bossState;
@@ -2368,9 +2415,13 @@ namespace GameCore
 
             TryDefeatBossFromDestruction(piece, reason);
 
-            if ((CurrentBossState.IsAngry || CurrentBossState.IsEnraged) && monsterEnragePiece == piece)
+            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged)
             {
-                ResetMonsterAttackState();
+                var bossState = CurrentBossState;
+                if (monsterEnragePiece == piece || (bossState.AggressorPieceId != 0 && piece.GetInstanceID() == bossState.AggressorPieceId))
+                {
+                    ResetMonsterAttackState();
+                }
             }
 
             if (piece.SpecialType == SpecialType.Tumor)
@@ -2968,8 +3019,18 @@ namespace GameCore
             var bossState = CurrentBossState;
             if ((!bossState.IsAngry && !bossState.IsEnraged) || board == null)
             {
+                DestroyMonsterAttackMarker();
                 return;
             }
+
+            if (!TryResolveAggressorPiece(ref bossState, out _))
+            {
+                CurrentBossState = bossState;
+                ResetMonsterAttackState();
+                return;
+            }
+
+            CurrentBossState = bossState;
 
             if (monsterAttackMarkerInstance == null)
             {
@@ -3000,11 +3061,26 @@ namespace GameCore
                 return;
             }
 
-            var indicatorPosition = bossState.IsPermanentlyEnraged ? bossState.bossPosition : bossState.AggressorPosition;
-            if (!board.TryGetPieceAt(indicatorPosition, out var enragedPiece))
+            Piece enragedPiece;
+            if (bossState.IsPermanentlyEnraged)
             {
-                ClearMonsterEnrageIndicator();
-                return;
+                var indicatorPosition = bossState.bossPosition;
+                if (!board.TryGetPieceAt(indicatorPosition, out enragedPiece))
+                {
+                    ClearMonsterEnrageIndicator();
+                    return;
+                }
+            }
+            else
+            {
+                if (!TryResolveAggressorPiece(ref bossState, out enragedPiece))
+                {
+                    CurrentBossState = bossState;
+                    ResetMonsterAttackState();
+                    return;
+                }
+
+                CurrentBossState = bossState;
             }
 
             if (monsterEnragePiece == null)
