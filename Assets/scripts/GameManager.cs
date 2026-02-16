@@ -17,6 +17,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private bool hardcoreModeEnabled;
     [SerializeField] private GameMode startingGameMode = GameMode.Normal;
     [SerializeField] private ModeAuraController modeAuraController;
+    [SerializeField] private TMPro.TextMeshProUGUI weeklyModeCountText;
 
     public event Action<GameState> StateChanged;
     public event Action AutoRetryPopupRequested;
@@ -74,6 +75,7 @@ public class GameManager : MonoBehaviour
         modeAuraController?.ApplyModeAura(CurrentGameMode);
         PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
         PlayerPrefs.Save();
+        UpdateWeeklyModeUI();
 
         SetState(GameState.Loading);
         BeginLoading();
@@ -256,8 +258,36 @@ public class GameManager : MonoBehaviour
 
         ResetWeeklyIfNeeded();
         CurrentState = newState;
+        UpdateWeeklyModeUI();
         StateChanged?.Invoke(CurrentState);
     }
+
+    private void UpdateWeeklyModeUI()
+    {
+        if (weeklyModeCountText == null || profile == null)
+            return;
+    
+        if (profile.weeklyModeStats == null)
+            profile.weeklyModeStats = new WeeklyModeStats();
+    
+        int count = 0;
+    
+        switch (CurrentGameMode)
+        {
+            case GameMode.Normal:
+                count = profile.weeklyModeStats.normalCompleted;
+                break;
+            case GameMode.Hardcore:
+                count = profile.weeklyModeStats.hardcoreCompleted;
+                break;
+            case GameMode.Ironman:
+                count = profile.weeklyModeStats.ironmanCompleted;
+                break;
+        }
+    
+        weeklyModeCountText.text = $"Beaten This Week: {count}";
+    }
+
 
     private void ResetWeeklyIfNeeded()
     {
