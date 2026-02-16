@@ -31,6 +31,11 @@ namespace GameCore
         [SerializeField] private Text movesText;
         [SerializeField] private Text energyText;
         [SerializeField] private Text inventoryText;
+        [SerializeField] private GameObject inventoryOverflowPanel;
+        [SerializeField] private Text inventoryOverflowPromptText;
+        [SerializeField] private Text inventoryOverflowIncomingItemText;
+        [SerializeField] private Button[] inventoryOverflowReplaceButtons;
+        [SerializeField] private Button inventoryOverflowDestroyButton;
         [SerializeField] private Text shieldIconText;
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
@@ -244,6 +249,9 @@ namespace GameCore
         private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
         private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
         private readonly List<ItemDropOption> itemDropOptionsBuffer = new List<ItemDropOption>();
+        private bool awaitingInventoryOverflowDecision;
+        private PlayerItemType pendingInventoryOverflowItem;
+        private Vector2Int pendingInventoryOverflowPosition;
         private int energy;
         private int pickupRadius;
         private bool hasBossPickupRadiusUpgrade;
@@ -376,6 +384,7 @@ namespace GameCore
             LoadBonusStageAssetsFromSceneAssetLoader();
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
+            ConfigureInventoryOverflowButtons();
             ConfigureBonusStageButton();
 
             // CODEX BONUS PR5
@@ -433,6 +442,10 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             awaitingBossStatRewardChoice = false;
+            awaitingInventoryOverflowDecision = false;
+            pendingInventoryOverflowItem = default;
+            pendingInventoryOverflowPosition = default;
+            HideInventoryOverflowPanel();
             energy = 0;
             ResetPlayerHealth();
             ResetPickupRadius();
@@ -1287,7 +1300,7 @@ namespace GameCore
 
         private void TryPickupAdjacentItems()
         {
-            if (board == null)
+            if (awaitingInventoryOverflowDecision || board == null)
             {
                 return;
             }
@@ -1329,46 +1342,52 @@ namespace GameCore
                         continue;
                     }
 
-                    if (TryPickupItem())
+                    var pickupResult = TryPickupItem(position);
+                    if (pickupResult == PickupItemResult.PickedUp)
                     {
                         board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    }
+                    else if (pickupResult == PickupItemResult.PendingDecision)
+                    {
+                        return;
                     }
                 }
             }
         }
 
-        private bool TryPickupItem()
+        private enum PickupItemResult
+        {
+            Failed = 0,
+            PickedUp = 1,
+            PendingDecision = 2
+        }
+
+        private PickupItemResult TryPickupItem(Vector2Int pickupPosition)
         {
             if (!TryRollItemTypeForPickup(out var itemType))
             {
-                return false;
+                return PickupItemResult.Failed;
             }
 
             switch (itemType)
             {
                 case PlayerItemType.BasicHeal:
                     HealPlayer(1);
-                    return true;
+                    return PickupItemResult.PickedUp;
                 case PlayerItemType.EnergyPack:
-                    if (!TryAddInventoryItem(itemType))
-                    {
-                        return false;
-                    }
-
-                    UpdateUI();
-                    return true;
                 case PlayerItemType.Shield:
                 case PlayerItemType.SecondChance:
-                    if (!TryAddInventoryItem(itemType))
+                    if (TryAddInventoryItem(itemType))
                     {
-                        return false;
+                        UpdateShieldAnimationState();
+                        UpdateUI();
+                        return PickupItemResult.PickedUp;
                     }
 
-                    UpdateShieldAnimationState();
-                    UpdateUI();
-                    return true;
+                    BeginInventoryOverflowDecision(itemType, pickupPosition);
+                    return PickupItemResult.PendingDecision;
                 default:
-                    return false;
+                    return PickupItemResult.Failed;
             }
         }
 
@@ -2331,6 +2350,7 @@ namespace GameCore
                 || awaitingBossPowerLossConfirm
                 || awaitingBossStatRewardChoice
                 || awaitingBonusBossPowerRewardChoice
+                || awaitingInventoryOverflowDecision
                 || awaitingBonusStageBan
                 || isBonusStageActive;
         }
@@ -3312,6 +3332,144 @@ namespace GameCore
             {
                 inventoryText.text = playerItemInventory.BuildDisplayString();
             }
+        }
+
+        private void ConfigureInventoryOverflowButtons()
+        {
+            if (inventoryOverflowReplaceButtons != null)
+            {
+                for (var i = 0; i < inventoryOverflowReplaceButtons.Length; i++)
+                {
+                    var button = inventoryOverflowReplaceButtons[i];
+                    if (button == null)
+                    {
+                        continue;
+                    }
+
+                    var slotIndex = i;
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() => ResolveInventoryOverflowByReplacing(slotIndex));
+                }
+            }
+
+            if (inventoryOverflowDestroyButton != null)
+            {
+                inventoryOverflowDestroyButton.onClick.RemoveAllListeners();
+                inventoryOverflowDestroyButton.onClick.AddListener(ResolveInventoryOverflowByDestroyingLoot);
+            }
+
+            HideInventoryOverflowPanel();
+        }
+
+        private void BeginInventoryOverflowDecision(PlayerItemType itemType, Vector2Int pickupPosition)
+        {
+            if (awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            awaitingInventoryOverflowDecision = true;
+            pendingInventoryOverflowItem = itemType;
+            pendingInventoryOverflowPosition = pickupPosition;
+
+            SetBoardInputLock(true);
+            ShowInventoryOverflowPanel();
+            UpdateUI();
+        }
+
+        private void ShowInventoryOverflowPanel()
+        {
+            if (inventoryOverflowPanel == null)
+            {
+                Debug.LogWarning("Inventory overflow UI not configured. Destroying loot by default.", this);
+                ResolveInventoryOverflowByDestroyingLoot();
+                return;
+            }
+
+            inventoryOverflowPanel.SetActive(true);
+
+            if (inventoryOverflowPromptText != null)
+            {
+                inventoryOverflowPromptText.text = "Inventory full! Choose: replace an existing item or destroy the new loot.";
+            }
+
+            if (inventoryOverflowIncomingItemText != null)
+            {
+                inventoryOverflowIncomingItemText.text = $"New loot: {pendingInventoryOverflowItem}";
+            }
+
+            var inventoryCount = playerItemInventory != null ? playerItemInventory.Count : 0;
+            if (inventoryOverflowReplaceButtons != null)
+            {
+                for (var i = 0; i < inventoryOverflowReplaceButtons.Length; i++)
+                {
+                    var button = inventoryOverflowReplaceButtons[i];
+                    if (button == null)
+                    {
+                        continue;
+                    }
+
+                    var canReplace = i < inventoryCount;
+                    button.gameObject.SetActive(canReplace);
+
+                    var label = button.GetComponentInChildren<Text>();
+                    if (label != null)
+                    {
+                        label.text = canReplace
+                            ? $"Replace Slot {i + 1}: {playerItemInventory.Items[i]}"
+                            : $"Replace Slot {i + 1}";
+                    }
+                }
+            }
+        }
+
+        private void HideInventoryOverflowPanel()
+        {
+            if (inventoryOverflowPanel != null)
+            {
+                inventoryOverflowPanel.SetActive(false);
+            }
+        }
+
+        private void ResolveInventoryOverflowByReplacing(int slotIndex)
+        {
+            if (!awaitingInventoryOverflowDecision || playerItemInventory == null)
+            {
+                return;
+            }
+
+            if (!playerItemInventory.TryReplaceItemAt(slotIndex, pendingInventoryOverflowItem))
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision();
+        }
+
+        private void ResolveInventoryOverflowByDestroyingLoot()
+        {
+            if (!awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision();
+        }
+
+        private void CompleteInventoryOverflowDecision()
+        {
+            if (board != null)
+            {
+                board.TryDestroyPieceAt(pendingInventoryOverflowPosition, DestructionReason.ItemPickup);
+            }
+
+            awaitingInventoryOverflowDecision = false;
+            pendingInventoryOverflowItem = default;
+            pendingInventoryOverflowPosition = default;
+            HideInventoryOverflowPanel();
+            SetBoardInputLock(false);
+            UpdateShieldAnimationState();
+            UpdateUI();
         }
 
         // CODEX BOSS PR2

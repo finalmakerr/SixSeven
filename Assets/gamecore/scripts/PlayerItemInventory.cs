@@ -50,6 +50,17 @@ namespace GameCore
             return false;
         }
 
+        public bool TryReplaceItemAt(int slotIndex, PlayerItemType item)
+        {
+            if (slotIndex < 0 || slotIndex >= items.Count)
+            {
+                return false;
+            }
+
+            items[slotIndex] = item;
+            return true;
+        }
+
         public bool HasItem(PlayerItemType item)
         {
             return items.Contains(item);
