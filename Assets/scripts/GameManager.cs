@@ -264,20 +264,12 @@ public class GameManager : MonoBehaviour
         var now = DateTime.UtcNow;
         int diff = (7 + (int)now.DayOfWeek - (int)DayOfWeek.Monday) % 7;
         var monday = now.Date.AddDays(-diff);
-
-        DateTime parsed;
-        bool valid = DateTime.TryParse(
-            stats.weekStartUtc,
-            null,
-            System.Globalization.DateTimeStyles.RoundtripKind,
-            out parsed);
-
-        if (!valid || parsed.Date != monday.Date)
+        if (stats.weekStartUtc.Date != monday.Date)
         {
             stats.normalCompleted = 0;
             stats.hardcoreCompleted = 0;
             stats.ironmanCompleted = 0;
-            stats.weekStartUtc = monday.ToString("o");
+            stats.weekStartUtc = monday;
             SaveProfile();
         }
     }
