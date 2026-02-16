@@ -183,7 +183,7 @@ public class GameManager : MonoBehaviour
             if (videoDuration > 0f)
                 yield return new WaitForSeconds(videoDuration);
 
-            var nextTip = GetNextWeightedTip();
+            var nextTip = GetNextTip();
             if (!string.IsNullOrWhiteSpace(nextTip))
                 ResurrectionTipRequested?.Invoke(nextTip);
         }
@@ -193,19 +193,19 @@ public class GameManager : MonoBehaviour
         resurrectionRoutine = null;
     }
 
-    private string GetNextWeightedTip()
+    private string GetNextTip()
     {
-        if (tipsConfig == null || tipsConfig.orderedTips == null || tipsConfig.orderedTips.Count == 0)
+        if (tipsConfig == null || tipsConfig.tips == null || tipsConfig.tips.Count == 0)
             return string.Empty;
 
-        if (nextTipIndex >= tipsConfig.orderedTips.Count)
+        if (nextTipIndex >= tipsConfig.tips.Count)
             nextTipIndex = 0;
 
-        var selectedTip = tipsConfig.orderedTips[nextTipIndex];
-        var selectedText = selectedTip != null ? selectedTip.tip : string.Empty;
+        var tipEntry = tipsConfig.tips[nextTipIndex];
+        var selectedText = tipEntry != null ? tipEntry.tip : string.Empty;
 
         nextTipIndex++;
-        if (nextTipIndex >= tipsConfig.orderedTips.Count)
+        if (nextTipIndex >= tipsConfig.tips.Count)
             nextTipIndex = 0;
 
         PlayerPrefs.SetInt(TipsCycleIndexPrefsKey, nextTipIndex);

@@ -6,13 +6,12 @@ using UnityEngine;
 public sealed class TipsConfig : ScriptableObject
 {
     [Header("Ordered Tips (basic -> advanced)")]
-    public List<WeightedTip> orderedTips = new List<WeightedTip>();
+    public List<TipEntry> tips = new List<TipEntry>();
 
     [Serializable]
-    public sealed class WeightedTip
+    public sealed class TipEntry
     {
         [TextArea]
         public string tip;
-        [Min(1)] public int weight = 1;
     }
 }
