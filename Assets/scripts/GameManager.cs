@@ -95,6 +95,30 @@ public class GameManager : MonoBehaviour
             return;
 
         SetState(GameState.LevelComplete);
+
+        bool runCompleted = currentLevel >= 67;
+
+        if (runCompleted)
+        {
+            ResetWeeklyIfNeeded();
+
+            switch (CurrentGameMode)
+            {
+                case GameMode.Normal:
+                    profile.weeklyModeStats.normalCompleted++;
+                    break;
+
+                case GameMode.Hardcore:
+                    profile.weeklyModeStats.hardcoreCompleted++;
+                    break;
+
+                case GameMode.Ironman:
+                    profile.weeklyModeStats.ironmanCompleted++;
+                    break;
+            }
+
+            SaveProfile();
+        }
     }
 
     public void TriggerGameOver()
