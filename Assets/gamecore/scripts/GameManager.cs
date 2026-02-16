@@ -1146,7 +1146,23 @@ namespace GameCore
                 TryTriggerMonsterEnrage();
                 ProcessBossTumorTurn();
             }
+
+            RegenerateEnergyAtPlayerTurnStart();
             isPlayerActionPhase = true;
+        }
+
+        private void RegenerateEnergyAtPlayerTurnStart()
+        {
+            if (maxEnergy <= 0)
+            {
+                energy = 0;
+                return;
+            }
+
+            energy = Mathf.Min(maxEnergy, energy + 1);
+            hasGainedEnergy = hasGainedEnergy || energy > 0;
+            UpdateTiredState();
+            UpdateUI();
         }
 
 
