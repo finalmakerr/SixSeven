@@ -38,10 +38,14 @@ public class GameManager : MonoBehaviour
     private Coroutine resurrectionRoutine;
     private const string LastModeKey = "LastPlayedGameMode";
     private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
+    private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
     private int nextTipIndex;
+    [SerializeField] private PlayerProfile profile = new PlayerProfile();
 
     private void Awake()
     {
+        LoadProfile();
+        ResetWeeklyIfNeeded();
         ApplyLastKnownModeAura();
     }
 
@@ -54,6 +58,7 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
+        ResetWeeklyIfNeeded();
         OneUps = Mathf.Max(0, startingOneUps);
         nextTipIndex = Mathf.Max(0, PlayerPrefs.GetInt(TipsCycleIndexPrefsKey, 0));
         SetState(GameState.MainMenu);
@@ -243,11 +248,49 @@ public class GameManager : MonoBehaviour
         return selectedText;
     }
 
+    private void ResetWeeklyIfNeeded()
+    {
+        var stats = profile.weeklyModeStats;
+        var now = DateTime.UtcNow;
+        int diff = (7 + (int)now.DayOfWeek - (int)DayOfWeek.Monday) % 7;
+        var monday = now.Date.AddDays(-diff);
+        if (stats.weekStartUtc.Date != monday.Date)
+        {
+            stats.normalCompleted = 0;
+            stats.hardcoreCompleted = 0;
+            stats.ironmanCompleted = 0;
+            stats.weekStartUtc = monday;
+            SaveProfile();
+        }
+    }
+
+    private void LoadProfile()
+    {
+        var raw = PlayerPrefs.GetString(ProfilePrefsKey, string.Empty);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            profile = new PlayerProfile();
+            return;
+        }
+
+        profile = JsonUtility.FromJson<PlayerProfile>(raw);
+        if (profile == null)
+            profile = new PlayerProfile();
+    }
+
+    private void SaveProfile()
+    {
+        var raw = JsonUtility.ToJson(profile);
+        PlayerPrefs.SetString(ProfilePrefsKey, raw);
+        PlayerPrefs.Save();
+    }
+
     private void SetState(GameState newState)
     {
         if (CurrentState == newState)
             return;
 
+        ResetWeeklyIfNeeded();
         CurrentState = newState;
         StateChanged?.Invoke(CurrentState);
     }
