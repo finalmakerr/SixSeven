@@ -10,6 +10,7 @@ public class GameManager : MonoBehaviour
     [Header("Death Flow")]
     [SerializeField] private bool allowDeathAutoRetry = true;
     [SerializeField] private GameOverConfig gameOverConfig;
+    [SerializeField] private TipsConfig tipsConfig;
     [SerializeField] private int startingOneUps;
     [SerializeField] private bool hardcoreModeEnabled;
 
@@ -32,11 +33,13 @@ public class GameManager : MonoBehaviour
 
     private Coroutine loadingRoutine;
     private Coroutine resurrectionRoutine;
-    private int lastTipIndex = -1;
+    private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
+    private int nextTipIndex;
 
     private void Start()
     {
         OneUps = Mathf.Max(0, startingOneUps);
+        nextTipIndex = Mathf.Max(0, PlayerPrefs.GetInt(TipsCycleIndexPrefsKey, 0));
         SetState(GameState.MainMenu);
     }
 
@@ -192,36 +195,23 @@ public class GameManager : MonoBehaviour
 
     private string GetNextWeightedTip()
     {
-        if (gameOverConfig == null || gameOverConfig.weightedTips == null || gameOverConfig.weightedTips.Count == 0)
+        if (tipsConfig == null || tipsConfig.orderedTips == null || tipsConfig.orderedTips.Count == 0)
             return string.Empty;
 
-        var totalWeight = 0;
-        for (var i = 0; i < gameOverConfig.weightedTips.Count; i++)
-            totalWeight += Mathf.Max(0, gameOverConfig.weightedTips[i].weight);
+        if (nextTipIndex >= tipsConfig.orderedTips.Count)
+            nextTipIndex = 0;
 
-        if (totalWeight <= 0)
-            return string.Empty;
+        var selectedTip = tipsConfig.orderedTips[nextTipIndex];
+        var selectedText = selectedTip != null ? selectedTip.tip : string.Empty;
 
-        for (var attempts = 0; attempts < 8; attempts++)
-        {
-            var roll = UnityEngine.Random.Range(0, totalWeight);
-            var cumulative = 0;
-            for (var i = 0; i < gameOverConfig.weightedTips.Count; i++)
-            {
-                cumulative += Mathf.Max(0, gameOverConfig.weightedTips[i].weight);
-                if (roll >= cumulative)
-                    continue;
+        nextTipIndex++;
+        if (nextTipIndex >= tipsConfig.orderedTips.Count)
+            nextTipIndex = 0;
 
-                if (gameOverConfig.weightedTips.Count > 1 && i == lastTipIndex)
-                    break;
+        PlayerPrefs.SetInt(TipsCycleIndexPrefsKey, nextTipIndex);
+        PlayerPrefs.Save();
 
-                lastTipIndex = i;
-                return gameOverConfig.weightedTips[i].tip;
-            }
-        }
-
-        lastTipIndex = (lastTipIndex + 1 + gameOverConfig.weightedTips.Count) % gameOverConfig.weightedTips.Count;
-        return gameOverConfig.weightedTips[lastTipIndex].tip;
+        return selectedText;
     }
 
     private void SetState(GameState newState)
