@@ -251,6 +251,7 @@ namespace GameCore
         private int meditationTurnsRemaining;
         private int toxicStacks;
         private bool toxicDrainActive;
+        private bool applyBottomLayerHazardOnNextTurn;
         private bool isHappy;
         private bool isExcited;
         private bool isStunned;
@@ -431,6 +432,7 @@ namespace GameCore
             playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
+            applyBottomLayerHazardOnNextTurn = false;
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
@@ -1052,12 +1054,15 @@ namespace GameCore
                 return;
             }
 
+            ApplyBottomLayerHazardIfNeeded();
             TickSpecialPowerCooldowns();
             TickBossPowerCooldowns();
             TryPickupAdjacentItems();
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
-            if (!hasPlayerPosition || playerPosition.y > 0)
+            var isOnBottomRow = hasPlayerPosition && playerPosition.y == 0;
+            applyBottomLayerHazardOnNextTurn = isOnBottomRow;
+            if (!isOnBottomRow)
             {
                 ClearToxicStacks();
             }
@@ -1119,6 +1124,24 @@ namespace GameCore
                 ProcessBossTumorTurn();
             }
             isPlayerActionPhase = true;
+        }
+
+
+        private void ApplyBottomLayerHazardIfNeeded()
+        {
+            if (!applyBottomLayerHazardOnNextTurn)
+            {
+                return;
+            }
+
+            applyBottomLayerHazardOnNextTurn = false;
+            if (hasEnded || CurrentHP <= 0 || IsBugadaActive)
+            {
+                return;
+            }
+
+            ApplyPlayerDamage(1);
+            ApplyEnergyDrain(1);
         }
 
         // CODEX BOSS TUMOR SYNERGY PR1
