@@ -1156,11 +1156,13 @@ namespace GameCore
             if (maxEnergy <= 0)
             {
                 energy = 0;
+                hasGainedEnergy = false;
                 return;
             }
 
+            int previousEnergy = energy;
             energy = Mathf.Min(maxEnergy, energy + 1);
-            hasGainedEnergy = hasGainedEnergy || energy > 0;
+            hasGainedEnergy = energy > previousEnergy;
             UpdateTiredState();
             UpdateUI();
         }
