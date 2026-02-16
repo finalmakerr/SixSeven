@@ -266,12 +266,10 @@ public class GameManager : MonoBehaviour
     {
         if (weeklyModeCountText == null || profile == null)
             return;
-    
-        if (profile.weeklyModeStats == null)
-            profile.weeklyModeStats = new WeeklyModeStats();
-    
+
+        ResetWeeklyIfNeeded();
+
         int count = 0;
-    
         switch (CurrentGameMode)
         {
             case GameMode.Normal:
@@ -284,7 +282,7 @@ public class GameManager : MonoBehaviour
                 count = profile.weeklyModeStats.ironmanCompleted;
                 break;
         }
-    
+
         weeklyModeCountText.text = $"Beaten This Week: {count}";
     }
 
