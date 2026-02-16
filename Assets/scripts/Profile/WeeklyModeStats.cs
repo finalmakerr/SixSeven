@@ -6,5 +6,5 @@ public class WeeklyModeStats
     public int normalCompleted;
     public int hardcoreCompleted;
     public int ironmanCompleted;
-    public DateTime weekStartUtc;
+    public string weekStartUtc;
 }

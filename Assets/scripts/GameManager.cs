@@ -38,10 +38,14 @@ public class GameManager : MonoBehaviour
     private Coroutine resurrectionRoutine;
     private const string LastModeKey = "LastPlayedGameMode";
     private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
+    private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
     private int nextTipIndex;
+    [SerializeField] private PlayerProfile profile = new PlayerProfile();
 
     private void Awake()
     {
+        LoadProfile();
+        ResetWeeklyIfNeeded();
         ApplyLastKnownModeAura();
     }
 
@@ -54,6 +58,7 @@ public class GameManager : MonoBehaviour
 
     private void Start()
     {
+        ResetWeeklyIfNeeded();
         OneUps = Mathf.Max(0, startingOneUps);
         nextTipIndex = Mathf.Max(0, PlayerPrefs.GetInt(TipsCycleIndexPrefsKey, 0));
         SetState(GameState.MainMenu);
@@ -248,7 +253,53 @@ public class GameManager : MonoBehaviour
         if (CurrentState == newState)
             return;
 
+        ResetWeeklyIfNeeded();
         CurrentState = newState;
         StateChanged?.Invoke(CurrentState);
+    }
+
+    private void ResetWeeklyIfNeeded()
+    {
+        var stats = profile.weeklyModeStats;
+        var now = DateTime.UtcNow;
+        int diff = (7 + (int)now.DayOfWeek - (int)DayOfWeek.Monday) % 7;
+        var monday = now.Date.AddDays(-diff);
+
+        DateTime parsed;
+        bool valid = DateTime.TryParse(
+            stats.weekStartUtc,
+            null,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out parsed);
+
+        if (!valid || parsed.Date != monday.Date)
+        {
+            stats.normalCompleted = 0;
+            stats.hardcoreCompleted = 0;
+            stats.ironmanCompleted = 0;
+            stats.weekStartUtc = monday.ToString("o");
+            SaveProfile();
+        }
+    }
+
+    private void LoadProfile()
+    {
+        var raw = PlayerPrefs.GetString(ProfilePrefsKey, string.Empty);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            profile = new PlayerProfile();
+            return;
+        }
+
+        profile = JsonUtility.FromJson<PlayerProfile>(raw);
+        if (profile == null)
+            profile = new PlayerProfile();
+    }
+
+    private void SaveProfile()
+    {
+        var raw = JsonUtility.ToJson(profile);
+        PlayerPrefs.SetString(ProfilePrefsKey, raw);
+        PlayerPrefs.Save();
     }
 }
