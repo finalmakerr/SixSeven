@@ -56,53 +56,81 @@ namespace GameCore
                 holdStartTime = Time.time;
                 holdTriggered = false;
             }
-            else if (Input.GetMouseButton(0) && isHoldingPlayer && !holdTriggered)
+            else if (Input.GetMouseButton(0) && isHoldingPlayer)
             {
                 var currentPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
                 var delta = currentPosition - startPosition;
-                if (delta.magnitude < swipeThreshold && Time.time - holdStartTime >= holdToHealDuration)
+                var manager = gameManager != null ? gameManager : GameManager.Instance;
+
+                if (delta.magnitude >= swipeThreshold)
                 {
-                    var manager = gameManager != null ? gameManager : GameManager.Instance;
-                    if (manager != null && manager.TryEnergyHeal())
+                    isHoldingPlayer = false;
+                    if (manager != null)
+                    {
+                        manager.EndBossPowerAccess();
+                    }
+                }
+                else if (Time.time - holdStartTime >= holdToHealDuration)
+                {
+                    if (manager != null && manager.HasBossPowersForAccess())
+                    {
+                        holdTriggered = true;
+                        manager.BeginBossPowerAccess();
+
+                        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
+                        {
+                            manager.CycleBossPowerSelection(-1);
+                        }
+
+                        if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
+                        {
+                            manager.CycleBossPowerSelection(1);
+                        }
+                    }
+                    else if (!holdTriggered && manager != null && manager.TryEnergyHeal())
                     {
                         holdTriggered = true;
                         selectedPiece = null;
                     }
                 }
-                else if (delta.magnitude >= swipeThreshold)
-                {
-                    isHoldingPlayer = false;
-                }
             }
-            else if (Input.GetMouseButtonUp(0) && selectedPiece != null && !holdTriggered)
+            else if (Input.GetMouseButtonUp(0) && selectedPiece != null)
             {
-                var endPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-                var delta = endPosition - startPosition;
-                if (delta.magnitude >= swipeThreshold)
+                var manager = gameManager != null ? gameManager : GameManager.Instance;
+                if (holdTriggered && manager != null && manager.IsBossPowerAccessActive)
                 {
-                    // Only attempt a swap once the pointer has moved far enough.
-                    var direction = GetDirection(delta);
-                    if (selectedPiece.IsPlayer)
+                    manager.TryUseSelectedBossPower();
+                    manager.EndBossPowerAccess();
+                }
+                else
+                {
+                    var endPosition = mainCamera.ScreenToWorldPoint(Input.mousePosition);
+                    var delta = endPosition - startPosition;
+                    if (delta.magnitude >= swipeThreshold)
                     {
-                        var manager = gameManager != null ? gameManager : GameManager.Instance;
-                        if (manager != null && board.CanJetpackDouble(selectedPiece, direction))
+                        // Only attempt a swap once the pointer has moved far enough.
+                        var direction = GetDirection(delta);
+                        if (selectedPiece.IsPlayer)
                         {
-                            if (manager.CanUseManualAbility() && manager.HasEnoughEnergy(JetpackEnergyCost))
+                            if (manager != null && board.CanJetpackDouble(selectedPiece, direction))
                             {
-                                if (board.TryJetpackDouble(selectedPiece, direction))
+                                if (manager.CanUseManualAbility() && manager.HasEnoughEnergy(JetpackEnergyCost))
                                 {
-                                    if (manager.TrySpendEnergy(JetpackEnergyCost))
+                                    if (board.TryJetpackDouble(selectedPiece, direction))
                                     {
-                                        manager.RegisterJetpackMove();
-                                        manager.TriggerJetpackDoubleSuccess();
+                                        if (manager.TrySpendEnergy(JetpackEnergyCost))
+                                        {
+                                            manager.RegisterJetpackMove();
+                                            manager.TriggerJetpackDoubleSuccess();
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    else
-                    {
-                        board.TrySwap(selectedPiece, direction);
+                        else
+                        {
+                            board.TrySwap(selectedPiece, direction);
+                        }
                     }
                 }
 
@@ -112,6 +140,12 @@ namespace GameCore
             }
             else if (Input.GetMouseButtonUp(0))
             {
+                var manager = gameManager != null ? gameManager : GameManager.Instance;
+                if (manager != null)
+                {
+                    manager.EndBossPowerAccess();
+                }
+
                 selectedPiece = null;
                 isHoldingPlayer = false;
                 holdTriggered = false;

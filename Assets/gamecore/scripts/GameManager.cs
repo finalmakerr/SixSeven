@@ -188,6 +188,9 @@ namespace GameCore
         private bool awaitingBossChallengeChoice;
         // CODEX BOSS PR4
         [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
+        [SerializeField] private int defaultBossPowerEnergyCost = 1;
+        [SerializeField] private int defaultBossPowerCooldownTurns = 7;
+        [SerializeField] private int maxBossPowersVisible = 3;
         // CODEX POWER PR5
         [SerializeField] private bool persistBossPowersToPlayerPrefs;
         // CODEX POWER PR5
@@ -268,6 +271,9 @@ namespace GameCore
         private readonly List<BossPower> unlockedBossPhasePowers = new List<BossPower>();
         private const int ToxicGraceStacks = 2;
         private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
+        private readonly Dictionary<BossPower, int> bossPowerCooldowns = new Dictionary<BossPower, int>();
+        private bool isBossPowerAccessActive;
+        private int bossPowerSelectedIndex;
         private bool isActivatingSpecialPower;
         private SpecialPowerDefinition activeSpecialPower;
         private bool activeSpecialPowerAllowsHpModification;
@@ -331,6 +337,7 @@ namespace GameCore
             }
 
             InitializeSpecialPowerCooldowns();
+            InitializeBossPowerCooldowns();
 
             // CODEX POWER PR5
             if (persistBossPowersToPlayerPrefs)
@@ -419,6 +426,8 @@ namespace GameCore
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
+            InitializeBossPowerCooldowns();
+            EndBossPowerAccess();
             SetShieldActive(false);
             shieldJustActivated = false;
             shieldCooldownJustStarted = false;
@@ -1036,6 +1045,7 @@ namespace GameCore
             }
 
             TickSpecialPowerCooldowns();
+            TickBossPowerCooldowns();
             TryPickupAdjacentItems();
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
@@ -2635,11 +2645,14 @@ namespace GameCore
                 return;
             }
 
+            EndBossPowerAccess();
             if (bossPowerInventory != null && bossPowerInventory.Count > 0)
             {
-                hasEnded = true;
-                BeginBossPowerLossDiscard();
-                return;
+                DiscardRandomBossPower();
+            }
+            else
+            {
+                playerItemInventory?.Clear();
             }
 
             CompleteLoseFlow();
@@ -4095,7 +4108,199 @@ namespace GameCore
                 return;
             }
 
+            if (isBossPowerAccessActive && bossPowerInventory.Count > 0)
+            {
+                var powers = bossPowerInventory.Powers;
+                var builder = new System.Text.StringBuilder();
+                builder.Append("Boss Powers (hold): ");
+                var clampedSelection = Mathf.Clamp(bossPowerSelectedIndex, 0, powers.Count - 1);
+                var visible = Mathf.Clamp(maxBossPowersVisible, 1, bossPowerInventory.MaxSlots);
+                var start = Mathf.Clamp(clampedSelection - (visible / 2), 0, Mathf.Max(0, powers.Count - visible));
+                var end = Mathf.Min(powers.Count, start + visible);
+                for (var i = start; i < end; i++)
+                {
+                    if (i > start)
+                    {
+                        builder.Append(" | ");
+                    }
+
+                    var power = powers[i];
+                    var cooldown = GetBossPowerCooldownRemaining(power);
+                    if (i == clampedSelection)
+                    {
+                        builder.Append('[');
+                    }
+
+                    builder.Append(power);
+                    if (cooldown > 0)
+                    {
+                        builder.Append($" CD:{cooldown}");
+                    }
+                    else
+                    {
+                        builder.Append(" READY");
+                    }
+
+                    if (i == clampedSelection)
+                    {
+                        builder.Append(']');
+                    }
+                }
+
+                if (powers.Count > visible)
+                {
+                    builder.Append("  < >");
+                }
+
+                bossPowersText.text = builder.ToString();
+                return;
+            }
+
             bossPowersText.text = bossPowerInventory.BuildDisplayString();
+        }
+
+
+        private void InitializeBossPowerCooldowns()
+        {
+            bossPowerCooldowns.Clear();
+            if (bossPowerInventory == null)
+            {
+                return;
+            }
+
+            var powers = bossPowerInventory.Powers;
+            for (var i = 0; i < powers.Count; i++)
+            {
+                var power = powers[i];
+                if (power == BossPower.None)
+                {
+                    continue;
+                }
+
+                bossPowerCooldowns[power] = 0;
+            }
+        }
+
+        private void TickBossPowerCooldowns()
+        {
+            if (bossPowerCooldowns.Count == 0)
+            {
+                return;
+            }
+
+            var powers = new List<BossPower>(bossPowerCooldowns.Keys);
+            for (var i = 0; i < powers.Count; i++)
+            {
+                var power = powers[i];
+                var remaining = bossPowerCooldowns[power];
+                if (remaining <= 0)
+                {
+                    continue;
+                }
+
+                bossPowerCooldowns[power] = Mathf.Max(0, remaining - 1);
+            }
+
+            if (isBossPowerAccessActive)
+            {
+                UpdateBossPowerUI();
+            }
+        }
+
+        public bool HasBossPowersForAccess()
+        {
+            return bossPowerInventory != null && bossPowerInventory.Count > 0;
+        }
+
+        public bool IsBossPowerAccessActive => isBossPowerAccessActive;
+
+        public void BeginBossPowerAccess()
+        {
+            if (!HasBossPowersForAccess())
+            {
+                return;
+            }
+
+            isBossPowerAccessActive = true;
+            bossPowerSelectedIndex = Mathf.Clamp(bossPowerSelectedIndex, 0, bossPowerInventory.Count - 1);
+            UpdateBossPowerUI();
+        }
+
+        public void EndBossPowerAccess()
+        {
+            if (!isBossPowerAccessActive)
+            {
+                return;
+            }
+
+            isBossPowerAccessActive = false;
+            UpdateBossPowerUI();
+        }
+
+        public void CycleBossPowerSelection(int direction)
+        {
+            if (!isBossPowerAccessActive || bossPowerInventory == null || bossPowerInventory.Count == 0 || direction == 0)
+            {
+                return;
+            }
+
+            var count = bossPowerInventory.Count;
+            bossPowerSelectedIndex = (bossPowerSelectedIndex + direction) % count;
+            if (bossPowerSelectedIndex < 0)
+            {
+                bossPowerSelectedIndex += count;
+            }
+
+            UpdateBossPowerUI();
+        }
+
+        public int GetBossPowerCooldownRemaining(BossPower power)
+        {
+            if (power == BossPower.None)
+            {
+                return 0;
+            }
+
+            return bossPowerCooldowns.TryGetValue(power, out var remaining) ? remaining : 0;
+        }
+
+        public bool TryUseSelectedBossPower()
+        {
+            if (!isBossPowerAccessActive || bossPowerInventory == null || bossPowerInventory.Count == 0)
+            {
+                return false;
+            }
+
+            var index = Mathf.Clamp(bossPowerSelectedIndex, 0, bossPowerInventory.Count - 1);
+            return TryUseBossPower(bossPowerInventory.Powers[index]);
+        }
+
+        private bool TryUseBossPower(BossPower power)
+        {
+            if (power == BossPower.None || bossPowerInventory == null || !bossPowerInventory.HasPower(power))
+            {
+                return false;
+            }
+
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
+            if (GetBossPowerCooldownRemaining(power) > 0)
+            {
+                return false;
+            }
+
+            var energyCost = Mathf.Max(0, defaultBossPowerEnergyCost);
+            if (energyCost > 0 && !TrySpendEnergy(energyCost))
+            {
+                return false;
+            }
+
+            bossPowerCooldowns[power] = Mathf.Max(0, defaultBossPowerCooldownTurns);
+            UpdateUI();
+            return true;
         }
 
         // CODEX BOSS PR5
@@ -4220,6 +4425,7 @@ namespace GameCore
             if (bossPowerInventory != null)
             {
                 bossPowerInventory.TryRemovePower(pendingBossPowerLossDiscard);
+                bossPowerCooldowns.Remove(pendingBossPowerLossDiscard);
             }
 
             SaveBossPowerInventory();
@@ -4259,6 +4465,7 @@ namespace GameCore
             if (bossPowerInventory != null)
             {
                 bossPowerInventory.TryRemovePower(power);
+                bossPowerCooldowns.Remove(power);
             }
 
             if (bossPowerDiscardPanel != null)
@@ -4295,6 +4502,7 @@ namespace GameCore
             var index = UnityEngine.Random.Range(0, bossPowerInventory.Count);
             var power = bossPowerInventory.Powers[index];
             bossPowerInventory.TryRemovePower(power);
+            bossPowerCooldowns.Remove(power);
             UpdateBossPowerUI();
             SaveBossPowerInventory();
             RegisterBossPowerLostThisRun(power);
@@ -4575,6 +4783,10 @@ namespace GameCore
             }
 
             var added = bossPowerInventory != null && bossPowerInventory.TryAddPower(power);
+            if (added)
+            {
+                bossPowerCooldowns[power] = 0;
+            }
             if (!added)
             {
                 Debug.LogWarning($"Failed to add boss power {power}; inventory may be full.", this);
@@ -4644,6 +4856,7 @@ namespace GameCore
             }
 
             bossPowerInventory.ReplacePowers(parsed);
+            InitializeBossPowerCooldowns();
         }
     }
 }
