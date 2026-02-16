@@ -8,6 +8,10 @@ public sealed class BrainrotShopLogic
     public const string LeaveWithoutOneUpWarning = "ARE YOU THAT CRAZY??";
     public const int MaxOneUpStack = 7;
 
+    private const float FallbackBaseOneUpSpawnChance = 100f;
+    private const float FallbackOneUpSpawnPenaltyPerLife = 20f;
+    private const float FallbackMinOneUpSpawnChance = 40f;
+
     private readonly BrainrotStarTracker starTracker;
     private readonly ShopConfig shopConfig;
     private readonly HashSet<string> purchasedItems = new();
@@ -103,12 +107,12 @@ public sealed class BrainrotShopLogic
 
     public float GetShopSpawnChancePercent()
     {
-        int lives = Mathf.Max(0, starTracker.ExtraLives);
+        int extraLives = Mathf.Max(0, starTracker.ExtraLives);
         if (shopConfig != null)
-            return shopConfig.GetOneUpSpawnChancePercent(lives);
+            return shopConfig.GetOneUpSpawnChancePercent(extraLives);
 
-        float fallback = 100f - (20f * lives);
-        return Mathf.Max(40f, fallback);
+        float fallback = FallbackBaseOneUpSpawnChance - (FallbackOneUpSpawnPenaltyPerLife * extraLives);
+        return Mathf.Max(FallbackMinOneUpSpawnChance, fallback);
     }
 
     public bool HasItem(string itemId) => purchasedItems.Contains(itemId);
