@@ -5,6 +5,7 @@ public sealed class BrainrotShopLogic
 {
     public const string OneUpItemId = "1UP";
     public const string LeaveWithoutOneUpWarning = "ARE YOU THAT CRAZY??";
+    public const int MaxOneUpStack = 7;
 
     private readonly BrainrotStarTracker starTracker;
     private readonly HashSet<string> purchasedItems = new();
@@ -47,6 +48,9 @@ public sealed class BrainrotShopLogic
 
     public bool PurchaseOneUp(int itemCost)
     {
+        if (starTracker.ExtraLives >= MaxOneUpStack)
+            return false;
+
         if (!PurchaseItem(OneUpItemId, itemCost))
             return false;
 
@@ -59,6 +63,9 @@ public sealed class BrainrotShopLogic
         if (string.IsNullOrWhiteSpace(itemId) || sellValue <= 0)
             return false;
 
+        if (string.Equals(itemId, OneUpItemId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
         if (!TryDecrementOwnedItemCount(itemId))
             return false;
 
@@ -67,9 +74,6 @@ public sealed class BrainrotShopLogic
 
         addCoins(sellValue);
         ItemSold?.Invoke(itemId, sellValue);
-
-        if (string.Equals(itemId, OneUpItemId, StringComparison.OrdinalIgnoreCase))
-            starTracker.AddExtraLife(-1);
 
         return true;
     }
@@ -82,7 +86,12 @@ public sealed class BrainrotShopLogic
             return true;
 
         ShopWarningRequested?.Invoke(LeaveWithoutOneUpWarning);
-        return false;
+        return true;
+    }
+
+    public bool ShouldSpawnOneUpInNormalShop()
+    {
+        return UnityEngine.Random.Range(0f, 100f) <= GetShopSpawnChancePercent();
     }
 
     public float GetShopSpawnChancePercent()
