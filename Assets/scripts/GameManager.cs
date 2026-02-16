@@ -36,8 +36,21 @@ public class GameManager : MonoBehaviour
 
     private Coroutine loadingRoutine;
     private Coroutine resurrectionRoutine;
+    private const string LastModeKey = "LastPlayedGameMode";
     private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
     private int nextTipIndex;
+
+    private void Awake()
+    {
+        ApplyLastKnownModeAura();
+    }
+
+    private void ApplyLastKnownModeAura()
+    {
+        GameMode savedMode = (GameMode)PlayerPrefs.GetInt(LastModeKey, (int)GameMode.Normal);
+        CurrentGameMode = savedMode;
+        modeAuraController?.ApplyModeAura(CurrentGameMode);
+    }
 
     private void Start()
     {
@@ -53,6 +66,8 @@ public class GameManager : MonoBehaviour
 
         CurrentGameMode = ResolveCurrentGameMode();
         modeAuraController?.ApplyModeAura(CurrentGameMode);
+        PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
+        PlayerPrefs.Save();
 
         SetState(GameState.Loading);
         BeginLoading();
