@@ -17,6 +17,7 @@ namespace GameCore
         public bool IsEnraged;
         public bool HasCharmResistance;
         public Vector2Int AggressorPosition;
+        public int AggressorPieceId;
         public Vector2Int AttackTarget;
         public int TurnsUntilAttack;
         public int TumorShield;
