@@ -44,6 +44,7 @@ public class GameManager : MonoBehaviour
     private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
     private int nextTipIndex;
     [SerializeField] private PlayerProfile profile = new PlayerProfile();
+    private bool runCompletionRegistered;
 
     private void Awake()
     {
@@ -71,6 +72,8 @@ public class GameManager : MonoBehaviour
         if (CurrentState == GameState.Loading || CurrentState == GameState.Playing)
             return;
 
+        runCompletionRegistered = false;
+
         CurrentGameMode = ResolveCurrentGameMode();
         modeAuraController?.ApplyModeAura(CurrentGameMode);
         PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
@@ -96,10 +99,11 @@ public class GameManager : MonoBehaviour
 
         SetState(GameState.LevelComplete);
 
-        bool runCompleted = currentLevel >= 67;
+        bool runCompleted = currentLevel == 67;
 
-        if (runCompleted)
+        if (runCompleted && !runCompletionRegistered)
         {
+            runCompletionRegistered = true;
             ResetWeeklyIfNeeded();
 
             switch (CurrentGameMode)
