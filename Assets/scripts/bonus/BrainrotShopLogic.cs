@@ -37,6 +37,10 @@ public sealed class BrainrotShopLogic
         if (string.IsNullOrWhiteSpace(itemId) || itemCost <= 0)
             return false;
 
+        if (string.Equals(itemId, OneUpItemId, StringComparison.OrdinalIgnoreCase) &&
+            starTracker.ExtraLives >= MaxOneUpStack)
+            return false;
+
         if (!spendCoins(itemCost))
             return false;
 
