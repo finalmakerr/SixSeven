@@ -1501,6 +1501,7 @@ namespace GameCore
 
             bugadaTurnsRemaining = 3;
             bugadaJustActivated = true;
+            ClearPlayerDebuffsForBugada();
             UpdateBugadaMusic(true);
             UpdateUI();
         }
@@ -2422,6 +2423,22 @@ namespace GameCore
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
         }
+
+        private void ClearPlayerDebuffsForBugada()
+        {
+            ClearToxicStacks();
+            applyBottomLayerHazardOnNextTurn = false;
+
+            isStunned = false;
+            stunnedTurnsRemaining = 0;
+            UpdatePlayerAnimationFlags();
+
+            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged)
+            {
+                ResetMonsterAttackState();
+            }
+        }
+
 
         private void ApplyEnergyDrain(int amount)
         {
