@@ -7,6 +7,7 @@ namespace GameCore
         FlameBurst,
         FrostShield,
         StormSurge,
-        VoidPulse
+        VoidPulse,
+        PickupMagnet
     }
 }
