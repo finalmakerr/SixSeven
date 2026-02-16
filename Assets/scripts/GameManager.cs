@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GameManager : MonoBehaviour
@@ -10,6 +11,7 @@ public class GameManager : MonoBehaviour
     [Header("Death Flow")]
     [SerializeField] private bool allowDeathAutoRetry = true;
     [SerializeField] private GameOverConfig gameOverConfig;
+    [SerializeField] private HardcoreConfig hardcoreConfig;
     [SerializeField] private int startingOneUps;
     [SerializeField] private bool hardcoreModeEnabled;
 
@@ -19,6 +21,7 @@ public class GameManager : MonoBehaviour
     public event Action<string> ResurrectionVideoRequested;
     public event Action<string> ResurrectionTipRequested;
     public event Action<bool> ShopOfferOneUpChanged;
+    public event Action<IReadOnlyList<HardcoreRemovalType>> HardcoreRemovalChoicesRequested;
 
     /// <summary>
     /// Hook this from your level/gameplay systems.
@@ -73,6 +76,7 @@ public class GameManager : MonoBehaviour
         if (ShouldUseOneUp())
         {
             OneUps = Mathf.Max(0, OneUps - 1);
+            RequestHardcoreRemovalChoices();
             BeginResurrectionFlow();
             return;
         }
@@ -143,10 +147,46 @@ public class GameManager : MonoBehaviour
         if (gameOverConfig != null && !gameOverConfig.consumeOneUpOnDeath)
             return false;
 
-        if (hardcoreModeEnabled && gameOverConfig != null && gameOverConfig.allowHardcoreMode)
-            return false;
-
         return true;
+    }
+
+    private void RequestHardcoreRemovalChoices()
+    {
+        if (!IsHardcoreEnabled())
+            return;
+
+        if (hardcoreConfig == null || !hardcoreConfig.removePermanentChoiceOnDeath)
+            return;
+
+        var options = BuildHardcoreChoices();
+        if (options.Count == 0)
+            return;
+
+        HardcoreRemovalChoicesRequested?.Invoke(options);
+    }
+
+    private List<HardcoreRemovalType> BuildHardcoreChoices()
+    {
+        var options = new List<HardcoreRemovalType>();
+        if (hardcoreConfig == null || hardcoreConfig.choicePool == null || hardcoreConfig.choicePool.Count == 0)
+            return options;
+
+        var pool = new List<HardcoreRemovalType>(hardcoreConfig.choicePool);
+        var targetCount = Mathf.Clamp(hardcoreConfig.optionsPresentedOnDeath, 1, pool.Count);
+
+        while (options.Count < targetCount && pool.Count > 0)
+        {
+            var index = UnityEngine.Random.Range(0, pool.Count);
+            options.Add(pool[index]);
+            pool.RemoveAt(index);
+        }
+
+        return options;
+    }
+
+    private bool IsHardcoreEnabled()
+    {
+        return hardcoreModeEnabled && gameOverConfig != null && gameOverConfig.allowHardcoreMode;
     }
 
     private bool ForceOfferOneUpInShop()
