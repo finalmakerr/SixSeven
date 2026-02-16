@@ -189,7 +189,7 @@ public class GameManager : MonoBehaviour
         }
 
         SetState(GameState.Shop);
-        ShopOfferOneUpChanged?.Invoke(ForceOfferOneUpInShop());
+        ShopOfferOneUpChanged?.Invoke(true);
         resurrectionRoutine = null;
     }
 

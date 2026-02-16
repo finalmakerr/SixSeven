@@ -3,8 +3,12 @@ using System.Collections.Generic;
 
 public sealed class BrainrotShopLogic
 {
+    public const string OneUpItemId = "1UP";
+    public const string LeaveWithoutOneUpWarning = "ARE YOU THAT CRAZY??";
+
     private readonly BrainrotStarTracker starTracker;
     private readonly HashSet<string> purchasedItems = new();
+    private readonly Dictionary<string, int> ownedItemCounts = new();
 
     public BrainrotShopLogic(BrainrotStarTracker tracker)
     {
@@ -18,6 +22,8 @@ public sealed class BrainrotShopLogic
     public event Action<int> StarCountChanged;
     public event Action<BrainrotStarTracker.ChestConsumeResult> ChestConsumed;
     public event Action<string, int> ItemPurchased;
+    public event Action<string, int> ItemSold;
+    public event Action<string> ShopWarningRequested;
 
     public int getPlayerCoins() => starTracker.getPlayerCoins();
 
@@ -34,11 +40,88 @@ public sealed class BrainrotShopLogic
             return false;
 
         purchasedItems.Add(itemId);
+        IncrementOwnedItemCount(itemId);
         ItemPurchased?.Invoke(itemId, itemCost);
         return true;
     }
 
+    public bool PurchaseOneUp(int itemCost)
+    {
+        if (!PurchaseItem(OneUpItemId, itemCost))
+            return false;
+
+        starTracker.AddExtraLife(1);
+        return true;
+    }
+
+    public bool TrySellItem(string itemId, int sellValue)
+    {
+        if (string.IsNullOrWhiteSpace(itemId) || sellValue <= 0)
+            return false;
+
+        if (!TryDecrementOwnedItemCount(itemId))
+            return false;
+
+        if (GetOwnedItemCount(itemId) <= 0)
+            purchasedItems.Remove(itemId);
+
+        addCoins(sellValue);
+        ItemSold?.Invoke(itemId, sellValue);
+
+        if (string.Equals(itemId, OneUpItemId, StringComparison.OrdinalIgnoreCase))
+            starTracker.AddExtraLife(-1);
+
+        return true;
+    }
+
+    public bool ShouldOfferOneUpOnResurrection() => true;
+
+    public bool TryLeaveShop()
+    {
+        if (starTracker.ExtraLives > 0)
+            return true;
+
+        ShopWarningRequested?.Invoke(LeaveWithoutOneUpWarning);
+        return false;
+    }
+
+    public float GetShopSpawnChancePercent()
+    {
+        var lives = Math.Max(0, starTracker.ExtraLives);
+        var chance = 100f - (20f * lives);
+        return Math.Max(40f, chance);
+    }
+
     public bool HasItem(string itemId) => purchasedItems.Contains(itemId);
+
+    public int GetOwnedItemCount(string itemId)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+            return 0;
+
+        return ownedItemCounts.TryGetValue(itemId, out var count) ? count : 0;
+    }
+
+    private void IncrementOwnedItemCount(string itemId)
+    {
+        if (ownedItemCounts.TryGetValue(itemId, out var count))
+            ownedItemCounts[itemId] = count + 1;
+        else
+            ownedItemCounts[itemId] = 1;
+    }
+
+    private bool TryDecrementOwnedItemCount(string itemId)
+    {
+        if (!ownedItemCounts.TryGetValue(itemId, out var count) || count <= 0)
+            return false;
+
+        if (count == 1)
+            ownedItemCounts.Remove(itemId);
+        else
+            ownedItemCounts[itemId] = count - 1;
+
+        return true;
+    }
 
     public bool triggerChestConsume() => starTracker.triggerChestConsume();
 
