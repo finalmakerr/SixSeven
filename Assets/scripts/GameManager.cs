@@ -104,6 +104,13 @@ public class GameManager : MonoBehaviour
         if (runCompleted && !runCompletionRegistered)
         {
             runCompletionRegistered = true;
+
+            if (CurrentGameMode == GameMode.Normal)
+                profile.hasUnlockedHardcore = true;
+
+            if (CurrentGameMode == GameMode.Hardcore)
+                profile.hasUnlockedIronman = true;
+
             ResetWeeklyIfNeeded();
 
             switch (CurrentGameMode)
