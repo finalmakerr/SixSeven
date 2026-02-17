@@ -8,6 +8,8 @@ public class ModeUnlockOverlay : MonoBehaviour
     [SerializeField] private TMP_Text titleText;
     [SerializeField] private TMP_Text modeNameText;
     [SerializeField] private float displayDuration = 2.5f;
+    [SerializeField] private AudioSource audioSource;
+    [SerializeField] private AudioClip unlockClip;
 
     private Coroutine displayRoutine;
 
@@ -54,6 +56,9 @@ public class ModeUnlockOverlay : MonoBehaviour
 
         if (modeNameText != null)
             modeNameText.text = mode.ToString().ToUpperInvariant();
+
+        if (audioSource != null && unlockClip != null)
+            audioSource.PlayOneShot(unlockClip);
 
         yield return FadeAlpha(0f, 1f, 0.3f);
 
