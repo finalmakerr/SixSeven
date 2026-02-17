@@ -341,6 +341,7 @@ namespace GameCore
         private bool forceMoveNextTurn;
         private bool iceEnergyPenaltyActive;
         private bool pendingIceEnergyCompensation;
+        private bool pendingEntangleCompensation;
         private bool isHappy;
         private bool isExcited;
         private bool isStunned;
@@ -560,6 +561,7 @@ namespace GameCore
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
             pendingIceEnergyCompensation = false;
+            pendingEntangleCompensation = false;
             if (iceStatusIcon != null)
             {
                 iceStatusIcon.SetActive(false);
@@ -1336,8 +1338,27 @@ namespace GameCore
             TickBossPowerCooldowns();
             TryPickupAdjacentItems();
 
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    if (board.TryGetPieceAt(new Vector2Int(x, y), out var tile) && tile != null)
+                    {
+                        tile.TickTileDebuff();
+                    }
+                }
+            }
+
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             var isOnBottomRow = hasPlayerPosition && playerPosition.y == 0;
+            if (hasPlayerPosition
+                && board.TryGetPieceAt(playerPosition, out var playerTile)
+                && playerTile != null
+                && playerTile.GetTileDebuff() == TileDebuffType.Entangled
+                && energy == 0)
+            {
+                pendingEntangleCompensation = true;
+            }
             if (!IsBugadaActive)
             {
                 applyBottomLayerHazardOnNextTurn = isOnBottomRow;
@@ -1493,6 +1514,11 @@ namespace GameCore
                     iceStatusIcon.SetActive(false);
                 }
                 ShowFloatingText("+2 Energy", Color.cyan);
+            }
+            else if (pendingEntangleCompensation)
+            {
+                energy = Mathf.Min(maxEnergy, energy + 2);
+                pendingEntangleCompensation = false;
             }
             else
             {
@@ -2879,6 +2905,7 @@ namespace GameCore
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
             pendingIceEnergyCompensation = false;
+            pendingEntangleCompensation = false;
             if (iceStatusIcon != null)
             {
                 iceStatusIcon.SetActive(false);
