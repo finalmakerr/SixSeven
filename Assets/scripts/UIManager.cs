@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
+using System.Collections;
 
 public class UIManager : MonoBehaviour
 {
@@ -13,6 +14,9 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject gameOverPanel;
     [SerializeField] private Text gameOverTitleText;
     [SerializeField] private Text gameOverSubtitleText;
+    [SerializeField] private Image ironmanOverlayTint;
+    [SerializeField] private float ironmanShakeDuration = 0.3f;
+    [SerializeField] private float ironmanShakeIntensity = 6f;
 
     [Header("Death Flow")]
     [SerializeField] private GameObject retryPopupPanel;
@@ -25,8 +29,11 @@ public class UIManager : MonoBehaviour
     private GameManager gameManager;
     private Coroutine retryPopupRoutine;
     private Coroutine fadeRoutine;
+    private Coroutine ironmanShakeRoutine;
     private string defaultGameOverTitle;
     private string defaultGameOverSubtitle;
+    private Vector3 ironmanShakeOriginalPosition;
+    private bool hasIronmanShakeOriginalPosition;
 
     private void Awake()
     {
@@ -89,6 +96,58 @@ public class UIManager : MonoBehaviour
 
         if (gameOverSubtitleText != null)
             gameOverSubtitleText.text = isIronman ? "No second chances." : defaultGameOverSubtitle;
+
+        if (ironmanOverlayTint != null)
+            ironmanOverlayTint.enabled = isIronman;
+
+        if (!isIronman)
+        {
+            if (ironmanShakeRoutine != null)
+            {
+                StopCoroutine(ironmanShakeRoutine);
+                ironmanShakeRoutine = null;
+            }
+
+            if (hasIronmanShakeOriginalPosition && gameOverPanel != null)
+                gameOverPanel.transform.localPosition = ironmanShakeOriginalPosition;
+
+            hasIronmanShakeOriginalPosition = false;
+            return;
+        }
+
+        if (ironmanShakeRoutine != null)
+            StopCoroutine(ironmanShakeRoutine);
+
+        ironmanShakeRoutine = StartCoroutine(ShakeRoutine());
+    }
+
+    private IEnumerator ShakeRoutine()
+    {
+        if (gameOverPanel == null)
+        {
+            ironmanShakeRoutine = null;
+            yield break;
+        }
+
+        var panelTransform = gameOverPanel.transform;
+        var originalPosition = panelTransform.localPosition;
+        ironmanShakeOriginalPosition = originalPosition;
+        hasIronmanShakeOriginalPosition = true;
+
+        var duration = Mathf.Max(0f, ironmanShakeDuration);
+        var intensity = Mathf.Max(0f, ironmanShakeIntensity);
+        var elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            var randomOffset = Random.insideUnitCircle * intensity;
+            panelTransform.localPosition = originalPosition + new Vector3(randomOffset.x, randomOffset.y, 0f);
+            yield return null;
+        }
+
+        panelTransform.localPosition = originalPosition;
+        ironmanShakeRoutine = null;
     }
 
     private void SetPanelActive(GameObject panel, bool isActive)
