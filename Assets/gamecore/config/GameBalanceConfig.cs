@@ -13,6 +13,11 @@ public class GameBalanceConfig : ScriptableObject
     [Header("Boss Settings")]
     public int BossAttackDelayTurns = 1;
 
+    [Header("Boss Pickup Scaling")]
+    public int BossPickupBaseRadius = 2;
+    public int BossPickupLevelThreshold = 60;
+    public int BossPickupIncreasedRadius = 3;
+
     [Header("Difficulty")]
     public int HardcoreLevelOffset = -10;
     public int LevelScalingStep = 10;
