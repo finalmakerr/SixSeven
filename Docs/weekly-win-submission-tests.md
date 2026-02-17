@@ -7,7 +7,7 @@ await service.Initialize();
 service.StartRun();
 await Task.Delay(TimeSpan.FromSeconds(301));
 service.EndRun();
-bool validResult = await service.SubmitWinAsync(GameMode.Normal);
+bool validResult = await service.SubmitWeeklyWinAsync(GameMode.Normal);
 Debug.Log($"Valid submission expected true, actual: {validResult}");
 ```
 
@@ -18,8 +18,8 @@ await service.Initialize();
 service.StartRun();
 await Task.Delay(TimeSpan.FromSeconds(301));
 service.EndRun();
-bool firstSubmit = await service.SubmitWinAsync(GameMode.Hardcore);
-bool duplicateSubmit = await service.SubmitWinAsync(GameMode.Hardcore);
+bool firstSubmit = await service.SubmitWeeklyWinAsync(GameMode.Hardcore);
+bool duplicateSubmit = await service.SubmitWeeklyWinAsync(GameMode.Hardcore);
 Debug.Log($"Duplicate submission expected false on second call, first={firstSubmit}, second={duplicateSubmit}");
 ```
 
@@ -30,6 +30,6 @@ await service.Initialize();
 service.StartRun();
 await Task.Delay(TimeSpan.FromSeconds(10));
 service.EndRun();
-bool shortRunResult = await service.SubmitWinAsync(GameMode.Ironman);
+bool shortRunResult = await service.SubmitWeeklyWinAsync(GameMode.Ironman);
 Debug.Log($"Short run expected false, actual: {shortRunResult}");
 ```
