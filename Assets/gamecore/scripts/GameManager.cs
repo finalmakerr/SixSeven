@@ -23,6 +23,7 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Board board;
+        [SerializeField] private BottomRowHazardEffect bottomRowHazardEffect;
         [SerializeField] private GameBalanceConfig balanceConfig;
         // CODEX BOSS PR1
         [SerializeField] private BossManager bossManager;
@@ -697,26 +698,12 @@ namespace GameCore
 
         private void UpdateHazardVisuals()
         {
-            if (board == null)
+            if (bottomRowHazardEffect == null)
             {
                 return;
             }
 
-            switch (currentHazardType)
-            {
-                case HazardType.Poison:
-                    board.SetBottomRowHazardVisual(Color.green);
-                    break;
-                case HazardType.Fire:
-                    board.SetBottomRowHazardVisual(new Color(1f, 0.3f, 0f));
-                    break;
-                case HazardType.Ice:
-                    board.SetBottomRowHazardVisual(Color.cyan);
-                    break;
-                default:
-                    board.ClearBottomRowHazardVisual();
-                    break;
-            }
+            bottomRowHazardEffect.SetHazard(currentHazardType);
         }
 
         public bool LoadNextLevel()
