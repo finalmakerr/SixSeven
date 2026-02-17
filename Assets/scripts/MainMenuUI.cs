@@ -2,11 +2,9 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
-using Newtonsoft.Json;
 
 public class MainMenuUI : MonoBehaviour
 {
-    private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
     private const string HardcoreLockedTooltip = "Beat Normal (Level 67) to Unlock";
     private const string IronmanLockedTooltip = "Beat Hardcore (Level 67) to Unlock";
 
@@ -21,7 +19,7 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private TMP_Text hardcoreTooltipText;
     [SerializeField] private TMP_Text ironmanTooltipText;
 
-    private void Awake()
+    private void Start()
     {
         ApplyModeButtonStates();
     }
@@ -38,7 +36,9 @@ public class MainMenuUI : MonoBehaviour
 
     private void ApplyModeButtonStates()
     {
-        var profile = LoadProfile();
+        var profile = GameManager.Instance != null
+            ? GameManager.Instance.Profile
+            : null;
         bool hasUnlockedHardcore = profile != null && profile.hasUnlockedHardcore;
         bool hasUnlockedIronman = profile != null && profile.hasUnlockedIronman;
 
@@ -62,20 +62,4 @@ public class MainMenuUI : MonoBehaviour
             tooltipText.text = unlocked ? string.Empty : lockedTooltip;
     }
 
-    private static PlayerProfile LoadProfile()
-    {
-        var raw = PlayerPrefs.GetString(ProfilePrefsKey, string.Empty);
-        if (string.IsNullOrWhiteSpace(raw))
-            return new PlayerProfile();
-
-        try
-        {
-            var loaded = JsonConvert.DeserializeObject<PlayerProfile>(raw);
-            return loaded ?? new PlayerProfile();
-        }
-        catch
-        {
-            return new PlayerProfile();
-        }
-    }
 }
