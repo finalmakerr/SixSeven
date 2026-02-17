@@ -1727,6 +1727,16 @@ namespace GameCore
 
         private void SpawnBossTelegraph(Vector2Int targetPosition)
         {
+            if (monsterAttackMarkerInstance != null)
+            {
+                return;
+            }
+
+            if (board == null || !board.IsWithinBounds(targetPosition))
+            {
+                return;
+            }
+
             SpawnMonsterAttackMarker(targetPosition);
         }
 
@@ -1765,6 +1775,13 @@ namespace GameCore
                 TriggerMonsterAttackWindup();
                 hasTriggeredMonsterWindup = true;
                 SpawnBossTelegraph(bossState.AttackTarget);
+
+                if (!board.IsWithinBounds(CurrentBossState.AttackTarget))
+                {
+                    ClearBossAttackState();
+                    return;
+                }
+
                 UpdateMonsterAttackTelegraph();
                 UpdateMonsterEnrageVisuals();
                 return;
@@ -1774,6 +1791,13 @@ namespace GameCore
             {
                 bossState.TurnsUntilAttack--;
                 CurrentBossState = bossState;
+
+                if (!board.IsWithinBounds(CurrentBossState.AttackTarget))
+                {
+                    ClearBossAttackState();
+                    return;
+                }
+
                 UpdateMonsterAttackTelegraph();
                 return;
             }
@@ -3193,10 +3217,18 @@ namespace GameCore
 
             CurrentBossState = bossState;
 
-            if (monsterAttackMarkerInstance == null)
+            if (monsterAttackMarkerInstance == null &&
+                (bossState.IsAngry || bossState.IsEnraged))
             {
                 SpawnBossTelegraph(bossState.AttackTarget);
             }
+
+#if UNITY_EDITOR
+            if (bossState.IsEnraged && monsterAttackMarkerInstance == null)
+            {
+                Debug.LogWarning("Telegraph missing during enraged state.");
+            }
+#endif
 
             if (monsterAttackTelegraph != null)
             {
