@@ -171,6 +171,8 @@ namespace GameCore
         public bool HasMonsterAttackTarget => CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
 
+        public HazardType CurrentHazardType => currentHazardType;
+
         public bool IsHardcoreEnabled()
         {
             return hardcoreModeEnabled && hardcoreConfig != null;
@@ -323,6 +325,7 @@ namespace GameCore
         private int meditationTurnsRemaining;
         private int toxicStacks;
         private bool toxicDrainActive;
+        private HazardType currentHazardType;
         private bool applyBottomLayerHazardOnNextTurn;
         private bool isHappy;
         private bool isExcited;
@@ -481,6 +484,7 @@ namespace GameCore
         private void Start()
         {
             applyRunStartResourceAdjustments = true;
+            currentHazardType = balanceConfig != null ? balanceConfig.DefaultHazardType : HazardType.Poison;
 
             if (levelManager != null)
             {
@@ -1199,21 +1203,24 @@ namespace GameCore
             {
                 applyBottomLayerHazardOnNextTurn = isOnBottomRow;
             }
-            if (!isOnBottomRow)
+            if (currentHazardType == HazardType.Poison)
             {
-                ClearToxicStacks();
-            }
-            else if (!IsBugadaActive)
-            {
-                toxicStacks += 1;
-                if (toxicStacks >= balanceConfig.ToxicGraceStacks)
+                if (!isOnBottomRow)
                 {
-                    toxicDrainActive = true;
-                    ApplyEnergyDrain(1);
+                    ClearToxicStacks();
                 }
-                else
+                else if (!IsBugadaActive)
                 {
-                    toxicDrainActive = false;
+                    toxicStacks += 1;
+                    if (toxicStacks >= balanceConfig.ToxicGraceStacks)
+                    {
+                        toxicDrainActive = true;
+                        ApplyEnergyDrain(1);
+                    }
+                    else
+                    {
+                        toxicDrainActive = false;
+                    }
                 }
             }
 
@@ -1292,6 +1299,11 @@ namespace GameCore
 
         private void ApplyBottomLayerHazardIfNeeded()
         {
+            if (currentHazardType != HazardType.Poison)
+            {
+                return;
+            }
+
             if (!applyBottomLayerHazardOnNextTurn)
             {
                 return;
