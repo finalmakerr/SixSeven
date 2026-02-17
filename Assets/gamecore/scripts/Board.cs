@@ -121,6 +121,42 @@ namespace GameCore
             externalInputLock = locked;
         }
 
+
+        public void SetBottomRowHazardVisual(Color color)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!IsInBounds(x, 0))
+                {
+                    continue;
+                }
+
+                var tile = pieces[x, 0];
+                if (tile != null)
+                {
+                    tile.SetHazardOverlay(color);
+                }
+            }
+        }
+
+        public void ClearBottomRowHazardVisual()
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!IsInBounds(x, 0))
+                {
+                    continue;
+                }
+
+                var tile = pieces[x, 0];
+                if (tile != null)
+                {
+                    tile.ClearHazardOverlay();
+                }
+            }
+        }
+
+
         public void InitializeBoard(int newWidth, int newHeight)
         {
             if (!enabled)
