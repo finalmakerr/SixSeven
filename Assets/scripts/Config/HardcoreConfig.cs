@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// Central config controlling all hardcore gameplay modifiers.
+/// </summary>
 [CreateAssetMenu(fileName = "HardcoreConfig", menuName = "SixSeven/Config/HardcoreConfig")]
 public sealed class HardcoreConfig : ScriptableObject
 {
