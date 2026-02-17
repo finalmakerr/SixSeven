@@ -136,7 +136,6 @@ namespace GameCore
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
         [Header("Pickup Radius")]
         [SerializeField] private int maxPickupRadius = 3;
-        private const int BasePickupRadius = 1;
         [Header("Player Special Powers")]
         [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
@@ -213,6 +212,18 @@ namespace GameCore
         public bool IsLevelScalingThreshold(int level)
         {
             return level > 0 && level % balanceConfig.LevelScalingStep == 0;
+        }
+
+        public int GetBossPickupRadius()
+        {
+            var effectiveLevel = GetEffectiveLevel(CurrentLevel);
+
+            if (effectiveLevel >= balanceConfig.BossPickupLevelThreshold)
+            {
+                return balanceConfig.BossPickupIncreasedRadius;
+            }
+
+            return balanceConfig.BossPickupBaseRadius;
         }
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
@@ -3057,7 +3068,7 @@ namespace GameCore
 
         private void ResetPickupRadius()
         {
-            pickupRadius = BasePickupRadius;
+            pickupRadius = GetBossPickupRadius();
             hasBossPickupRadiusUpgrade = false;
             hasShopPickupRadiusUpgrade = false;
         }
