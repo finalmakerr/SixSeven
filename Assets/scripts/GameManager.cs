@@ -166,6 +166,12 @@ public class GameManager : MonoBehaviour
         if (CurrentState != GameState.Playing)
             return;
 
+        if (CurrentGameMode == GameMode.Ironman)
+        {
+            SetState(GameState.GameOver);
+            return;
+        }
+
         if (ShouldUseOneUp())
         {
             OneUps = Mathf.Max(0, OneUps - 1);
@@ -267,6 +273,9 @@ public class GameManager : MonoBehaviour
 
     private bool ForceOfferOneUpInShop()
     {
+        if (CurrentGameMode == GameMode.Ironman)
+            return false;
+
         if (gameOverConfig == null)
             return true;
 
@@ -283,6 +292,12 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ResurrectionRoutine()
     {
+        if (CurrentGameMode == GameMode.Ironman)
+        {
+            resurrectionRoutine = null;
+            yield break;
+        }
+
         ResurrectionStarted?.Invoke();
 
         var fadeDuration = gameOverConfig != null ? Mathf.Max(0f, gameOverConfig.fadeToBlackDuration) : 0.4f;
@@ -302,7 +317,7 @@ public class GameManager : MonoBehaviour
         }
 
         SetState(GameState.Shop);
-        ShopOfferOneUpChanged?.Invoke(true);
+        ShopOfferOneUpChanged?.Invoke(ForceOfferOneUpInShop());
         resurrectionRoutine = null;
     }
 
