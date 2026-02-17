@@ -18,6 +18,9 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private GameObject ironmanLockIcon;
     [SerializeField] private TMP_Text hardcoreTooltipText;
     [SerializeField] private TMP_Text ironmanTooltipText;
+    [SerializeField] private TMP_Text normalWeeklyText;
+    [SerializeField] private TMP_Text hardcoreWeeklyText;
+    [SerializeField] private TMP_Text ironmanWeeklyText;
 
     private void Start()
     {
@@ -45,6 +48,19 @@ public class MainMenuUI : MonoBehaviour
         ApplyButtonState(normalButton, true, null, null, null);
         ApplyButtonState(hardcoreButton, hasUnlockedHardcore, hardcoreCanvasGroup, hardcoreLockIcon, hardcoreTooltipText, HardcoreLockedTooltip);
         ApplyButtonState(ironmanButton, hasUnlockedIronman, ironmanCanvasGroup, ironmanLockIcon, ironmanTooltipText, IronmanLockedTooltip);
+
+        int normalCompleted = profile != null ? profile.weeklyModeStats.normalCompleted : 0;
+        int hardcoreCompleted = profile != null ? profile.weeklyModeStats.hardcoreCompleted : 0;
+        int ironmanCompleted = profile != null ? profile.weeklyModeStats.ironmanCompleted : 0;
+
+        if (normalWeeklyText != null)
+            normalWeeklyText.text = $"Completed this week: {normalCompleted}";
+
+        if (hardcoreWeeklyText != null)
+            hardcoreWeeklyText.text = $"Completed this week: {hardcoreCompleted}";
+
+        if (ironmanWeeklyText != null)
+            ironmanWeeklyText.text = $"Completed this week: {ironmanCompleted}";
     }
 
     private static void ApplyButtonState(Button button, bool unlocked, CanvasGroup canvasGroup, GameObject lockIcon, TMP_Text tooltipText, string lockedTooltip = "")
