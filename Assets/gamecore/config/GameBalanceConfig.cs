@@ -17,6 +17,11 @@ public class GameBalanceConfig : ScriptableObject
     [Header("Hazard Settings")]
     public int ToxicGraceStacks = 2;
 
+    [Header("Hazard Pressure")]
+    public int HazardGraceTurns = 3;
+    public int HazardSpreadInterval = 3;
+    public int HazardTileDuration = 3;
+
     [Header("Boss Settings")]
     public int BossAttackDelayTurns = 1;
 
