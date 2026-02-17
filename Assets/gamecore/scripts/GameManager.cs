@@ -1695,39 +1695,51 @@ namespace GameCore
             }
         }
 
-        private void ResetMonsterAttackState(bool delayVisualReset = false)
+        private void ClearBossAttackState()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsPermanentlyEnraged)
-            {
-                bossState.IsAngry = false;
-                bossState.IsEnraged = false;
-                bossState.HasCharmResistance = false;
-                bossState.AggressorPosition = default;
-                bossState.AggressorPieceId = 0;
-            }
-            bossState.AttackTarget = default;
+            bossState.IsAngry = false;
+            bossState.IsEnraged = false;
+            bossState.IsPermanentlyEnraged = false;
+            bossState.HasCharmResistance = false;
+            bossState.AggressorPosition = Vector2Int.zero;
+            bossState.AggressorPieceId = 0;
+            bossState.AttackTarget = Vector2Int.zero;
             bossState.TurnsUntilAttack = 0;
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
+            RemoveBossTelegraph();
+            UpdateWorriedState();
+            UpdatePlayerAnimationFlags();
+            UpdateMonsterEnrageVisuals();
+        }
 
+        private void ResetMonsterAttackState(bool delayVisualReset = false)
+        {
+            ClearBossAttackState();
+            if (!delayVisualReset)
+            {
+                return;
+            }
+
+            monsterAttackVisualResetRoutine = StartCoroutine(DelayedMonsterAttackVisualReset());
+        }
+
+        private void SpawnBossTelegraph(Vector2Int targetPosition)
+        {
+            SpawnMonsterAttackMarker(targetPosition);
+        }
+
+        private void RemoveBossTelegraph()
+        {
             if (monsterAttackVisualResetRoutine != null)
             {
                 StopCoroutine(monsterAttackVisualResetRoutine);
                 monsterAttackVisualResetRoutine = null;
             }
 
-            if (delayVisualReset)
-            {
-                monsterAttackVisualResetRoutine = StartCoroutine(DelayedMonsterAttackVisualReset());
-            }
-            else
-            {
-                DestroyMonsterAttackMarker();
-                ClearMonsterEnrageIndicator();
-            }
-            UpdateWorriedState();
-            UpdatePlayerAnimationFlags();
+            DestroyMonsterAttackMarker();
+            ClearMonsterEnrageIndicator();
         }
 
         // CODEX RAGE SCALE FINAL
@@ -1741,7 +1753,7 @@ namespace GameCore
 
             if (!IsAggressorAlive(bossState))
             {
-                ResetMonsterAttackState();
+                ClearBossAttackState();
                 return;
             }
 
@@ -1749,18 +1761,25 @@ namespace GameCore
             {
                 bossState.IsAngry = false;
                 bossState.IsEnraged = true;
-                bossState.TurnsUntilAttack = 1;
                 CurrentBossState = bossState;
                 TriggerMonsterAttackWindup();
                 hasTriggeredMonsterWindup = true;
+                SpawnBossTelegraph(bossState.AttackTarget);
                 UpdateMonsterAttackTelegraph();
                 UpdateMonsterEnrageVisuals();
                 return;
             }
 
-            var targetPosition = bossState.AttackTarget;
-            ResolveMonsterAttack(targetPosition);
-            ResetMonsterAttackState(true);
+            if (bossState.TurnsUntilAttack > 0)
+            {
+                bossState.TurnsUntilAttack--;
+                CurrentBossState = bossState;
+                UpdateMonsterAttackTelegraph();
+                return;
+            }
+
+            ResolveMonsterAttack(bossState.AttackTarget);
+            ClearBossAttackState();
         }
 
 
@@ -1989,10 +2008,10 @@ namespace GameCore
             bossState.AggressorPosition = aggressorPosition;
             bossState.AggressorPieceId = aggressorPiece.GetInstanceID();
             bossState.AttackTarget = targetPosition;
-            bossState.TurnsUntilAttack = 2;
+            bossState.TurnsUntilAttack = 1;
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
-            SpawnMonsterAttackMarker(targetPosition);
+            SpawnBossTelegraph(CurrentBossState.AttackTarget);
             UpdateMonsterAttackTelegraph();
             UpdateMonsterEnrageVisuals();
             UpdateWorriedState();
@@ -2544,6 +2563,11 @@ namespace GameCore
                 return;
             }
 
+            if (piece.IsPlayer)
+            {
+                ClearBossAttackState();
+            }
+
             TryDefeatBossFromDestruction(piece, reason);
 
             if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged)
@@ -2551,7 +2575,7 @@ namespace GameCore
                 var bossState = CurrentBossState;
                 if (monsterEnragePiece == piece || (bossState.AggressorPieceId != 0 && piece.GetInstanceID() == bossState.AggressorPieceId))
                 {
-                    ResetMonsterAttackState();
+                    ClearBossAttackState();
                 }
             }
 
@@ -2784,7 +2808,7 @@ namespace GameCore
             {
                 bossState.bossAlive = false;
                 CurrentBossState = bossState;
-                ResetMonsterAttackState();
+                ClearBossAttackState();
                 UpdateUI();
                 return false;
             }
@@ -3127,6 +3151,7 @@ namespace GameCore
             }
 
             stunnedTurnsRemaining = Mathf.Max(stunnedTurnsRemaining, 1);
+            ClearBossAttackState();
             UpdatePlayerAnimationFlags();
         }
 
@@ -3162,7 +3187,7 @@ namespace GameCore
             if (!TryResolveAggressorPiece(ref bossState, out _))
             {
                 CurrentBossState = bossState;
-                ResetMonsterAttackState();
+                ClearBossAttackState();
                 return;
             }
 
@@ -3170,7 +3195,7 @@ namespace GameCore
 
             if (monsterAttackMarkerInstance == null)
             {
-                SpawnMonsterAttackMarker(bossState.AttackTarget);
+                SpawnBossTelegraph(bossState.AttackTarget);
             }
 
             if (monsterAttackTelegraph != null)
@@ -3212,7 +3237,7 @@ namespace GameCore
                 if (!TryResolveAggressorPiece(ref bossState, out enragedPiece))
                 {
                     CurrentBossState = bossState;
-                    ResetMonsterAttackState();
+                    ClearBossAttackState();
                     return;
                 }
 
@@ -3657,6 +3682,11 @@ namespace GameCore
             var bossState = CurrentBossState;
             bossState.bossAlive = fightBoss;
             CurrentBossState = bossState;
+
+            if (!fightBoss)
+            {
+                ClearBossAttackState();
+            }
 
             if (fightBoss)
             {
