@@ -114,11 +114,19 @@ namespace GameCore
                         {
                             if (manager != null && board.CanJetpackDouble(selectedPiece, direction))
                             {
-                                if (manager.CanUseManualAbility() && manager.HasEnoughEnergy(JetpackEnergyCost))
+                                var movementCost = JetpackEnergyCost;
+                                if (board.TryGetPieceAt(new Vector2Int(selectedPiece.X, selectedPiece.Y), out var tile)
+                                    && tile != null
+                                    && tile.GetTileDebuff() == TileDebuffType.Entangled)
+                                {
+                                    movementCost += 1;
+                                }
+
+                                if (manager.CanUseManualAbility() && manager.HasEnoughEnergy(movementCost))
                                 {
                                     if (board.TryJetpackDouble(selectedPiece, direction))
                                     {
-                                        if (manager.TrySpendEnergy(JetpackEnergyCost))
+                                        if (manager.TrySpendEnergy(movementCost))
                                         {
                                             manager.RegisterJetpackMove();
                                             manager.TriggerJetpackDoubleSuccess();

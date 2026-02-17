@@ -7,6 +7,7 @@ namespace GameCore
     public class Piece : MonoBehaviour
     {
         [SerializeField] private float size = 0.9f;
+        [SerializeField] private GameObject tileDebuffOverlay;
 
         public int X { get; private set; }
         public int Y { get; private set; }
@@ -28,12 +29,58 @@ namespace GameCore
         private TextMesh treasureDebugText;
         // CODEX STAGE 7B
         private TextMesh itemTurnsText;
+        private TileDebuffType currentTileDebuff = TileDebuffType.None;
+        private int tileDebuffDuration;
 
         private void Awake()
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
             var collider = GetComponent<BoxCollider2D>();
             collider.size = new Vector2(size, size);
+            UpdateTileDebuffVisual();
+        }
+
+        public void ApplyTileDebuff(TileDebuffType type, int duration)
+        {
+            currentTileDebuff = type;
+            tileDebuffDuration = Mathf.Max(0, duration);
+            UpdateTileDebuffVisual();
+        }
+
+        public void ClearTileDebuff()
+        {
+            currentTileDebuff = TileDebuffType.None;
+            tileDebuffDuration = 0;
+            UpdateTileDebuffVisual();
+        }
+
+        public TileDebuffType GetTileDebuff()
+        {
+            return currentTileDebuff;
+        }
+
+        public void TickTileDebuff()
+        {
+            if (currentTileDebuff == TileDebuffType.None)
+            {
+                return;
+            }
+
+            tileDebuffDuration--;
+            if (tileDebuffDuration <= 0)
+            {
+                ClearTileDebuff();
+            }
+        }
+
+        private void UpdateTileDebuffVisual()
+        {
+            if (tileDebuffOverlay == null)
+            {
+                return;
+            }
+
+            tileDebuffOverlay.SetActive(currentTileDebuff != TileDebuffType.None);
         }
 
         public void Initialize(int x, int y, int colorIndex, Sprite sprite)
