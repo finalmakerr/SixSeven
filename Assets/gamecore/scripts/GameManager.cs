@@ -1225,7 +1225,15 @@ namespace GameCore
             }
 
             RegenerateEnergyAtPlayerTurnStart();
+            HandleStartOfPlayerTurn();
             isPlayerActionPhase = true;
+        }
+
+        private void HandleStartOfPlayerTurn()
+        {
+            // Poison floor hook.
+            // Do not implement logic here yet.
+            // Next steps will add poison spread, debuff application, UI warning, etc.
         }
 
         private void RegenerateEnergyAtPlayerTurnStart()
