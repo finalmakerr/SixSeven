@@ -10,6 +10,10 @@ public class GameBalanceConfig : ScriptableObject
     [Header("Hazard")]
     public HazardType DefaultHazardType = HazardType.Poison;
 
+    [Header("Hazard Level Thresholds")]
+    public int FireHazardLevelThreshold = 20;
+    public int IceHazardLevelThreshold = 40;
+
     [Header("Hazard Settings")]
     public int ToxicGraceStacks = 2;
 
