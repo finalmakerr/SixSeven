@@ -363,6 +363,7 @@ namespace GameCore
         private bool pendingMinorDamageAggro;
         private bool adjacencyAggroUsedThisTurn;
         private int monsterTurnCounter;
+        private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
         private readonly Dictionary<int, MonsterState> monsterStates = new Dictionary<int, MonsterState>();
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
@@ -400,6 +401,19 @@ namespace GameCore
                 Type = type;
                 Weight = weight;
             }
+        }
+
+        private struct MonsterState
+        {
+            public bool IsAngry;
+            public bool IsEnraged;
+            public bool IsTired;
+            public bool IsSleeping;
+            public bool IsConfused;
+            public Vector2Int TargetTile;
+            public int TurnsUntilAttack;
+            public int StateTurnsRemaining;
+            public Vector2Int CurrentTile;
         }
 
         private void Awake()
@@ -2590,6 +2604,16 @@ namespace GameCore
                 return;
             }
 
+            foreach (var pieceId in damagedThisTurn)
+            {
+                if (TryFindPieceById(pieceId, out var piece))
+                {
+                    SetGenericMonsterAngry(piece, playerPosition);
+                }
+            }
+
+            damagedThisTurn.Clear();
+
             var canUseAdjacency = monsterAngerConfig == null || monsterAngerConfig.angerAdjacencyRequired;
             var adjacencyCandidateFound = false;
             var bestScore = 0;
@@ -2650,6 +2674,66 @@ namespace GameCore
 
             pendingMinorDamageAggro = false;
             ActivateMonsterAnger(aggressorPosition.Value, playerPosition);
+        }
+
+        private void SetGenericMonsterAngry(Piece piece, Vector2Int playerPosition)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+
+            if (monsterStates.TryGetValue(pieceId, out var existing) &&
+                (existing.IsAngry || existing.IsEnraged || existing.IsConfused ||
+                 existing.IsTired || existing.IsSleeping))
+            {
+                return;
+            }
+
+            monsterStates[pieceId] = new MonsterState
+            {
+                IsAngry = true,
+                IsEnraged = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = false,
+                TargetTile = playerPosition,
+                TurnsUntilAttack = 2,
+                StateTurnsRemaining = 0,
+                CurrentTile = new Vector2Int(piece.X, piece.Y)
+            };
+        }
+
+        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
+        {
+            foundPiece = null;
+
+            if (board == null || pieceId == 0)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < board.Width; x++)
+            {
+                for (var y = 0; y < board.Height; y++)
+                {
+                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) ||
+                        piece == null || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (piece.GetInstanceID() == pieceId)
+                    {
+                        foundPiece = piece;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private bool IsAggressorAlive(BossState bossState)
