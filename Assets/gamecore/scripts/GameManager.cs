@@ -361,6 +361,8 @@ namespace GameCore
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
         private bool pendingMinorDamageAggro;
+        private bool adjacencyAggroUsedThisTurn;
+        private int monsterTurnCounter;
         private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
         private readonly Dictionary<int, MonsterState> monsterStates = new Dictionary<int, MonsterState>();
         // CODEX RAGE SCALE FINAL
@@ -609,6 +611,9 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
+            adjacencyAggroUsedThisTurn = false;
+            monsterTurnCounter = 0;
+            monsterStates.Clear();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -687,6 +692,8 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
+            adjacencyAggroUsedThisTurn = false;
+            monsterStates.Clear();
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -1481,8 +1488,9 @@ namespace GameCore
             if (CanEnemiesReactAtTurnEnd())
             {
                 TickRageCooldown(); // CODEX RAGE SCALE FINAL
-                TickMonsterAttackMarker();
-                TryTriggerMonsterEnrage();
+                EvaluateMonsterAggro();
+                UpdateMonsterStates();
+                ExecuteMonsterAttacks();
                 ProcessBossTumorTurn();
             }
 
@@ -2281,6 +2289,266 @@ namespace GameCore
             ClearBossAttackState();
         }
 
+
+        private void EvaluateMonsterAggro()
+        {
+            if (board == null || !monstersCanAttack || isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
+            {
+                return;
+            }
+
+            if (!board.TryGetPlayerPosition(out var playerPosition))
+            {
+                return;
+            }
+
+            monsterTurnCounter++;
+            adjacencyAggroUsedThisTurn = false;
+
+            var adjacencyCandidates = new List<Piece>();
+            var offsets = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+            var highestHp = int.MinValue;
+            for (var i = 0; i < offsets.Length; i++)
+            {
+                var candidatePosition = playerPosition + offsets[i];
+                if (!board.TryGetPieceAt(candidatePosition, out var candidate) || candidate == null || candidate.IsPlayer)
+                {
+                    continue;
+                }
+
+                var candidateHp = GetMonsterHitPoints(candidate);
+                if (candidateHp > highestHp)
+                {
+                    highestHp = candidateHp;
+                    adjacencyCandidates.Clear();
+                    adjacencyCandidates.Add(candidate);
+                }
+                else if (candidateHp == highestHp)
+                {
+                    adjacencyCandidates.Add(candidate);
+                }
+            }
+
+            if (!adjacencyAggroUsedThisTurn && adjacencyCandidates.Count > 0)
+            {
+                var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
+                var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
+                if (board.HasMatchOpportunityForMonster(selected))
+                {
+                    SetMonsterAngry(selected, playerPosition);
+                    adjacencyAggroUsedThisTurn = true;
+                }
+            }
+
+            if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && pendingMinorDamageAggro)
+            {
+                pendingMinorDamageAggro = false;
+                for (var x = 0; x < board.Width; x++)
+                {
+                    for (var y = 0; y < board.Height; y++)
+                    {
+                        if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null || piece.IsPlayer)
+                        {
+                            continue;
+                        }
+
+                        SetMonsterAngry(piece, playerPosition);
+                    }
+                }
+            }
+        }
+
+        private bool HasMatchOpportunityForMonster(Piece monster)
+        {
+            return board != null && board.HasMatchOpportunityForMonster(monster);
+        }
+
+        private void UpdateMonsterStates()
+        {
+            if (board == null || monsterStates.Count == 0)
+            {
+                return;
+            }
+
+            var updatedStates = new Dictionary<int, MonsterState>(monsterStates.Count);
+            foreach (var kvp in monsterStates)
+            {
+                var pieceId = kvp.Key;
+                var state = kvp.Value;
+                if (!TryFindPieceById(pieceId, out var piece))
+                {
+                    continue;
+                }
+
+                var currentTile = new Vector2Int(piece.X, piece.Y);
+                var moved = currentTile != state.CurrentTile;
+                state.CurrentTile = currentTile;
+
+                if (moved && (state.IsAngry || state.IsEnraged))
+                {
+                    state = CreateConfusedState(currentTile);
+                    updatedStates[pieceId] = state;
+                    continue;
+                }
+
+                if (state.IsAngry)
+                {
+                    state.IsAngry = false;
+                    state.IsEnraged = true;
+                }
+
+                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack > 0)
+                {
+                    state.TurnsUntilAttack--;
+                }
+
+                if (state.IsConfused || state.IsTired || state.IsSleeping)
+                {
+                    state.StateTurnsRemaining--;
+                    if (state.StateTurnsRemaining <= 0)
+                    {
+                        if (state.IsConfused)
+                        {
+                            state = default;
+                            state.CurrentTile = currentTile;
+                        }
+                        else if (state.IsTired)
+                        {
+                            state.IsTired = false;
+                            state.IsSleeping = true;
+                            state.StateTurnsRemaining = 1;
+                        }
+                        else if (state.IsSleeping)
+                        {
+                            state = default;
+                            state.CurrentTile = currentTile;
+                        }
+                    }
+                }
+
+                updatedStates[pieceId] = state;
+            }
+
+            monsterStates.Clear();
+            foreach (var kvp in updatedStates)
+            {
+                monsterStates[kvp.Key] = kvp.Value;
+            }
+        }
+
+        private void ExecuteMonsterAttacks()
+        {
+            if (monsterStates.Count == 0)
+            {
+                return;
+            }
+
+            var toAttack = new List<int>();
+            foreach (var kvp in monsterStates)
+            {
+                var state = kvp.Value;
+                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack == 0)
+                {
+                    toAttack.Add(kvp.Key);
+                }
+            }
+
+            if (toAttack.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var pieceId in toAttack)
+            {
+                var state = monsterStates[pieceId];
+                state.IsAngry = false;
+                state.IsEnraged = false;
+                state.IsTired = true;
+                state.IsSleeping = false;
+                state.IsConfused = false;
+                state.StateTurnsRemaining = 1;
+                monsterStates[pieceId] = state;
+            }
+        }
+
+        private void SetMonsterAngry(Piece piece, Vector2Int targetTile)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            if (monsterStates.TryGetValue(pieceId, out var existing)
+                && (existing.IsAngry || existing.IsEnraged || existing.IsConfused || existing.IsTired || existing.IsSleeping))
+            {
+                return;
+            }
+
+            monsterStates[pieceId] = new MonsterState
+            {
+                IsAngry = true,
+                IsEnraged = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = false,
+                TargetTile = targetTile,
+                TurnsUntilAttack = 2,
+                StateTurnsRemaining = 0,
+                CurrentTile = new Vector2Int(piece.X, piece.Y)
+            };
+        }
+
+        private MonsterState CreateConfusedState(Vector2Int currentTile)
+        {
+            return new MonsterState
+            {
+                IsAngry = false,
+                IsEnraged = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = true,
+                TurnsUntilAttack = 0,
+                StateTurnsRemaining = 2,
+                TargetTile = default,
+                CurrentTile = currentTile
+            };
+        }
+
+        private int GetMonsterHitPoints(Piece piece)
+        {
+            return 1;
+        }
+
+        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
+        {
+            foundPiece = null;
+            if (board == null || pieceId == 0)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < board.Width; x++)
+            {
+                for (var y = 0; y < board.Height; y++)
+                {
+                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (piece.GetInstanceID() != pieceId)
+                    {
+                        continue;
+                    }
+
+                    foundPiece = piece;
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         // CODEX RAGE SCALE FINAL
         private void TickRageCooldown()
