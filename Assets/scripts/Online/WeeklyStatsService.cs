@@ -116,7 +116,7 @@ public class WeeklyStatsService
         }
     }
 
-    public async Task<bool> SubmitWeeklyWinAsync(GameMode mode)
+    public async Task<bool> SubmitWeeklyRunCompletionAsync(GameMode mode)
     {
         try
         {
@@ -124,25 +124,25 @@ public class WeeklyStatsService
 
             if (!isInitialized)
             {
-                Debug.LogError("SubmitWeeklyWinAsync failed: service is not initialized.");
+                Debug.LogError("SubmitWeeklyRunCompletionAsync failed: service is not initialized.");
                 return false;
             }
 
             if (auth == null || auth.CurrentUser == null)
             {
-                Debug.LogError("SubmitWeeklyWinAsync failed: user is not authenticated.");
+                Debug.LogError("SubmitWeeklyRunCompletionAsync failed: user is not authenticated.");
                 return false;
             }
 
             if (!isLeaderboardEligible)
             {
-                Debug.Log("SubmitWeeklyWinAsync skipped: current run is not leaderboard eligible.");
+                Debug.Log("SubmitWeeklyRunCompletionAsync skipped: current run is not leaderboard eligible.");
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(activeRunId))
             {
-                Debug.LogError("SubmitWeeklyWinAsync failed: runId is missing. Call StartLeaderboardRunAsync first.");
+                Debug.LogError("SubmitWeeklyRunCompletionAsync failed: runId is missing. Call StartLeaderboardRunAsync first.");
                 return false;
             }
 
@@ -158,11 +158,11 @@ public class WeeklyStatsService
 
             if (response == null || !response.Contains("success") || !(response["success"] is bool success) || !success)
             {
-                Debug.LogWarning($"Weekly win submission rejected. runId={activeRunId}, response={result.Data}");
+                Debug.LogWarning($"Weekly run completion submission rejected. runId={activeRunId}, response={result.Data}");
                 return false;
             }
 
-            Debug.Log($"Weekly win submitted successfully. runId={activeRunId}, response={result.Data}");
+            Debug.Log($"Weekly run completion submitted successfully. runId={activeRunId}, response={result.Data}");
             isLeaderboardEligible = false;
             activeRunId = null;
             return true;
@@ -170,12 +170,12 @@ public class WeeklyStatsService
         catch (FunctionsException exception)
         {
             Debug.LogError(
-                $"Weekly win rejected by Cloud Function. Code={exception.ErrorCode}, Message={exception.Message}, Details={exception.Details}");
+                $"Weekly run completion rejected by Cloud Function. Code={exception.ErrorCode}, Message={exception.Message}, Details={exception.Details}");
             return false;
         }
         catch (Exception exception)
         {
-            Debug.LogError($"Weekly win submission failed unexpectedly: {exception}");
+            Debug.LogError($"Weekly run completion submission failed unexpectedly: {exception}");
             return false;
         }
     }

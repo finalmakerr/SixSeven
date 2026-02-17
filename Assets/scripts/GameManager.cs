@@ -109,7 +109,7 @@ public class GameManager : MonoBehaviour
         StartGame();
     }
 
-    public async void CompleteLevel()
+    public async Task CompleteLevel()
     {
         if (CurrentState != GameState.Playing)
             return;
@@ -160,9 +160,21 @@ public class GameManager : MonoBehaviour
             }
 
             var weeklyService = new WeeklyStatsService();
-            await weeklyService.SubmitWeeklyWinAsync(CurrentGameMode);
+            _ = SubmitWeeklyRunCompletionSafelyAsync(weeklyService, CurrentGameMode);
 
             SaveProfile();
+        }
+    }
+
+    private static async Task SubmitWeeklyRunCompletionSafelyAsync(WeeklyStatsService weeklyService, GameMode mode)
+    {
+        try
+        {
+            await weeklyService.SubmitWeeklyRunCompletionAsync(mode);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"Weekly run completion submission failed unexpectedly: {exception}");
         }
     }
 
