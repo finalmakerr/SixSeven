@@ -1243,6 +1243,16 @@ namespace GameCore
                 }
             }
 
+            if (currentHazardType == HazardType.Fire)
+            {
+                if (!isOnBottomRow || IsBugadaActive)
+                {
+                    return;
+                }
+
+                ApplyBurnFromHazard();
+            }
+
             if (isMeditating && meditationTurnsRemaining > 0)
             {
                 if (board != null && board.CanMovePlayerUp())
@@ -1336,6 +1346,23 @@ namespace GameCore
 
             ApplyPlayerDamage(1);
             ApplyEnergyDrain(1);
+        }
+
+        private void ApplyBurnFromHazard()
+        {
+            if (IsPlayerStunned)
+            {
+                return;
+            }
+
+            // Prevent duplicate application per turn if needed.
+            ApplyBurnDebuff(1);
+        }
+
+        private void ApplyBurnDebuff(int stacks)
+        {
+            // Burn debuff integration placeholder.
+            // Hook into the debuff system when burn status effects are implemented.
         }
 
         // CODEX BOSS TUMOR SYNERGY PR1
