@@ -25,6 +25,7 @@ public class GameManager : MonoBehaviour
     public event Action<string> ResurrectionVideoRequested;
     public event Action<string> ResurrectionTipRequested;
     public event Action<bool> ShopOfferOneUpChanged;
+    public static event Action<GameMode> OnModeUnlocked;
 
     /// <summary>
     /// Hook this from your level/gameplay systems.
@@ -108,10 +109,22 @@ public class GameManager : MonoBehaviour
             runCompletionRegistered = true;
 
             if (CurrentGameMode == GameMode.Normal)
-                profile.hasUnlockedHardcore = true;
+            {
+                if (!profile.hasUnlockedHardcore)
+                {
+                    profile.hasUnlockedHardcore = true;
+                    OnModeUnlocked?.Invoke(GameMode.Hardcore);
+                }
+            }
 
             if (CurrentGameMode == GameMode.Hardcore)
-                profile.hasUnlockedIronman = true;
+            {
+                if (!profile.hasUnlockedIronman)
+                {
+                    profile.hasUnlockedIronman = true;
+                    OnModeUnlocked?.Invoke(GameMode.Ironman);
+                }
+            }
 
             ResetWeeklyIfNeeded();
 
