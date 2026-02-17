@@ -128,6 +128,8 @@ namespace GameCore
         [SerializeField] private int maxEnergy = 3;
         [Header("Player Health")]
         [SerializeField] private int maxHP = 3;
+        private int baseMaxEnergy;
+        private int baseMaxHP;
         [Header("Player Inventory")]
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
         [Header("Pickup Radius")]
@@ -266,6 +268,7 @@ namespace GameCore
         private PlayerItemType pendingInventoryOverflowItem;
         private Vector2Int pendingInventoryOverflowPosition;
         private int energy;
+        private bool applyRunStartResourceAdjustments;
         private int pickupRadius;
         private bool hasBossPickupRadiusUpgrade;
         private bool hasShopPickupRadiusUpgrade;
@@ -372,6 +375,9 @@ namespace GameCore
                 playerSpecialPowers = new List<SpecialPowerDefinition>();
             }
 
+            baseMaxEnergy = Mathf.Max(1, maxEnergy);
+            baseMaxHP = Mathf.Max(1, maxHP);
+
             InitializeSpecialPowerCooldowns();
             InitializeBossPowerCooldowns();
 
@@ -427,6 +433,8 @@ namespace GameCore
 
         private void Start()
         {
+            applyRunStartResourceAdjustments = true;
+
             if (levelManager != null)
             {
                 levelManager.LoadStartingLevel(this);
@@ -459,7 +467,22 @@ namespace GameCore
             pendingInventoryOverflowItem = default;
             pendingInventoryOverflowPosition = default;
             HideInventoryOverflowPanel();
-            energy = 0;
+            if (applyRunStartResourceAdjustments)
+            {
+                RecalculateMaxResourcesFromBase();
+                energy = maxEnergy;
+                if (hardcoreModeEnabled && hardcoreConfig != null)
+                {
+                    energy = Mathf.Max(1, energy - hardcoreConfig.startingEnergyPenalty);
+                }
+
+                applyRunStartResourceAdjustments = false;
+            }
+            else
+            {
+                energy = 0;
+            }
+
             ResetPlayerHealth();
             ResetPickupRadius();
             playerItemInventory?.Clear();
@@ -497,6 +520,20 @@ namespace GameCore
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
+        }
+
+        private void RecalculateMaxResourcesFromBase()
+        {
+            if (hardcoreModeEnabled && hardcoreConfig != null)
+            {
+                maxEnergy = Mathf.Max(1, baseMaxEnergy - hardcoreConfig.maxEnergyCapReduction);
+                maxHP = Mathf.Max(1, baseMaxHP - hardcoreConfig.maxHpCapReduction);
+            }
+            else
+            {
+                maxEnergy = baseMaxEnergy;
+                maxHP = baseMaxHP;
+            }
         }
 
         public void LoadLevel(int levelIndex)
@@ -1451,7 +1488,13 @@ namespace GameCore
             var missingEnergy = Mathf.Max(0, maxEnergy - energy);
             var shieldCount = GetShieldCount();
 
-            AddWeightedDropOption(PlayerItemType.BasicHeal, missingHp > 0 ? missingHp * 2 : 0);
+            var potionDropChance = missingHp > 0 ? missingHp * 2 : 0;
+            if (hardcoreModeEnabled && hardcoreConfig != null)
+            {
+                potionDropChance *= hardcoreConfig.potionDropMultiplier;
+            }
+
+            AddWeightedDropOption(PlayerItemType.BasicHeal, Mathf.RoundToInt(potionDropChance));
             AddWeightedDropOption(PlayerItemType.EnergyPack, missingEnergy > 0 ? missingEnergy : 0);
             AddWeightedDropOption(PlayerItemType.Shield, CanCarryItem(PlayerItemType.Shield) ? (shieldCount == 0 ? 3 : 1) : 0);
             AddWeightedDropOption(PlayerItemType.SecondChance, CanCarryItem(PlayerItemType.SecondChance) ? (CurrentHP <= 1 ? 5 : 1) : 0);
