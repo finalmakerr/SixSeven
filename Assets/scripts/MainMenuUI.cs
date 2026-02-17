@@ -2,11 +2,16 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 
 public class MainMenuUI : MonoBehaviour
 {
     private const string HardcoreLockedTooltip = "Beat Normal (Level 67) to Unlock";
     private const string IronmanLockedTooltip = "Beat Hardcore (Level 67) to Unlock";
+
+    private static int lastShownNormal;
+    private static int lastShownHardcore;
+    private static int lastShownIronman;
 
     [Header("Mode Buttons")]
     [SerializeField] private Button normalButton;
@@ -68,13 +73,71 @@ public class MainMenuUI : MonoBehaviour
         SetIndicatorActive(ironmanTopIndicator, hasSingleWinner && ironmanCompleted == highestCompleted);
 
         if (normalWeeklyText != null)
+        {
             normalWeeklyText.text = $"Completed this week: {normalCompleted}";
 
+            if (normalCompleted > lastShownNormal)
+                StartCoroutine(PunchScale(normalWeeklyText.transform));
+        }
+
+        lastShownNormal = normalCompleted;
+
         if (hardcoreWeeklyText != null)
+        {
             hardcoreWeeklyText.text = $"Completed this week: {hardcoreCompleted}";
 
+            if (hardcoreCompleted > lastShownHardcore)
+                StartCoroutine(PunchScale(hardcoreWeeklyText.transform));
+        }
+
+        lastShownHardcore = hardcoreCompleted;
+
         if (ironmanWeeklyText != null)
+        {
             ironmanWeeklyText.text = $"Completed this week: {ironmanCompleted}";
+
+            if (ironmanCompleted > lastShownIronman)
+                StartCoroutine(PunchScale(ironmanWeeklyText.transform));
+        }
+
+        lastShownIronman = ironmanCompleted;
+    }
+
+    private IEnumerator PunchScale(Transform target)
+    {
+        if (target == null)
+            yield break;
+
+        Vector3 originalScale = target.localScale;
+        Vector3 punchScale = originalScale * 1.25f;
+        float duration = 0.12f;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            if (target == null)
+                yield break;
+
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            target.localScale = Vector3.Lerp(originalScale, punchScale, t);
+            yield return null;
+        }
+
+        elapsed = 0f;
+        while (elapsed < duration)
+        {
+            if (target == null)
+                yield break;
+
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            target.localScale = Vector3.Lerp(punchScale, originalScale, t);
+            yield return null;
+        }
+
+        if (target != null)
+            target.localScale = originalScale;
     }
 
     private static void ApplyButtonState(Button button, bool unlocked, CanvasGroup canvasGroup, GameObject lockIcon, TMP_Text tooltipText, string lockedTooltip = "")
