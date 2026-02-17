@@ -1,5 +1,6 @@
 public enum TileDebuffType
 {
     None,
-    Entangled
+    Entangled,
+    Golden
 }

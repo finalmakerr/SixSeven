@@ -21,6 +21,7 @@ public class GameBalanceConfig : ScriptableObject
     public int HazardGraceTurns = 3;
     public int HazardSpreadInterval = 3;
     public int HazardTileDuration = 3;
+    public int GoldenTileDuration = 3;
 
     [Header("Boss Settings")]
     public int BossAttackDelayTurns = 1;

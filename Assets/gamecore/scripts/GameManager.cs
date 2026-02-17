@@ -338,7 +338,8 @@ namespace GameCore
         private bool wasOnBottomRowLastTurn;
         private bool applyBottomLayerHazardOnNextTurn;
         private int hazardTurnCounter;
-        private int nextRowToInfect;
+        private readonly List<Vector2Int> infectionQueue = new List<Vector2Int>();
+        private int infectionIndex;
         private bool isSlowedByIce;
         private bool forceMoveNextTurn;
         private bool iceEnergyPenaltyActive;
@@ -560,7 +561,7 @@ namespace GameCore
             wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
             hazardTurnCounter = 0;
-            nextRowToInfect = 0;
+            infectionIndex = 0;
             isSlowedByIce = false;
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
@@ -682,6 +683,9 @@ namespace GameCore
                 board.InitializeBoard(gridSize.x, gridSize.y);
                 board.PlaceTumors(currentRunDefinition.tumors);
             }
+
+            GenerateInfectionQueue();
+            infectionIndex = 0;
 
             ResetGame();
             UpdateMiniGoalsUI();
@@ -1573,17 +1577,17 @@ namespace GameCore
                 return;
             }
 
-            SpreadHazardRow();
+            SpreadNextTile();
         }
 
-        private void SpreadHazardRow()
+        private void SpreadNextTile()
         {
             if (board == null)
             {
                 return;
             }
 
-            if (nextRowToInfect >= board.Height)
+            if (infectionIndex >= infectionQueue.Count)
             {
                 return;
             }
@@ -1591,20 +1595,74 @@ namespace GameCore
             var debuffType = GetTileDebuffForCurrentWorld();
             if (debuffType == TileDebuffType.None)
             {
-                nextRowToInfect++;
                 return;
             }
 
-            for (var x = 0; x < board.Width; x++)
+            var targetPos = infectionQueue[infectionIndex];
+
+            if (board.TryGetPieceAt(targetPos, out var tile) && tile != null)
             {
-                if (board.TryGetPieceAt(new Vector2Int(x, nextRowToInfect), out var tile)
-                    && tile != null)
+                var existing = tile.GetTileDebuff();
+
+                // Golden blocks infection but still counts as progressed
+                if (existing == TileDebuffType.Golden)
+                {
+                    infectionIndex++;
+                    return;
+                }
+
+                if (existing == TileDebuffType.None)
                 {
                     tile.ApplyTileDebuff(debuffType, balanceConfig.HazardTileDuration);
+                    infectionIndex++;
                 }
             }
+        }
 
-            nextRowToInfect++;
+        private void GenerateInfectionQueue()
+        {
+            infectionQueue.Clear();
+            if (board == null)
+            {
+                return;
+            }
+
+            bool leftToRight = UnityEngine.Random.value < 0.5f;
+
+            for (int y = 0; y < board.Height; y++)
+            {
+                if (leftToRight)
+                {
+                    for (int x = 0; x < board.Width; x++)
+                    {
+                        infectionQueue.Add(new Vector2Int(x, y));
+                    }
+                }
+                else
+                {
+                    for (int x = board.Width - 1; x >= 0; x--)
+                    {
+                        infectionQueue.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+        }
+
+        public bool TryApplyGoldenTile(Vector2Int position)
+        {
+            if (board == null || !board.TryGetPieceAt(position, out var tile) || tile == null)
+            {
+                return false;
+            }
+
+            if (tile.GetTileDebuff() == TileDebuffType.Golden)
+            {
+                TriggerConfusedPose();
+                return false;
+            }
+
+            tile.ApplyTileDebuff(TileDebuffType.Golden, balanceConfig.GoldenTileDuration);
+            return true;
         }
 
         private TileDebuffType GetTileDebuffForCurrentWorld()
@@ -3587,6 +3645,11 @@ namespace GameCore
         {
             isExcited = true;
             UpdatePlayerAnimationFlags();
+        }
+
+        private void TriggerConfusedPose()
+        {
+            TriggerStunnedAnimation();
         }
 
         private void TriggerStunnedAnimation()
