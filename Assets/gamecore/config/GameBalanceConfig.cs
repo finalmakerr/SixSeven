@@ -7,6 +7,9 @@ public class GameBalanceConfig : ScriptableObject
     public int MinRunForSpecialBomb = 5;
     public int MinRunForLootRoll = 4;
 
+    [Header("Hazard")]
+    public HazardType DefaultHazardType = HazardType.Poison;
+
     [Header("Hazard Settings")]
     public int ToxicGraceStacks = 2;
 
