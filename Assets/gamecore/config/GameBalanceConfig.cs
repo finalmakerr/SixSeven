@@ -12,4 +12,8 @@ public class GameBalanceConfig : ScriptableObject
 
     [Header("Boss Settings")]
     public int BossAttackDelayTurns = 1;
+
+    [Header("Difficulty")]
+    public int HardcoreLevelOffset = -10;
+    public int LevelScalingStep = 10;
 }
