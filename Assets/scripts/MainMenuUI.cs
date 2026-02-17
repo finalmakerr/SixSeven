@@ -21,6 +21,9 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private TMP_Text normalWeeklyText;
     [SerializeField] private TMP_Text hardcoreWeeklyText;
     [SerializeField] private TMP_Text ironmanWeeklyText;
+    [SerializeField] private GameObject normalTopIndicator;
+    [SerializeField] private GameObject hardcoreTopIndicator;
+    [SerializeField] private GameObject ironmanTopIndicator;
 
     private void Start()
     {
@@ -53,6 +56,17 @@ public class MainMenuUI : MonoBehaviour
         int hardcoreCompleted = profile != null ? profile.weeklyModeStats.hardcoreCompleted : 0;
         int ironmanCompleted = profile != null ? profile.weeklyModeStats.ironmanCompleted : 0;
 
+        int highestCompleted = Mathf.Max(normalCompleted, hardcoreCompleted, ironmanCompleted);
+        int winnerCount = 0;
+        winnerCount += normalCompleted == highestCompleted ? 1 : 0;
+        winnerCount += hardcoreCompleted == highestCompleted ? 1 : 0;
+        winnerCount += ironmanCompleted == highestCompleted ? 1 : 0;
+
+        bool hasSingleWinner = winnerCount == 1;
+        SetIndicatorActive(normalTopIndicator, hasSingleWinner && normalCompleted == highestCompleted);
+        SetIndicatorActive(hardcoreTopIndicator, hasSingleWinner && hardcoreCompleted == highestCompleted);
+        SetIndicatorActive(ironmanTopIndicator, hasSingleWinner && ironmanCompleted == highestCompleted);
+
         if (normalWeeklyText != null)
             normalWeeklyText.text = $"Completed this week: {normalCompleted}";
 
@@ -76,6 +90,12 @@ public class MainMenuUI : MonoBehaviour
 
         if (tooltipText != null)
             tooltipText.text = unlocked ? string.Empty : lockedTooltip;
+    }
+
+    private static void SetIndicatorActive(GameObject indicator, bool active)
+    {
+        if (indicator != null)
+            indicator.SetActive(active);
     }
 
 }
