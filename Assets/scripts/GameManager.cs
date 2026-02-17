@@ -406,8 +406,12 @@ public class GameManager : MonoBehaviour
                 break;
         }
 
+        // Show local immediately (optional)
         weeklyModeCountText.text = $"Players Beat This Mode This Week: {count}";
+        
+        // Then fetch global async
         UpdateOnlineWeeklyCount();
+
     }
 
     private async void UpdateOnlineWeeklyCount()
@@ -423,7 +427,7 @@ public class GameManager : MonoBehaviour
 
         int count = await weeklyService.GetWeeklyCountAsync(CurrentGameMode);
 
-        if (this == null || weeklyModeCountText == null)
+        if (!isActiveAndEnabled || weeklyModeCountText == null)
             return;
 
         cachedWeeklyCount = count;
