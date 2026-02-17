@@ -169,6 +169,19 @@ namespace GameCore
         public bool HasMonsterAttackTarget => CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
 
+        public bool IsHardcoreEnabled()
+        {
+            return hardcoreModeEnabled && hardcoreConfig != null;
+        }
+
+        public HardcoreConfig HardcoreConfig
+        {
+            get
+            {
+                return IsHardcoreEnabled() ? hardcoreConfig : null;
+            }
+        }
+
         public bool IsMonsterSwapLockedAtPosition(Vector2Int position)
         {
             return CurrentBossState.IsAngry && CurrentBossState.AggressorPosition == position;
@@ -176,9 +189,9 @@ namespace GameCore
 
         public int GetEffectiveLevel()
         {
-            if (hardcoreModeEnabled && hardcoreConfig != null)
+            if (IsHardcoreEnabled())
             {
-                return CurrentLevel + hardcoreConfig.levelOffset;
+                return CurrentLevel + HardcoreConfig.levelOffset;
             }
 
             return CurrentLevel;
@@ -471,9 +484,9 @@ namespace GameCore
             {
                 RecalculateMaxResourcesFromBase();
                 energy = maxEnergy;
-                if (hardcoreModeEnabled && hardcoreConfig != null)
+                if (IsHardcoreEnabled())
                 {
-                    energy = Mathf.Max(1, energy - hardcoreConfig.startingEnergyPenalty);
+                    energy = Mathf.Max(1, energy - HardcoreConfig.startingEnergyPenalty);
                 }
 
                 applyRunStartResourceAdjustments = false;
@@ -524,10 +537,10 @@ namespace GameCore
 
         private void RecalculateMaxResourcesFromBase()
         {
-            if (hardcoreModeEnabled && hardcoreConfig != null)
+            if (IsHardcoreEnabled())
             {
-                maxEnergy = Mathf.Max(1, baseMaxEnergy - hardcoreConfig.maxEnergyCapReduction);
-                maxHP = Mathf.Max(1, baseMaxHP - hardcoreConfig.maxHpCapReduction);
+                maxEnergy = Mathf.Max(1, baseMaxEnergy - HardcoreConfig.maxEnergyCapReduction);
+                maxHP = Mathf.Max(1, baseMaxHP - HardcoreConfig.maxHpCapReduction);
             }
             else
             {
@@ -1489,9 +1502,9 @@ namespace GameCore
             var shieldCount = GetShieldCount();
 
             var potionDropChance = missingHp > 0 ? missingHp * 2 : 0;
-            if (hardcoreModeEnabled && hardcoreConfig != null)
+            if (IsHardcoreEnabled())
             {
-                potionDropChance *= hardcoreConfig.potionDropMultiplier;
+                potionDropChance *= HardcoreConfig.potionDropMultiplier;
             }
 
             AddWeightedDropOption(PlayerItemType.BasicHeal, Mathf.RoundToInt(potionDropChance));
