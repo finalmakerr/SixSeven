@@ -326,6 +326,7 @@ namespace GameCore
         private int toxicStacks;
         private bool toxicDrainActive;
         private HazardType currentHazardType;
+        private bool wasOnBottomRowLastTurn;
         private bool applyBottomLayerHazardOnNextTurn;
         private bool isHappy;
         private bool isExcited;
@@ -539,6 +540,7 @@ namespace GameCore
             playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
+            wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
@@ -1245,12 +1247,19 @@ namespace GameCore
 
             if (currentHazardType == HazardType.Fire)
             {
-                if (!isOnBottomRow || IsBugadaActive)
+                if (IsBugadaActive)
                 {
-                    return;
+                    wasOnBottomRowLastTurn = isOnBottomRow;
                 }
+                else
+                {
+                    if (isOnBottomRow && !wasOnBottomRowLastTurn)
+                    {
+                        ApplyBurnFromHazard();
+                    }
 
-                ApplyBurnFromHazard();
+                    wasOnBottomRowLastTurn = isOnBottomRow;
+                }
             }
 
             if (isMeditating && meditationTurnsRemaining > 0)
@@ -1355,11 +1364,19 @@ namespace GameCore
                 return;
             }
 
-            // Prevent duplicate application per turn if needed.
-            ApplyBurnDebuff(1);
+            ApplyOrRefreshBurn();
         }
 
-        private void ApplyBurnDebuff(int stacks)
+        private void ApplyOrRefreshBurn()
+        {
+            // Integrate with debuff system:
+            // If burn exists -> refresh duration.
+            // Else -> apply burn with base duration.
+            const int baseBurnDurationTurns = 1;
+            ApplyBurnDebuff(baseBurnDurationTurns);
+        }
+
+        private void ApplyBurnDebuff(int durationTurns)
         {
             // Burn debuff integration placeholder.
             // Hook into the debuff system when burn status effects are implemented.
@@ -2643,6 +2660,7 @@ namespace GameCore
         private void ClearPlayerDebuffsForBugada()
         {
             ClearToxicStacks();
+            wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
 
             isStunned = false;
