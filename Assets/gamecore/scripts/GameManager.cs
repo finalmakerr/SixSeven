@@ -337,6 +337,8 @@ namespace GameCore
         private HazardType previousHazardType;
         private bool wasOnBottomRowLastTurn;
         private bool applyBottomLayerHazardOnNextTurn;
+        private int hazardTurnCounter;
+        private int nextRowToInfect;
         private bool isSlowedByIce;
         private bool forceMoveNextTurn;
         private bool iceEnergyPenaltyActive;
@@ -557,6 +559,8 @@ namespace GameCore
             toxicDrainActive = false;
             wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
+            hazardTurnCounter = 0;
+            nextRowToInfect = 0;
             isSlowedByIce = false;
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
@@ -1334,6 +1338,7 @@ namespace GameCore
             }
 
             ApplyBottomLayerHazardIfNeeded();
+            TickHazardPressure();
             TickSpecialPowerCooldowns();
             TickBossPowerCooldowns();
             TryPickupAdjacentItems();
@@ -1551,6 +1556,70 @@ namespace GameCore
 
             ApplyPlayerDamage(1);
             ApplyEnergyDrain(1);
+        }
+
+        private void TickHazardPressure()
+        {
+            hazardTurnCounter++;
+
+            if (hazardTurnCounter <= balanceConfig.HazardGraceTurns)
+            {
+                return;
+            }
+
+            var spreadInterval = Mathf.Max(1, balanceConfig.HazardSpreadInterval);
+            if ((hazardTurnCounter - balanceConfig.HazardGraceTurns) % spreadInterval != 0)
+            {
+                return;
+            }
+
+            SpreadHazardRow();
+        }
+
+        private void SpreadHazardRow()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            if (nextRowToInfect >= board.Height)
+            {
+                return;
+            }
+
+            var debuffType = GetTileDebuffForCurrentWorld();
+            if (debuffType == TileDebuffType.None)
+            {
+                nextRowToInfect++;
+                return;
+            }
+
+            for (var x = 0; x < board.Width; x++)
+            {
+                if (board.TryGetPieceAt(new Vector2Int(x, nextRowToInfect), out var tile)
+                    && tile != null)
+                {
+                    tile.ApplyTileDebuff(debuffType, balanceConfig.HazardTileDuration);
+                }
+            }
+
+            nextRowToInfect++;
+        }
+
+        private TileDebuffType GetTileDebuffForCurrentWorld()
+        {
+            switch (currentHazardType)
+            {
+                case HazardType.Poison:
+                    return TileDebuffType.Entangled;
+                case HazardType.Fire:
+                    return TileDebuffType.None;
+                case HazardType.Ice:
+                    return TileDebuffType.None;
+                default:
+                    return TileDebuffType.Entangled;
+            }
         }
 
         private void ApplyBurnFromHazard()
