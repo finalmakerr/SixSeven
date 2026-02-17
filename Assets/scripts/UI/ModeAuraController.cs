@@ -2,10 +2,10 @@ using UnityEngine;
 
 public enum GameMode
 {
-    None,
-    Normal,
-    Hardcore,
-    Ironman
+    None = -1,
+    Normal = 0,
+    Hardcore = 1,
+    Ironman = 2
 }
 
 public class ModeAuraController : MonoBehaviour
