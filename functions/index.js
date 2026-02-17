@@ -20,93 +20,136 @@ function getCurrentWeekKey(date = new Date()) {
   return `${utcDate.getUTCFullYear()}_W${weekNo}`;
 }
 
-function ensureValidPayload(data) {
+function rejectedResponse(code, message) {
+  return {
+    success: false,
+    status: "rejected",
+    code,
+    message,
+  };
+}
+
+function validatePayload(data) {
   if (!data || typeof data !== "object") {
-    throw new functions.https.HttpsError("invalid-argument", "Payload must be an object.");
+    return {valid: false, rejection: rejectedResponse("invalid-payload", "Payload must be an object.")};
   }
 
   const {mode, runId, runStart, runEnd} = data;
 
   if (!VALID_MODES.includes(mode)) {
-    throw new functions.https.HttpsError(
-        "invalid-argument",
-        "mode must be one of: normal, hardcore, ironman.",
-    );
+    return {
+      valid: false,
+      rejection: rejectedResponse("invalid-mode", "mode must be one of: normal, hardcore, ironman."),
+    };
   }
 
   if (typeof runId !== "string" || runId.trim().length === 0) {
-    throw new functions.https.HttpsError("invalid-argument", "runId is required.");
+    return {valid: false, rejection: rejectedResponse("invalid-run-id", "runId is required.")};
   }
 
   if (!Number.isInteger(runStart) || !Number.isInteger(runEnd)) {
-    throw new functions.https.HttpsError(
-        "invalid-argument",
-        "runStart and runEnd must be Unix timestamps in seconds.",
-    );
+    return {
+      valid: false,
+      rejection: rejectedResponse("invalid-timestamps", "runStart and runEnd must be Unix timestamps in seconds."),
+    };
   }
 
   if (runEnd <= runStart) {
-    throw new functions.https.HttpsError("invalid-argument", "runEnd must be after runStart.");
+    return {
+      valid: false,
+      rejection: rejectedResponse("invalid-duration-order", "runEnd must be after runStart."),
+    };
   }
 
   const runDuration = runEnd - runStart;
   if (runDuration < MIN_RUN_DURATION_SECONDS) {
-    throw new functions.https.HttpsError(
-        "failed-precondition",
-        `Run duration must be at least ${MIN_RUN_DURATION_SECONDS} seconds.`,
-    );
+    return {
+      valid: false,
+      rejection: rejectedResponse(
+          "run-too-short",
+          `Run duration must be at least ${MIN_RUN_DURATION_SECONDS} seconds.`,
+      ),
+    };
   }
 
-  return {mode, runId: runId.trim(), runStart, runEnd, runDuration};
+  return {
+    valid: true,
+    payload: {
+      mode,
+      runId: runId.trim(),
+      runStart,
+      runEnd,
+      runDuration,
+    },
+  };
 }
 
 exports.incrementWeeklyModeWin = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
+  if (!context.auth || !context.auth.uid) {
     throw new functions.https.HttpsError(
         "unauthenticated",
         "Authentication is required to submit a weekly win.",
     );
   }
 
-  const {mode, runId, runStart, runEnd, runDuration} = ensureValidPayload(data);
+  const validation = validatePayload(data);
+  if (!validation.valid) {
+    return validation.rejection;
+  }
+
+  const {mode, runId, runStart, runEnd, runDuration} = validation.payload;
   const uid = context.auth.uid;
   const weekKey = getCurrentWeekKey();
 
   const weeklyDocRef = db.collection("weekly_stats").doc(weekKey);
-  const runDocRef = weeklyDocRef.collection("submitted_runs").doc(runId);
+  const runDocId = `${uid}_${runId}`;
+  const runDocRef = weeklyDocRef.collection("submitted_runs").doc(runDocId);
 
-  await db.runTransaction(async (transaction) => {
-    const existingRunDoc = await transaction.get(runDocRef);
-    if (existingRunDoc.exists) {
-      throw new functions.https.HttpsError(
-          "already-exists",
-          "This runId has already been submitted.",
+  try {
+    await db.runTransaction(async (transaction) => {
+      const existingRunDoc = await transaction.get(runDocRef);
+      if (existingRunDoc.exists) {
+        throw new functions.https.HttpsError(
+            "already-exists",
+            "This runId has already been submitted by this user.",
+        );
+      }
+
+      transaction.set(runDocRef, {
+        uid,
+        mode,
+        runId,
+        runStart,
+        runEnd,
+        runDuration,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      transaction.set(
+          weeklyDocRef,
+          {
+            [mode]: admin.firestore.FieldValue.increment(1),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          {merge: true},
       );
+    });
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError && error.code === "already-exists") {
+      return rejectedResponse("duplicate-run-id", error.message);
     }
 
-    transaction.set(runDocRef, {
-      uid,
-      mode,
-      runStart,
-      runEnd,
-      runDuration,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    transaction.set(
-        weeklyDocRef,
-        {
-          [mode]: admin.firestore.FieldValue.increment(1),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        {merge: true},
-    );
-  });
+    functions.logger.error("incrementWeeklyModeWin failed unexpectedly", error);
+    throw new functions.https.HttpsError("internal", "Unexpected error while processing weekly win submission.");
+  }
 
   return {
     success: true,
+    status: "accepted",
+    message: "Weekly win counted successfully.",
     weekKey,
     mode,
     runId,
+    runDuration,
   };
 });
