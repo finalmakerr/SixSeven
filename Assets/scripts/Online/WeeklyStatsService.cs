@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Firebase;
 using Firebase.Auth;
+using Firebase.Firestore;
 using Firebase.Functions;
 using UnityEngine;
 
@@ -13,6 +14,7 @@ public class WeeklyStatsService
     private const string CompleteRunFunctionName = "completeWeeklyRun";
 
     private FirebaseAuth auth;
+    private FirebaseFirestore db;
     private FirebaseFunctions functions;
     private bool isInitialized;
 
@@ -34,11 +36,12 @@ public class WeeklyStatsService
         }
 
         auth = FirebaseAuth.DefaultInstance;
+        db = FirebaseFirestore.DefaultInstance;
         functions = FirebaseFunctions.DefaultInstance;
 
-        if (auth == null || functions == null)
+        if (auth == null || db == null || functions == null)
         {
-            Debug.LogError("Firebase initialization failed. Auth or Functions instance was null.");
+            Debug.LogError("Firebase initialization failed. Auth, Firestore, or Functions instance was null.");
             return;
         }
 
@@ -178,5 +181,49 @@ public class WeeklyStatsService
             Debug.LogError($"Weekly run completion submission failed unexpectedly: {exception}");
             return false;
         }
+    }
+
+    public async Task<int> GetWeeklyCountAsync(GameMode mode)
+    {
+        await Initialize();
+
+        if (!isInitialized || db == null)
+        {
+            return 0;
+        }
+
+        string weekKey = GetCurrentWeekKey();
+        var doc = await db.Collection("weekly_stats")
+            .Document(weekKey)
+            .GetSnapshotAsync();
+
+        if (!doc.Exists)
+        {
+            return 0;
+        }
+
+        string modeKey = mode.ToString().ToLowerInvariant();
+
+        if (doc.ContainsField(modeKey))
+        {
+            return doc.GetValue<int>(modeKey);
+        }
+
+        return 0;
+    }
+
+    private static string GetCurrentWeekKey(DateTime? currentUtc = null)
+    {
+        DateTime utcDate = (currentUtc ?? DateTime.UtcNow).Date;
+        int dayNum = (int)utcDate.DayOfWeek;
+        if (dayNum == 0)
+        {
+            dayNum = 7;
+        }
+
+        utcDate = utcDate.AddDays(4 - dayNum);
+        DateTime yearStart = new DateTime(utcDate.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        int weekNo = (int)Math.Ceiling((((utcDate - yearStart).TotalDays) + 1) / 7);
+        return $"{utcDate.Year}_W{weekNo}";
     }
 }
