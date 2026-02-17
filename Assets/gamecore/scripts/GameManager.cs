@@ -328,6 +328,10 @@ namespace GameCore
         private HazardType currentHazardType;
         private bool wasOnBottomRowLastTurn;
         private bool applyBottomLayerHazardOnNextTurn;
+        private bool isSlowedByIce;
+        private bool forceMoveNextTurn;
+        private bool iceEnergyPenaltyActive;
+        private bool pendingIceEnergyCompensation;
         private bool isHappy;
         private bool isExcited;
         private bool isStunned;
@@ -542,6 +546,10 @@ namespace GameCore
             toxicDrainActive = false;
             wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
+            isSlowedByIce = false;
+            forceMoveNextTurn = false;
+            iceEnergyPenaltyActive = false;
+            pendingIceEnergyCompensation = false;
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
@@ -1225,6 +1233,12 @@ namespace GameCore
                 return;
             }
 
+            if (forceMoveNextTurn)
+            {
+                forceMoveNextTurn = false;
+                isSlowedByIce = false;
+            }
+
             TryUseMove();
             if (MovesRemaining <= 0 && !HasMetTarget)
             {
@@ -1288,6 +1302,23 @@ namespace GameCore
                 }
             }
 
+            if (currentHazardType == HazardType.Ice)
+            {
+                if (IsBugadaActive)
+                {
+                    wasOnBottomRowLastTurn = isOnBottomRow;
+                }
+                else
+                {
+                    if (isOnBottomRow && !wasOnBottomRowLastTurn)
+                    {
+                        ApplyIceHazard();
+                    }
+
+                    wasOnBottomRowLastTurn = isOnBottomRow;
+                }
+            }
+
             if (isMeditating && meditationTurnsRemaining > 0)
             {
                 if (board != null && board.CanMovePlayerUp())
@@ -1334,14 +1365,26 @@ namespace GameCore
 
             RegenerateEnergyAtPlayerTurnStart();
             HandleStartOfPlayerTurn();
+            if (!isPlayerActionPhase)
+            {
+                return;
+            }
+
             isPlayerActionPhase = true;
         }
 
         private void HandleStartOfPlayerTurn()
         {
-            // Poison floor hook.
-            // Do not implement logic here yet.
-            // Next steps will add poison spread, debuff application, UI warning, etc.
+            if (isSlowedByIce && energy <= 0)
+            {
+                pendingIceEnergyCompensation = true;
+                isSlowedByIce = false;
+                forceMoveNextTurn = false;
+                SkipPlayerTurn();
+                return;
+            }
+
+            isPlayerActionPhase = true;
         }
 
         private void RegenerateEnergyAtPlayerTurnStart()
@@ -1354,7 +1397,20 @@ namespace GameCore
             }
 
             int previousEnergy = energy;
-            energy = Mathf.Min(maxEnergy, energy + 1);
+            if (iceEnergyPenaltyActive)
+            {
+                iceEnergyPenaltyActive = false;
+            }
+            else if (pendingIceEnergyCompensation)
+            {
+                energy = Mathf.Min(maxEnergy, energy + 2);
+                pendingIceEnergyCompensation = false;
+            }
+            else
+            {
+                energy = Mathf.Min(maxEnergy, energy + 1);
+            }
+
             hasGainedEnergy = energy > previousEnergy;
             UpdateTiredState();
             UpdateUI();
@@ -1400,6 +1456,30 @@ namespace GameCore
             // Else -> apply burn with base duration.
             const int baseBurnDurationTurns = 1;
             ApplyBurnDebuff(baseBurnDurationTurns);
+        }
+
+        private void ApplyIceHazard()
+        {
+            isSlowedByIce = true;
+            forceMoveNextTurn = true;
+            iceEnergyPenaltyActive = true;
+        }
+
+        private void SkipPlayerTurn()
+        {
+            isPlayerActionPhase = false;
+            StartCoroutine(SkipPlayerTurnRoutine());
+        }
+
+        private IEnumerator SkipPlayerTurnRoutine()
+        {
+            yield return null;
+            if (hasEnded || board == null)
+            {
+                yield break;
+            }
+
+            HandleTurnEnded();
         }
 
         private void ApplyBurnDebuff(int durationTurns)
@@ -2403,6 +2483,15 @@ namespace GameCore
                 return blocked;
             }
 
+            if (forceMoveNextTurn)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Ice hazard requires movement this turn.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
             if (IsBossScriptedPhaseActive())
             {
                 var blocked = SpecialPowerActivationResult.Failed(
@@ -2660,6 +2749,12 @@ namespace GameCore
                 return true;
             }
 
+            if (forceMoveNextTurn)
+            {
+                reason = "Ice hazard requires movement this turn.";
+                return true;
+            }
+
             if (IsBossScriptedPhaseActive())
             {
                 reason = "Boss scripted phase is active.";
@@ -2688,6 +2783,10 @@ namespace GameCore
             ClearToxicStacks();
             wasOnBottomRowLastTurn = false;
             applyBottomLayerHazardOnNextTurn = false;
+            isSlowedByIce = false;
+            forceMoveNextTurn = false;
+            iceEnergyPenaltyActive = false;
+            pendingIceEnergyCompensation = false;
 
             isStunned = false;
             stunnedTurnsRemaining = 0;
