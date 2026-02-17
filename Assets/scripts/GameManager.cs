@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using TMPro;
 
 public class GameManager : MonoBehaviour
 {
@@ -20,7 +21,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private bool hardcoreModeEnabled;
     [SerializeField] private GameMode startingGameMode = GameMode.Normal;
     [SerializeField] private ModeAuraController modeAuraController;
-    [SerializeField] private TMPro.TextMeshProUGUI weeklyModeCountText;
+    [SerializeField] private TextMeshProUGUI weeklyModeCountText;
 
     public event Action<GameState> StateChanged;
     public event Action AutoRetryPopupRequested;
@@ -51,6 +52,11 @@ public class GameManager : MonoBehaviour
     [SerializeField] private PlayerProfile profile = new PlayerProfile();
     public PlayerProfile Profile => profile;
     private bool runCompletionRegistered;
+    private WeeklyStatsService weeklyService;
+
+    private DateTime lastWeeklyCountFetchTimeUtc = DateTime.MinValue;
+    private int cachedWeeklyCount;
+    private const float WeeklyCountCacheDurationSeconds = 30f;
 
     private void Awake()
     {
@@ -66,6 +72,7 @@ public class GameManager : MonoBehaviour
         LoadProfile();
         ResetWeeklyIfNeeded();
         ApplyLastKnownModeAura();
+        weeklyService = new WeeklyStatsService();
     }
 
     private void ApplyLastKnownModeAura()
@@ -399,7 +406,29 @@ public class GameManager : MonoBehaviour
                 break;
         }
 
-        weeklyModeCountText.text = $"Beaten This Week: {count}";
+        weeklyModeCountText.text = $"Players Beat This Mode This Week: {count}";
+        UpdateOnlineWeeklyCount();
+    }
+
+    private async void UpdateOnlineWeeklyCount()
+    {
+        if (weeklyService == null || weeklyModeCountText == null)
+            return;
+
+        if ((DateTime.UtcNow - lastWeeklyCountFetchTimeUtc).TotalSeconds < WeeklyCountCacheDurationSeconds)
+        {
+            weeklyModeCountText.text = $"Players Beat This Mode This Week: {cachedWeeklyCount}";
+            return;
+        }
+
+        int count = await weeklyService.GetWeeklyCountAsync(CurrentGameMode);
+
+        if (this == null || weeklyModeCountText == null)
+            return;
+
+        cachedWeeklyCount = count;
+        lastWeeklyCountFetchTimeUtc = DateTime.UtcNow;
+        weeklyModeCountText.text = $"Players Beat This Mode This Week: {count}";
     }
 
 
