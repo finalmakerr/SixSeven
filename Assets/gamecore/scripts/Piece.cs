@@ -24,6 +24,7 @@ namespace GameCore
         private bool hasInitializedSpecialType;
         // CODEX CHEST PR1
         private SpriteRenderer treasureOverlayRenderer;
+        private SpriteRenderer hazardOverlayRenderer;
         private TextMesh treasureDebugText;
         // CODEX STAGE 7B
         private TextMesh itemTurnsText;
@@ -240,6 +241,7 @@ namespace GameCore
             {
                 spriteRenderer.sprite = null;
                 spriteRenderer.color = Color.white;
+                ClearHazardOverlay();
                 return;
             }
 
@@ -250,6 +252,11 @@ namespace GameCore
             else if (baseSprite != null)
             {
                 spriteRenderer.sprite = baseSprite;
+            }
+
+            if (hazardOverlayRenderer != null)
+            {
+                hazardOverlayRenderer.sprite = spriteRenderer.sprite;
             }
 
             if (SpecialType == SpecialType.Tumor)
@@ -400,6 +407,47 @@ namespace GameCore
             treasureDebugText.fontSize = 50;
             treasureDebugText.color = Color.yellow;
             return treasureDebugText;
+        }
+
+
+        public void SetHazardOverlay(Color color)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            var overlay = EnsureHazardOverlayRenderer();
+            color.a = 0.35f;
+            overlay.color = color;
+            overlay.enabled = true;
+        }
+
+        public void ClearHazardOverlay()
+        {
+            if (hazardOverlayRenderer != null)
+            {
+                hazardOverlayRenderer.enabled = false;
+            }
+        }
+
+        private SpriteRenderer EnsureHazardOverlayRenderer()
+        {
+            if (hazardOverlayRenderer != null)
+            {
+                return hazardOverlayRenderer;
+            }
+
+            var overlayObject = new GameObject("HazardOverlay");
+            overlayObject.transform.SetParent(transform, false);
+            hazardOverlayRenderer = overlayObject.AddComponent<SpriteRenderer>();
+            hazardOverlayRenderer.sortingLayerID = spriteRenderer.sortingLayerID;
+            hazardOverlayRenderer.sortingOrder = spriteRenderer.sortingOrder + 2;
+            hazardOverlayRenderer.sprite = spriteRenderer.sprite;
+            var overlayColor = Color.white;
+            overlayColor.a = 0.35f;
+            hazardOverlayRenderer.color = overlayColor;
+            return hazardOverlayRenderer;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)

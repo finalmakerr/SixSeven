@@ -683,6 +683,32 @@ namespace GameCore
             {
                 currentHazardType = HazardType.Poison;
             }
+
+            UpdateHazardVisuals();
+        }
+
+        private void UpdateHazardVisuals()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            switch (currentHazardType)
+            {
+                case HazardType.Poison:
+                    board.SetBottomRowHazardVisual(Color.green);
+                    break;
+                case HazardType.Fire:
+                    board.SetBottomRowHazardVisual(new Color(1f, 0.3f, 0f));
+                    break;
+                case HazardType.Ice:
+                    board.SetBottomRowHazardVisual(Color.cyan);
+                    break;
+                default:
+                    board.ClearBottomRowHazardVisual();
+                    break;
+            }
         }
 
         public bool LoadNextLevel()
