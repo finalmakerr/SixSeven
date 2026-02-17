@@ -547,7 +547,8 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             monstersCanAttack = !IsBossLevel;
             // CODEX RAGE SCALE FINAL
-            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(levelIndex / 10f));
+            var effectiveLevel = GetEffectiveLevel();
+            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(effectiveLevel / 10f));
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
@@ -1788,7 +1789,7 @@ namespace GameCore
             }
 
             var damageTriggered = (monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && pendingMinorDamageAggro;
-            var scalingTriggered = monsterAngerConfig != null && CurrentLevelIndex >= monsterAngerConfig.aggressionScalingByLevel;
+            var scalingTriggered = monsterAngerConfig != null && GetEffectiveLevel() >= monsterAngerConfig.aggressionScalingByLevel;
 
             if (!adjacencyCandidateFound && !damageTriggered && !scalingTriggered)
             {
