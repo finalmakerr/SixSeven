@@ -22,6 +22,7 @@ namespace GameCore
 
         [Header("References")]
         [SerializeField] private Board board;
+        [SerializeField] private GameBalanceConfig balanceConfig;
         // CODEX BOSS PR1
         [SerializeField] private BossManager bossManager;
         [SerializeField] private PlayerAnimationStateController playerAnimationStateController;
@@ -321,7 +322,6 @@ namespace GameCore
         private MonsterEnrageIndicator monsterEnrageIndicator;
         // CODEX BOSS PHASE PR1
         private readonly List<BossPower> unlockedBossPhasePowers = new List<BossPower>();
-        private const int ToxicGraceStacks = 2;
         private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
         private readonly Dictionary<BossPower, int> bossPowerCooldowns = new Dictionary<BossPower, int>();
         private bool isBossPowerAccessActive;
@@ -333,6 +333,7 @@ namespace GameCore
         private bool isResolvingMonsterAttack;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
+        public GameBalanceConfig BalanceConfig => balanceConfig;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -358,6 +359,11 @@ namespace GameCore
             }
 
             Instance = this;
+            if (balanceConfig == null)
+            {
+                Debug.LogError("GameBalanceConfig is not assigned in GameManager.");
+            }
+
             if (board == null)
             {
                 board = FindObjectOfType<Board>();
@@ -1116,7 +1122,7 @@ namespace GameCore
                 return 3;
             }
 
-            if (runLength >= 4)
+            if (runLength >= balanceConfig.MinRunForLootRoll)
             {
                 return 2;
             }
@@ -1172,7 +1178,7 @@ namespace GameCore
             else if (!IsBugadaActive)
             {
                 toxicStacks += 1;
-                if (toxicStacks >= ToxicGraceStacks)
+                if (toxicStacks >= balanceConfig.ToxicGraceStacks)
                 {
                     toxicDrainActive = true;
                     ApplyEnergyDrain(1);
@@ -2032,7 +2038,7 @@ namespace GameCore
             bossState.AggressorPosition = aggressorPosition;
             bossState.AggressorPieceId = aggressorPiece.GetInstanceID();
             bossState.AttackTarget = targetPosition;
-            bossState.TurnsUntilAttack = 1;
+            bossState.TurnsUntilAttack = balanceConfig.BossAttackDelayTurns;
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
             SpawnBossTelegraph(CurrentBossState.AttackTarget);

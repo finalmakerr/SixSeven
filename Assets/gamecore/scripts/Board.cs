@@ -1143,7 +1143,7 @@ namespace GameCore
                 }
             }
 
-            if (runLength >= 5)
+            if (runLength >= GameManager.Instance.BalanceConfig.MinRunForSpecialBomb)
             {
                 var itemSpawnPosition = FindItemSpawnPosition(endX, endY, runLength, direction, bombPosition);
                 if (itemSpawnPosition.HasValue)
@@ -1159,7 +1159,7 @@ namespace GameCore
                 }
             }
 
-            if (runLength >= 4 && debugMode)
+            if (runLength >= GameManager.Instance.BalanceConfig.MinRunForLootRoll && debugMode)
             {
                 var specialPosition = new Vector2Int(endX, endY); // CODEX VERIFY 2: log once per match run.
                 if (specialCreationLogged.Add(specialPosition))
