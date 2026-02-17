@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Threading.Tasks;
 using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -108,7 +109,7 @@ public class GameManager : MonoBehaviour
         StartGame();
     }
 
-    public void CompleteLevel()
+    public async void CompleteLevel()
     {
         if (CurrentState != GameState.Playing)
             return;
@@ -157,6 +158,9 @@ public class GameManager : MonoBehaviour
                     profile.weeklyModeStats.ironmanCompleted++;
                     break;
             }
+
+            var weeklyService = new WeeklyStatsService();
+            await weeklyService.SubmitWeeklyWinAsync(CurrentGameMode);
 
             SaveProfile();
         }

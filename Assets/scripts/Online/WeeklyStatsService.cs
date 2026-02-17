@@ -116,7 +116,7 @@ public class WeeklyStatsService
         }
     }
 
-    public async Task<bool> SubmitWinAsync(GameMode mode)
+    public async Task<bool> SubmitWeeklyWinAsync(GameMode mode)
     {
         try
         {
@@ -124,25 +124,25 @@ public class WeeklyStatsService
 
             if (!isInitialized)
             {
-                Debug.LogError("SubmitWinAsync failed: service is not initialized.");
+                Debug.LogError("SubmitWeeklyWinAsync failed: service is not initialized.");
                 return false;
             }
 
             if (auth == null || auth.CurrentUser == null)
             {
-                Debug.LogError("SubmitWinAsync failed: user is not authenticated.");
+                Debug.LogError("SubmitWeeklyWinAsync failed: user is not authenticated.");
                 return false;
             }
 
             if (!isLeaderboardEligible)
             {
-                Debug.Log("SubmitWinAsync skipped: current run is not leaderboard eligible.");
+                Debug.Log("SubmitWeeklyWinAsync skipped: current run is not leaderboard eligible.");
                 return false;
             }
 
             if (string.IsNullOrWhiteSpace(activeRunId))
             {
-                Debug.LogError("SubmitWinAsync failed: runId is missing. Call StartLeaderboardRunAsync first.");
+                Debug.LogError("SubmitWeeklyWinAsync failed: runId is missing. Call StartLeaderboardRunAsync first.");
                 return false;
             }
 
