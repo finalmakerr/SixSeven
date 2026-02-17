@@ -361,6 +361,8 @@ namespace GameCore
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
         private bool pendingMinorDamageAggro;
+        private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
+        private readonly Dictionary<int, Vector2Int> damagedPiecePositions = new Dictionary<int, Vector2Int>();
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
         // CODEX RAGE SCALE FINAL
@@ -594,6 +596,8 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
+            damagedThisTurn.Clear();
+            damagedPiecePositions.Clear();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -672,6 +676,8 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
+            damagedThisTurn.Clear();
+            damagedPiecePositions.Clear();
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -2227,29 +2233,20 @@ namespace GameCore
                 return;
             }
 
-            if (bossState.IsAngry)
-            {
-                bossState.IsAngry = false;
-                bossState.IsEnraged = true;
-                CurrentBossState = bossState;
-                TriggerMonsterAttackWindup();
-                hasTriggeredMonsterWindup = true;
-                SpawnBossTelegraph(bossState.AttackTarget);
-
-                if (!board.IsWithinBounds(CurrentBossState.AttackTarget))
-                {
-                    ClearBossAttackState();
-                    return;
-                }
-
-                UpdateMonsterAttackTelegraph();
-                UpdateMonsterEnrageVisuals();
-                return;
-            }
-
-            if (bossState.TurnsUntilAttack > 0)
+            if ((bossState.IsAngry || bossState.IsEnraged) && bossState.TurnsUntilAttack > 0)
             {
                 bossState.TurnsUntilAttack--;
+
+                if (bossState.TurnsUntilAttack == 1 && bossState.IsAngry)
+                {
+                    bossState.IsAngry = false;
+                    bossState.IsEnraged = true;
+                    TriggerMonsterAttackWindup();
+                    hasTriggeredMonsterWindup = true;
+                    SpawnBossTelegraph(bossState.AttackTarget);
+                    UpdateMonsterEnrageVisuals();
+                }
+
                 CurrentBossState = bossState;
 
                 if (!board.IsWithinBounds(CurrentBossState.AttackTarget))
@@ -2358,11 +2355,31 @@ namespace GameCore
                 }
             }
 
-            var damageTriggered = (monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && pendingMinorDamageAggro;
+            if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && damagedThisTurn.Count > 0)
+            {
+                foreach (var pieceId in damagedThisTurn)
+                {
+                    if (TryFindPieceById(pieceId, out var piece))
+                    {
+                        SetMonsterAngry(piece, playerPosition);
+                    }
+                }
+
+                damagedThisTurn.Clear();
+                damagedPiecePositions.Clear();
+            }
+
+            var damageTriggered = CurrentBossState.IsAngry || CurrentBossState.IsEnraged;
             var scalingTriggered = monsterAngerConfig != null && GetEffectiveLevel() >= monsterAngerConfig.aggressionScalingByLevel;
 
             if (!adjacencyCandidateFound && !damageTriggered && !scalingTriggered)
             {
+                return;
+            }
+
+            if (damageTriggered)
+            {
+                pendingMinorDamageAggro = false;
                 return;
             }
 
@@ -2391,6 +2408,44 @@ namespace GameCore
             }
 
             return TryResolveAggressorPiece(ref bossState, out _);
+        }
+
+        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
+        {
+            foundPiece = null;
+            if (board == null || !damagedPiecePositions.TryGetValue(pieceId, out var position))
+            {
+                return false;
+            }
+
+            if (!board.TryGetPieceAt(position, out var piece) || piece == null || piece.GetInstanceID() != pieceId)
+            {
+                return false;
+            }
+
+            foundPiece = piece;
+            return true;
+        }
+
+        private void SetMonsterAngry(Piece piece, Vector2Int playerPosition)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var aggressorPosition = new Vector2Int(piece.X, piece.Y);
+            if (!CanMonsterReachPlayer(aggressorPosition, playerPosition))
+            {
+                return;
+            }
+
+            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged)
+            {
+                return;
+            }
+
+            ActivateMonsterAnger(aggressorPosition, playerPosition);
         }
 
         private Vector2Int? FindNearestMonsterPosition(Vector2Int playerPosition)
@@ -3310,6 +3365,13 @@ namespace GameCore
             if (damage <= minorDamageThreshold)
             {
                 pendingMinorDamageAggro = true;
+            }
+
+            if (board != null && board.TryGetPieceAt(bossState.bossPosition, out var piece) && piece != null && !piece.IsPlayer)
+            {
+                var pieceId = piece.GetInstanceID();
+                damagedThisTurn.Add(pieceId);
+                damagedPiecePositions[pieceId] = bossState.bossPosition;
             }
 
             bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
