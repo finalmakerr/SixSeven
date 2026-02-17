@@ -1143,7 +1143,7 @@ namespace GameCore
                 }
             }
 
-            if (runLength >= 4)
+            if (runLength >= 5)
             {
                 var itemSpawnPosition = FindItemSpawnPosition(endX, endY, runLength, direction, bombPosition);
                 if (itemSpawnPosition.HasValue)

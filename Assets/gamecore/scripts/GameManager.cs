@@ -1161,12 +1161,15 @@ namespace GameCore
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             var isOnBottomRow = hasPlayerPosition && playerPosition.y == 0;
-            applyBottomLayerHazardOnNextTurn = isOnBottomRow;
+            if (!IsBugadaActive)
+            {
+                applyBottomLayerHazardOnNextTurn = isOnBottomRow;
+            }
             if (!isOnBottomRow)
             {
                 ClearToxicStacks();
             }
-            else
+            else if (!IsBugadaActive)
             {
                 toxicStacks += 1;
                 if (toxicStacks >= ToxicGraceStacks)
@@ -2510,11 +2513,6 @@ namespace GameCore
             isStunned = false;
             stunnedTurnsRemaining = 0;
             UpdatePlayerAnimationFlags();
-
-            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged)
-            {
-                ResetMonsterAttackState();
-            }
         }
 
 
@@ -3118,6 +3116,11 @@ namespace GameCore
 
         private void TriggerStunnedAnimation()
         {
+            if (IsBugadaActive)
+            {
+                return;
+            }
+
             if (!isStunned)
             {
                 isStunned = true;
