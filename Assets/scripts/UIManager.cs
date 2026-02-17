@@ -11,6 +11,8 @@ public class UIManager : MonoBehaviour
     [SerializeField] private GameObject shopPanel;
     [SerializeField] private GameObject levelCompletePanel;
     [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private Text gameOverTitleText;
+    [SerializeField] private Text gameOverSubtitleText;
 
     [Header("Death Flow")]
     [SerializeField] private GameObject retryPopupPanel;
@@ -23,10 +25,18 @@ public class UIManager : MonoBehaviour
     private GameManager gameManager;
     private Coroutine retryPopupRoutine;
     private Coroutine fadeRoutine;
+    private string defaultGameOverTitle;
+    private string defaultGameOverSubtitle;
 
     private void Awake()
     {
         gameManager = FindObjectOfType<GameManager>();
+
+        if (gameOverTitleText != null)
+            defaultGameOverTitle = gameOverTitleText.text;
+
+        if (gameOverSubtitleText != null)
+            defaultGameOverSubtitle = gameOverSubtitleText.text;
     }
 
     private void OnEnable()
@@ -63,8 +73,22 @@ public class UIManager : MonoBehaviour
         SetPanelActive(levelCompletePanel, state == GameState.LevelComplete);
         SetPanelActive(gameOverPanel, state == GameState.GameOver);
 
+        if (state == GameState.GameOver)
+            ApplyGameOverTheme();
+
         if (state == GameState.Shop)
             FadeTo(0f);
+    }
+
+    private void ApplyGameOverTheme()
+    {
+        bool isIronman = gameManager != null && gameManager.CurrentGameMode == GameMode.Ironman;
+
+        if (gameOverTitleText != null)
+            gameOverTitleText.text = isIronman ? "IRONMAN RUN FAILED" : defaultGameOverTitle;
+
+        if (gameOverSubtitleText != null)
+            gameOverSubtitleText.text = isIronman ? "No second chances." : defaultGameOverSubtitle;
     }
 
     private void SetPanelActive(GameObject panel, bool isActive)

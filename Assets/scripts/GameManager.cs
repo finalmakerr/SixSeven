@@ -42,6 +42,7 @@ public class GameManager : MonoBehaviour
 
     private Coroutine loadingRoutine;
     private Coroutine resurrectionRoutine;
+    private bool resolvingIronmanGameOver;
     private const string LastModeKey = "LastPlayedGameMode";
     private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
     private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
@@ -166,9 +167,17 @@ public class GameManager : MonoBehaviour
         if (CurrentState != GameState.Playing)
             return;
 
-        if (CurrentGameMode == GameMode.Ironman)
+        if (resolvingIronmanGameOver)
         {
             SetState(GameState.GameOver);
+            return;
+        }
+
+        if (CurrentGameMode == GameMode.Ironman)
+        {
+            resolvingIronmanGameOver = true;
+            TriggerGameOver();
+            resolvingIronmanGameOver = false;
             return;
         }
 
