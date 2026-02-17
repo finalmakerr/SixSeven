@@ -43,6 +43,7 @@ namespace GameCore
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
         [SerializeField] private Text bugadaText;
+        [SerializeField] private GameObject iceStatusIcon;
         // CODEX: LEVEL_LOOP
         [SerializeField] private GameObject winPanel;
         [SerializeField] private GameObject losePanel;
@@ -551,6 +552,10 @@ namespace GameCore
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
             pendingIceEnergyCompensation = false;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(false);
+            }
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
@@ -1224,6 +1229,10 @@ namespace GameCore
             {
                 forceMoveNextTurn = false;
                 isSlowedByIce = false;
+                if (iceStatusIcon != null)
+                {
+                    iceStatusIcon.SetActive(false);
+                }
             }
 
             TryUseMove();
@@ -1367,6 +1376,11 @@ namespace GameCore
                 pendingIceEnergyCompensation = true;
                 isSlowedByIce = false;
                 forceMoveNextTurn = false;
+                if (iceStatusIcon != null)
+                {
+                    iceStatusIcon.SetActive(false);
+                }
+                ShowFloatingText("Frozen!", Color.cyan);
                 SkipPlayerTurn();
                 return;
             }
@@ -1392,6 +1406,11 @@ namespace GameCore
             {
                 energy = Mathf.Min(maxEnergy, energy + 2);
                 pendingIceEnergyCompensation = false;
+                if (iceStatusIcon != null)
+                {
+                    iceStatusIcon.SetActive(false);
+                }
+                ShowFloatingText("+2 Energy", Color.cyan);
             }
             else
             {
@@ -1450,6 +1469,10 @@ namespace GameCore
             isSlowedByIce = true;
             forceMoveNextTurn = true;
             iceEnergyPenaltyActive = true;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(true);
+            }
         }
 
         private void SkipPlayerTurn()
@@ -2774,6 +2797,10 @@ namespace GameCore
             forceMoveNextTurn = false;
             iceEnergyPenaltyActive = false;
             pendingIceEnergyCompensation = false;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(false);
+            }
 
             isStunned = false;
             stunnedTurnsRemaining = 0;
