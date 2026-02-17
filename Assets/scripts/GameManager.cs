@@ -56,7 +56,9 @@ public class GameManager : MonoBehaviour
     private void ApplyLastKnownModeAura()
     {
         GameMode savedMode = (GameMode)PlayerPrefs.GetInt(LastModeKey, (int)GameMode.Normal);
-        CurrentGameMode = savedMode;
+        CurrentGameMode = ValidateGameModeAvailability(savedMode);
+        PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
+        PlayerPrefs.Save();
         modeAuraController?.ApplyModeAura(CurrentGameMode);
     }
 
@@ -174,10 +176,22 @@ public class GameManager : MonoBehaviour
 
     private GameMode ResolveCurrentGameMode()
     {
-        if (hardcoreModeEnabled)
-            return GameMode.Hardcore;
+        GameMode selectedMode = hardcoreModeEnabled ? GameMode.Hardcore : startingGameMode;
+        return ValidateGameModeAvailability(selectedMode);
+    }
 
-        return startingGameMode;
+    private GameMode ValidateGameModeAvailability(GameMode selectedMode)
+    {
+        if (profile == null)
+            return GameMode.Normal;
+
+        if (selectedMode == GameMode.Hardcore && !profile.hasUnlockedHardcore)
+            return GameMode.Normal;
+
+        if (selectedMode == GameMode.Ironman && !profile.hasUnlockedIronman)
+            return profile.hasUnlockedHardcore ? GameMode.Hardcore : GameMode.Normal;
+
+        return selectedMode;
     }
 
     private void BeginLoading()
