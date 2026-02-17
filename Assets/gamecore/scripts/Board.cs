@@ -613,6 +613,16 @@ namespace GameCore
             return piece != null;
         }
 
+        public bool HasMatchOpportunityForMonster(Piece monster)
+        {
+            if (monster == null || monster.IsPlayer)
+            {
+                return false;
+            }
+
+            return CanMatchPieceInOneSwap(new Vector2Int(monster.X, monster.Y));
+        }
+
         // CODEX RAGE SCALE FINAL
         public int GetMonsterRageMatchabilityScore(Vector2Int monsterPosition)
         {
