@@ -6,6 +6,8 @@ using Newtonsoft.Json.Linq;
 
 public class GameManager : MonoBehaviour
 {
+    public static GameManager Instance { get; private set; }
+
     [Header("Timing")]
     [SerializeField] private float loadingDuration = 0.75f;
 
@@ -45,10 +47,19 @@ public class GameManager : MonoBehaviour
     private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
     private int nextTipIndex;
     [SerializeField] private PlayerProfile profile = new PlayerProfile();
+    public PlayerProfile Profile => profile;
     private bool runCompletionRegistered;
 
     private void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+
         LoadProfile();
         ResetWeeklyIfNeeded();
         ApplyLastKnownModeAura();
@@ -113,6 +124,7 @@ public class GameManager : MonoBehaviour
                 if (!profile.hasUnlockedHardcore)
                 {
                     profile.hasUnlockedHardcore = true;
+                    profile.pendingUnlockMode = GameMode.Hardcore;
                     OnModeUnlocked?.Invoke(GameMode.Hardcore);
                 }
             }
@@ -122,6 +134,7 @@ public class GameManager : MonoBehaviour
                 if (!profile.hasUnlockedIronman)
                 {
                     profile.hasUnlockedIronman = true;
+                    profile.pendingUnlockMode = GameMode.Ironman;
                     OnModeUnlocked?.Invoke(GameMode.Ironman);
                 }
             }
@@ -407,7 +420,7 @@ public class GameManager : MonoBehaviour
             profile = new PlayerProfile();
     }
 
-    private void SaveProfile()
+    public void SaveProfile()
     {
         var raw = JsonConvert.SerializeObject(profile, Formatting.Indented);
         PlayerPrefs.SetString(ProfilePrefsKey, raw);

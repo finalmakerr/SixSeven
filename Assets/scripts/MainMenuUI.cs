@@ -33,6 +33,21 @@ public class MainMenuUI : MonoBehaviour
     private void Start()
     {
         ApplyModeButtonStates();
+
+        var profile = GameManager.Instance != null
+            ? GameManager.Instance.Profile
+            : null;
+
+        if (profile != null && profile.pendingUnlockMode != GameMode.None)
+        {
+            ModeUnlockOverlay overlay = FindObjectOfType<ModeUnlockOverlay>();
+
+            if (overlay != null)
+                overlay.TriggerManual(profile.pendingUnlockMode);
+
+            profile.pendingUnlockMode = GameMode.None;
+            GameManager.Instance.SaveProfile();
+        }
     }
 
     public void Play()

@@ -2,6 +2,7 @@ using UnityEngine;
 
 public enum GameMode
 {
+    None,
     Normal,
     Hardcore,
     Ironman
