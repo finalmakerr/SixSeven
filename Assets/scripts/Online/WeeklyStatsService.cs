@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Firebase;
@@ -8,17 +9,15 @@ using UnityEngine;
 
 public class WeeklyStatsService
 {
-    private const string FunctionName = "incrementWeeklyModeWin";
-    private const int MinimumRunDurationSeconds = 300;
+    private const string StartRunFunctionName = "startWeeklyRun";
+    private const string CompleteRunFunctionName = "completeWeeklyRun";
 
     private FirebaseAuth auth;
     private FirebaseFunctions functions;
     private bool isInitialized;
 
+    private bool isLeaderboardEligible;
     private string activeRunId;
-    private long activeRunStartUnix;
-    private long activeRunEndUnix;
-    private readonly HashSet<string> submittedRunIds = new HashSet<string>();
 
     public async Task Initialize()
     {
@@ -61,25 +60,60 @@ public class WeeklyStatsService
         Debug.Log("WeeklyStatsService initialized.");
     }
 
-    public void StartRun()
+    public async Task<bool> StartLeaderboardRunAsync(GameMode mode)
     {
-        activeRunId = Guid.NewGuid().ToString("D");
-        activeRunStartUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        activeRunEndUnix = 0;
-
-        Debug.Log($"Run started. runId={activeRunId}, runStart={activeRunStartUnix}");
-    }
-
-    public void EndRun()
-    {
-        if (string.IsNullOrWhiteSpace(activeRunId))
+        try
         {
-            Debug.LogError("EndRun failed: no active run was started.");
-            return;
-        }
+            await Initialize();
 
-        activeRunEndUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        Debug.Log($"Run ended. runId={activeRunId}, runEnd={activeRunEndUnix}");
+            if (!isInitialized || auth == null || auth.CurrentUser == null || functions == null)
+            {
+                Debug.LogError("StartLeaderboardRunAsync failed: service is not initialized or authenticated.");
+                isLeaderboardEligible = false;
+                return false;
+            }
+
+            var payload = new Dictionary<string, object>
+            {
+                { "mode", mode.ToString().ToLowerInvariant() }
+            };
+
+            var callable = functions.GetHttpsCallable(StartRunFunctionName);
+            var result = await callable.CallAsync(payload);
+            var response = result.Data as IDictionary;
+
+            if (response == null || !response.Contains("success") || !(response["success"] is bool success) || !success)
+            {
+                Debug.LogWarning($"StartLeaderboardRunAsync rejected: response={result.Data}");
+                isLeaderboardEligible = false;
+                return false;
+            }
+
+            if (!response.Contains("runId") || string.IsNullOrWhiteSpace(response["runId"]?.ToString()))
+            {
+                Debug.LogWarning("StartLeaderboardRunAsync failed: Cloud Function did not return a valid runId.");
+                isLeaderboardEligible = false;
+                return false;
+            }
+
+            activeRunId = response["runId"].ToString();
+            isLeaderboardEligible = true;
+            Debug.Log($"Leaderboard run started. runId={activeRunId}");
+            return true;
+        }
+        catch (FunctionsException exception)
+        {
+            Debug.LogError(
+                $"StartLeaderboardRunAsync rejected by Cloud Function. Code={exception.ErrorCode}, Message={exception.Message}, Details={exception.Details}");
+            isLeaderboardEligible = false;
+            return false;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"StartLeaderboardRunAsync failed unexpectedly: {exception}");
+            isLeaderboardEligible = false;
+            return false;
+        }
     }
 
     public async Task<bool> SubmitWinAsync(GameMode mode)
@@ -100,50 +134,37 @@ public class WeeklyStatsService
                 return false;
             }
 
+            if (!isLeaderboardEligible)
+            {
+                Debug.Log("SubmitWinAsync skipped: current run is not leaderboard eligible.");
+                return false;
+            }
+
             if (string.IsNullOrWhiteSpace(activeRunId))
             {
-                Debug.LogError("SubmitWinAsync failed: runId is missing. Call StartRun() first.");
-                return false;
-            }
-
-            if (activeRunStartUnix <= 0)
-            {
-                Debug.LogError("SubmitWinAsync failed: runStart is invalid. Call StartRun() first.");
-                return false;
-            }
-
-            if (activeRunEndUnix <= activeRunStartUnix)
-            {
-                Debug.LogError("SubmitWinAsync failed: runEnd is invalid. Call EndRun() before submit.");
-                return false;
-            }
-
-            long runDuration = activeRunEndUnix - activeRunStartUnix;
-            if (runDuration < MinimumRunDurationSeconds)
-            {
-                Debug.LogWarning($"SubmitWinAsync rejected locally: run duration {runDuration}s is less than {MinimumRunDurationSeconds}s.");
-                return false;
-            }
-
-            if (submittedRunIds.Contains(activeRunId))
-            {
-                Debug.LogWarning($"SubmitWinAsync rejected locally: duplicate runId detected ({activeRunId}).");
+                Debug.LogError("SubmitWinAsync failed: runId is missing. Call StartLeaderboardRunAsync first.");
                 return false;
             }
 
             var payload = new Dictionary<string, object>
             {
                 { "mode", mode.ToString().ToLowerInvariant() },
-                { "runId", activeRunId },
-                { "runStart", activeRunStartUnix },
-                { "runEnd", activeRunEndUnix }
+                { "runId", activeRunId }
             };
 
-            var callable = functions.GetHttpsCallable(FunctionName);
+            var callable = functions.GetHttpsCallable(CompleteRunFunctionName);
             var result = await callable.CallAsync(payload);
+            var response = result.Data as IDictionary;
 
-            submittedRunIds.Add(activeRunId);
+            if (response == null || !response.Contains("success") || !(response["success"] is bool success) || !success)
+            {
+                Debug.LogWarning($"Weekly win submission rejected. runId={activeRunId}, response={result.Data}");
+                return false;
+            }
+
             Debug.Log($"Weekly win submitted successfully. runId={activeRunId}, response={result.Data}");
+            isLeaderboardEligible = false;
+            activeRunId = null;
             return true;
         }
         catch (FunctionsException exception)
