@@ -1,52 +1,84 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Threading.Tasks;
-using Firebase.Firestore;
+using Firebase;
+using Firebase.Auth;
 using Firebase.Functions;
-using Firebase.Extensions;
 using UnityEngine;
 
 public class WeeklyStatsService
 {
-    private FirebaseFirestore db;
+    private const string FunctionName = "incrementWeeklyModeWin";
 
-    public WeeklyStatsService()
-    {
-        db = FirebaseFirestore.DefaultInstance;
-    }
+    private FirebaseAuth auth;
+    private FirebaseFunctions functions;
+    private bool isInitialized;
 
-    private string GetCurrentWeekKey()
+    public async Task InitializeAsync()
     {
-        var now = DateTime.UtcNow;
-        var calendar = CultureInfo.InvariantCulture.Calendar;
-        var week = calendar.GetWeekOfYear(now, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
-        return $"{now.Year}_W{week}";
-    }
-
-    public async Task SubmitWeeklyWinAsync(GameMode mode)
-    {
-        if (!FirebaseInitializer.IsReady)
+        if (isInitialized)
             return;
 
-        var functions = FirebaseFunctions.DefaultInstance;
+        await FirebaseApp.CheckAndFixDependenciesAsync();
 
-        string modeString = mode.ToString().ToLower();
+        auth = FirebaseAuth.DefaultInstance;
+        functions = FirebaseFunctions.DefaultInstance;
 
-        var data = new Dictionary<string, object>
+        if (auth.CurrentUser == null)
         {
-            { "mode", modeString }
-        };
+            await auth.SignInAnonymouslyAsync();
+            Debug.Log("Firebase anonymous auth succeeded for weekly stats submission.");
+        }
 
+        isInitialized = true;
+    }
+
+    public async Task SubmitWeeklyWinAsync(GameMode mode, DateTimeOffset runStartUtc, DateTimeOffset runEndUtc, string runId = null)
+    {
         try
         {
-            await functions
-                .GetHttpsCallable("incrementWeeklyModeWin")
-                .CallAsync(data);
+            await InitializeAsync();
+
+            if (auth.CurrentUser == null)
+            {
+                Debug.LogError("Weekly win submission rejected: user is not authenticated.");
+                return;
+            }
+
+            string modeString = mode.ToString().ToLowerInvariant();
+            string normalizedRunId = string.IsNullOrWhiteSpace(runId)
+                ? Guid.NewGuid().ToString()
+                : runId.Trim();
+
+            var payload = new Dictionary<string, object>
+            {
+                { "mode", modeString },
+                { "runId", normalizedRunId },
+                { "runStart", runStartUtc.ToUnixTimeSeconds() },
+                { "runEnd", runEndUtc.ToUnixTimeSeconds() }
+            };
+
+            var callable = functions.GetHttpsCallable(FunctionName);
+            var result = await callable.CallAsync(payload);
+
+            Debug.Log($"Weekly win submitted successfully. Response: {result.Data}");
         }
-        catch (System.Exception e)
+        catch (FunctionsException e)
         {
-            Debug.LogError($"Weekly win submission failed: {e}");
+            Debug.LogError($"Weekly win rejected by Cloud Function ({e.ErrorCode}): {e.Message}");
         }
+        catch (Exception e)
+        {
+            Debug.LogError($"Weekly win submission failed unexpectedly: {e}");
+        }
+    }
+
+    public async Task SubmitWeeklyWinAsync(GameMode mode, long runStartUnix, long runEndUnix, string runId = null)
+    {
+        await SubmitWeeklyWinAsync(
+            mode,
+            DateTimeOffset.FromUnixTimeSeconds(runStartUnix),
+            DateTimeOffset.FromUnixTimeSeconds(runEndUnix),
+            runId);
     }
 }
