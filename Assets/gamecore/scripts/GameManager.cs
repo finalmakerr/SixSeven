@@ -92,6 +92,12 @@ namespace GameCore
         // CODEX BONUS PR4
         [SerializeField] private Text bonusStageResultText;
         [SerializeField] private Text miniGoalsText; // CODEX REPLAYABILITY
+        [SerializeField] private CanvasGroup hazardTransitionCanvas;
+        [SerializeField] private Text hazardTransitionText;
+        [SerializeField] private AudioSource hazardTransitionAudio;
+        [SerializeField] private AudioClip poisonTransitionClip;
+        [SerializeField] private AudioClip fireTransitionClip;
+        [SerializeField] private AudioClip iceTransitionClip;
         // CODEX BONUS PR4
         [SerializeField] private Transform bonusStageListRoot;
         // CODEX BONUS PR3
@@ -328,6 +334,7 @@ namespace GameCore
         private int toxicStacks;
         private bool toxicDrainActive;
         private HazardType currentHazardType;
+        private HazardType previousHazardType;
         private bool wasOnBottomRowLastTurn;
         private bool applyBottomLayerHazardOnNextTurn;
         private bool isSlowedByIce;
@@ -492,6 +499,7 @@ namespace GameCore
         {
             applyRunStartResourceAdjustments = true;
             currentHazardType = balanceConfig != null ? balanceConfig.DefaultHazardType : HazardType.Poison;
+            previousHazardType = currentHazardType;
 
             if (levelManager != null)
             {
@@ -698,7 +706,81 @@ namespace GameCore
                 currentHazardType = HazardType.Poison;
             }
 
+            if (currentHazardType != previousHazardType)
+            {
+                TriggerHazardTransition(currentHazardType);
+                previousHazardType = currentHazardType;
+            }
+
             UpdateHazardVisuals();
+        }
+
+        private void TriggerHazardTransition(HazardType type)
+        {
+            if (hazardTransitionCanvas == null || hazardTransitionText == null)
+            {
+                return;
+            }
+
+            string label = string.Empty;
+            AudioClip clip = null;
+
+            switch (type)
+            {
+                case HazardType.Poison:
+                    label = "Toxic Floor";
+                    clip = poisonTransitionClip;
+                    break;
+                case HazardType.Fire:
+                    label = "Fire Floor";
+                    clip = fireTransitionClip;
+                    break;
+                case HazardType.Ice:
+                    label = "Frozen Floor";
+                    clip = iceTransitionClip;
+                    break;
+            }
+
+            hazardTransitionText.text = label;
+            StartCoroutine(HazardTransitionRoutine());
+
+            if (hazardTransitionAudio != null && clip != null)
+            {
+                hazardTransitionAudio.PlayOneShot(clip);
+            }
+
+            if (bottomRowHazardEffect != null)
+            {
+                bottomRowHazardEffect.Pulse();
+            }
+        }
+
+        private IEnumerator HazardTransitionRoutine()
+        {
+            hazardTransitionCanvas.alpha = 0f;
+            hazardTransitionCanvas.gameObject.SetActive(true);
+
+            float duration = 0.4f;
+            float timer = 0f;
+
+            while (timer < duration)
+            {
+                timer += Time.deltaTime;
+                hazardTransitionCanvas.alpha = Mathf.Lerp(0f, 1f, timer / duration);
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(1f);
+
+            timer = 0f;
+            while (timer < duration)
+            {
+                timer += Time.deltaTime;
+                hazardTransitionCanvas.alpha = Mathf.Lerp(1f, 0f, timer / duration);
+                yield return null;
+            }
+
+            hazardTransitionCanvas.gameObject.SetActive(false);
         }
 
         private void UpdateHazardVisuals()
