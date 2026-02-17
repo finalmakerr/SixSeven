@@ -590,6 +590,7 @@ namespace GameCore
         public void LoadLevel(int levelIndex)
         {
             CurrentLevelIndex = levelIndex;
+            ResolveHazardTypeForLevel();
             // CODEX DIFFICULTY PR7
             var level = DifficultyScaling.GenerateLevelDefinition(levelIndex, fallbackGridSize);
 
@@ -661,6 +662,24 @@ namespace GameCore
             if (IsOptionalBossLevel)
             {
                 BeginBossChallengeChoice();
+            }
+        }
+
+        private void ResolveHazardTypeForLevel()
+        {
+            int effectiveLevel = GetEffectiveLevel(CurrentLevel);
+
+            if (effectiveLevel >= balanceConfig.IceHazardLevelThreshold)
+            {
+                currentHazardType = HazardType.Ice;
+            }
+            else if (effectiveLevel >= balanceConfig.FireHazardLevelThreshold)
+            {
+                currentHazardType = HazardType.Fire;
+            }
+            else
+            {
+                currentHazardType = HazardType.Poison;
             }
         }
 
