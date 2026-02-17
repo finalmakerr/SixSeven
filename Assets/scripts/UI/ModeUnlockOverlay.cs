@@ -32,6 +32,11 @@ public class ModeUnlockOverlay : MonoBehaviour
         if (!isActiveAndEnabled || overlayCanvas == null)
             return;
 
+        TriggerManual(mode);
+    }
+
+    public void TriggerManual(GameMode mode)
+    {
         if (displayRoutine != null)
             StopCoroutine(displayRoutine);
 
