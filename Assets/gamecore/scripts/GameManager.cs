@@ -19,6 +19,7 @@ namespace GameCore
         [SerializeField] private int fallbackTargetScore = 500;
         [SerializeField] private LevelDatabase levelDatabase;
         [SerializeField] private LevelManager levelManager;
+        [SerializeField] private DifficultyMode difficultyMode = DifficultyMode.Normal;
 
         [Header("References")]
         [SerializeField] private Board board;
@@ -152,6 +153,7 @@ namespace GameCore
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
         public int CurrentLevel => CurrentLevelIndex;
+        public DifficultyMode CurrentDifficulty => difficultyMode;
         public bool HasMetTarget { get; private set; }
         public int Energy => energy;
         public int MaxHP => maxHP;
@@ -196,6 +198,21 @@ namespace GameCore
             }
 
             return CurrentLevel;
+        }
+
+        public int GetEffectiveLevel(int baseLevel)
+        {
+            if (difficultyMode == DifficultyMode.Hardcore)
+            {
+                return Mathf.Max(1, baseLevel + balanceConfig.HardcoreLevelOffset);
+            }
+
+            return baseLevel;
+        }
+
+        public bool IsLevelScalingThreshold(int level)
+        {
+            return level > 0 && level % balanceConfig.LevelScalingStep == 0;
         }
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
