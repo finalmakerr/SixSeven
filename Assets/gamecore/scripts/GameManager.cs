@@ -122,6 +122,8 @@ namespace GameCore
         [SerializeField] private float bigClearShakeDuration = 0.1f;
         [SerializeField] private float bigClearShakeMagnitude = 0.08f;
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
+        [SerializeField] private bool hardcoreModeEnabled;
+        [SerializeField] private HardcoreConfig hardcoreConfig;
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
         [Header("Player Health")]
@@ -146,6 +148,7 @@ namespace GameCore
         public int Score { get; private set; }
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
+        public int CurrentLevel => CurrentLevelIndex;
         public bool HasMetTarget { get; private set; }
         public int Energy => energy;
         public int MaxHP => maxHP;
@@ -167,6 +170,16 @@ namespace GameCore
         public bool IsMonsterSwapLockedAtPosition(Vector2Int position)
         {
             return CurrentBossState.IsAngry && CurrentBossState.AggressorPosition == position;
+        }
+
+        public int GetEffectiveLevel()
+        {
+            if (hardcoreModeEnabled && hardcoreConfig != null)
+            {
+                return CurrentLevel + hardcoreConfig.levelOffset;
+            }
+
+            return CurrentLevel;
         }
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
