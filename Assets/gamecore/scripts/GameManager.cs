@@ -199,6 +199,11 @@ namespace GameCore
             return CurrentBossState.IsAngry && CurrentBossState.AggressorPosition == position;
         }
 
+        public bool IsMonsterEnraged(int pieceId)
+        {
+            return monsterStates.TryGetValue(pieceId, out var state) && state.IsEnraged;
+        }
+
         public int GetEffectiveLevel()
         {
             if (IsHardcoreEnabled())
@@ -1496,7 +1501,7 @@ namespace GameCore
                 TickRageCooldown(); // CODEX RAGE SCALE FINAL
                 EvaluateMonsterAggro();
                 UpdateMonsterStates();
-                ExecuteMonsterAttacks();
+                ProcessMonsterAttacks();
                 ProcessBossTumorTurn();
             }
 
@@ -2374,9 +2379,9 @@ namespace GameCore
             }
         }
 
-        private void ExecuteMonsterAttacks()
+        public void ProcessMonsterAttacks()
         {
-            if (monsterStates.Count == 0)
+            if (board == null || hasEnded || monsterStates.Count == 0)
             {
                 return;
             }
@@ -2385,7 +2390,7 @@ namespace GameCore
             foreach (var kvp in monsterStates)
             {
                 var state = kvp.Value;
-                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack == 0)
+                if (state.IsAngry && state.TurnsUntilAttack <= 0)
                 {
                     toAttack.Add(kvp.Key);
                 }
@@ -2398,19 +2403,32 @@ namespace GameCore
 
             foreach (var pieceId in toAttack)
             {
-                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                if (!monsterStates.TryGetValue(pieceId, out var state))
+                {
+                    continue;
+                }
 
-                var state = monsterStates[pieceId];
+                var targetTile = state.TargetTile;
+                if (board.IsWithinBounds(targetTile) && board.TryGetPieceAt(targetTile, out var targetPiece))
+                {
+                    if (targetPiece.IsPlayer)
+                    {
+                        ResolvePlayerHit();
+                    }
+                    else
+                    {
+                        board.TryDestroyPieceAt(targetTile, DestructionReason.MonsterAttack);
+                    }
+                }
+
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 state.IsAngry = false;
                 state.IsEnraged = false;
-                state.IsTired = true;
-                state.IsSleeping = false;
-                state.IsConfused = false;
-                state.StateTurnsRemaining = 1;
+                state.TurnsUntilAttack = 0;
                 monsterStates[pieceId] = state;
                 if (debugMode)
                 {
-                    Debug.Log($"GenericMonsterState: piece {pieceId} attacked and entered Tired", this);
+                    Debug.Log($"GenericMonsterState: piece {pieceId} attacked target {targetTile.x},{targetTile.y}", this);
                 }
             }
         }
@@ -2710,12 +2728,7 @@ namespace GameCore
 
                 if (targetPiece.IsPlayer)
                 {
-                    TriggerStunnedAnimation();
-                    if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
-                    {
-                        ApplyPlayerDamage(GetCurrentMonsterDamage());
-                    }
-
+                    ResolvePlayerHit();
                     return;
                 }
 
@@ -2724,6 +2737,15 @@ namespace GameCore
             finally
             {
                 isResolvingMonsterAttack = false;
+            }
+        }
+
+        private void ResolvePlayerHit()
+        {
+            TriggerStunnedAnimation();
+            if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+            {
+                ApplyPlayerDamage(GetCurrentMonsterDamage());
             }
         }
 
