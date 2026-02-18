@@ -2290,12 +2290,6 @@ namespace GameCore
             TryTriggerMonsterEnrage();
         }
 
-
-        private bool HasMatchOpportunityForMonster(Piece monster)
-        {
-            return board != null && board.HasMatchOpportunityForMonster(monster);
-        }
-
         private void UpdateMonsterStates()
         {
             if (board == null || monsterStates.Count == 0)
@@ -2580,7 +2574,8 @@ namespace GameCore
 
             var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
             var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
-            if (!HasMatchOpportunityForMonster(selected))
+            var monsterPosition = new Vector2Int(selected.X, selected.Y);
+            if (!board.CanMatchPieceWithinTwoSwaps(monsterPosition))
             {
                 return;
             }
