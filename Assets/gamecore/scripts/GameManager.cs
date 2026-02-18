@@ -2148,6 +2148,14 @@ namespace GameCore
             return itemDropOptionsBuffer.Count > 0;
         }
 
+        public bool ShouldSpawnLootForRun(int activeLootCount)
+        {
+            var reductionCount = Mathf.Max(0, activeLootCount - 1);
+            var effectiveChance = balanceConfig.BaseLootDropChance - (reductionCount * balanceConfig.LootDropReductionPerActiveLoot);
+            effectiveChance = Mathf.Clamp(effectiveChance, balanceConfig.MinimumLootDropChance, 100);
+            return UnityEngine.Random.Range(0, 100) < effectiveChance;
+        }
+
         private bool TryRollItemTypeForPickup(out PlayerItemType itemType)
         {
             var options = BuildWeightedItemDropOptions();

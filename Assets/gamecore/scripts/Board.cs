@@ -1895,9 +1895,9 @@ namespace GameCore
                     {
                         pendingBugadaSpawnPosition = itemSpawnPosition.Value; // CODEX STAGE 7D: Bugada spawn candidate.
                     }
-                    else if (GameManager.Instance == null || GameManager.Instance.CanRollItemDrop())
+                    else if (ShouldAddPendingItemSpawn())
                     {
-                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7I-A: weighted item drop candidate only when a valid drop exists.
+                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 10D: dynamic loot suppression evaluated per 4+ run.
                     }
                 }
             }
@@ -1929,6 +1929,51 @@ namespace GameCore
                     matchBuffer.Add(piece);
                 }
             }
+        }
+
+        private bool ShouldAddPendingItemSpawn()
+        {
+            var gameManager = GameManager.Instance;
+            if (gameManager == null)
+            {
+                return true;
+            }
+
+            if (!gameManager.CanRollItemDrop())
+            {
+                return false;
+            }
+
+            var activeLootCount = CountAllActiveLootPieces();
+            return gameManager.ShouldSpawnLootForRun(activeLootCount);
+        }
+
+        private int CountAllActiveLootPieces()
+        {
+            if (pieces == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType == SpecialType.Item && piece.ItemTurnsRemaining > 0)
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
         }
 
         private IReadOnlyList<int> GetMatchRunLengthsSnapshot()
