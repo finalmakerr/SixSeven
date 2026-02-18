@@ -204,12 +204,31 @@ namespace GameCore
 
         public bool IsMonsterSwapLockedAtPosition(Vector2Int position)
         {
-            return CurrentBossState.IsAngry && CurrentBossState.AggressorPosition == position;
+            if (board == null || !board.TryGetPieceAt(position, out var piece) || piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (IsBossLevel)
+            {
+                var bossState = CurrentBossState;
+                if (bossState.bossAlive && position == bossState.bossPosition)
+                {
+                    return false;
+                }
+            }
+
+            if (!monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
+            {
+                return false;
+            }
+
+            return state.IsAngry || state.IsEnraged;
         }
 
         public bool IsMonsterEnraged(int pieceId)
         {
-            return monsterStates.TryGetValue(pieceId, out var state) && state.IsEnraged;
+            return monsterStates.TryGetValue(pieceId, out var state) && (state.IsAngry || state.IsEnraged);
         }
 
         public int GetEffectiveLevel()
@@ -421,6 +440,7 @@ namespace GameCore
             public bool IsIdle;
             public bool IsAngry;
             public bool IsAdjacencyTriggered;
+            public bool HasCharmResistance;
             public bool IsHurt;
             public bool IsEnraged;
             public bool IsTired;
@@ -2403,29 +2423,10 @@ namespace GameCore
 
                 if (state.IsAngry)
                 {
-                    var shouldSpawnAdjacencyTelegraph = state.IsAdjacencyTriggered && !state.IsHurt;
-                    state.IsAngry = false;
-                    state.IsIdle = false;
-                    state.IsAdjacencyTriggered = false;
-                    state.IsHurt = false;
-                    state.IsEnraged = true;
-                    if (IsTelegraphOnlyOnEnrage())
-                    {
-                        AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
-                    }
-
-                    if (shouldSpawnAdjacencyTelegraph)
-                    {
-                        SpawnGenericMonsterTelegraph(state.CurrentTile);
-                    }
-
-                    if (debugMode)
-                    {
-                        Debug.Log($"GenericMonsterState: piece {pieceId} transitioned to Enraged", this);
-                    }
+                    state.HasCharmResistance = true;
                 }
 
-                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack > 0)
+                if (state.IsEnraged && state.TurnsUntilAttack > 0)
                 {
                     state.TurnsUntilAttack--;
                 }
@@ -2528,15 +2529,17 @@ namespace GameCore
 
                 ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                 state.IsAngry = false;
-                state.IsIdle = false;
                 state.IsAdjacencyTriggered = false;
                 state.IsHurt = false;
                 state.IsEnraged = false;
+                state.HasCharmResistance = false;
                 state.IsConfused = false;
                 state.IsSleeping = false;
-                state.IsTired = true;
+                state.IsTired = false;
                 state.TurnsUntilAttack = 0;
-                state.StateTurnsRemaining = GetMonsterTiredDuration();
+                state.StateTurnsRemaining = 0;
+                state.TargetTile = default;
+                EnterIdleState(ref state);
                 monsterStates[pieceId] = state;
                 if (TryFindPieceById(pieceId, out var attackingPiece))
                 {
@@ -2588,6 +2591,7 @@ namespace GameCore
             state.IsAdjacencyTriggered = triggeredByAdjacency;
             state.IsHurt = false;
             state.IsEnraged = false;
+            state.HasCharmResistance = true;
             state.IsTired = false;
             state.IsSleeping = false;
             state.IsConfused = false;
@@ -2620,6 +2624,7 @@ namespace GameCore
                 IsAngry = false,
                 IsHurt = false,
                 IsEnraged = false,
+                HasCharmResistance = false,
                 IsTired = false,
                 IsSleeping = false,
                 IsConfused = true,
@@ -2735,6 +2740,7 @@ namespace GameCore
             state.IsAdjacencyTriggered = false;
             state.IsHurt = true;
             state.IsEnraged = false;
+            state.HasCharmResistance = false;
             state.IsTired = false;
             state.IsSleeping = false;
             state.IsConfused = false;
@@ -2754,6 +2760,7 @@ namespace GameCore
             state.IsIdle = true;
             state.IsAngry = false;
             state.IsEnraged = false;
+            state.HasCharmResistance = false;
             state.IsConfused = false;
             state.IsTired = false;
             state.IsSleeping = false;
@@ -2768,6 +2775,7 @@ namespace GameCore
                 IsAngry = false,
                 IsHurt = false,
                 IsEnraged = false,
+                HasCharmResistance = false,
                 IsTired = false,
                 IsSleeping = false,
                 IsConfused = false,
@@ -2861,6 +2869,7 @@ namespace GameCore
             if (diesNext)
             {
                 state.IsHurt = true;
+                state.HasCharmResistance = false;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
@@ -2869,6 +2878,7 @@ namespace GameCore
                 state.IsIdle = false;
                 state.IsAngry = true;
                 state.IsAdjacencyTriggered = false;
+                state.HasCharmResistance = true;
                 state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -2878,6 +2888,7 @@ namespace GameCore
             else
             {
                 state.IsHurt = true;
+                state.HasCharmResistance = false;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
@@ -2885,11 +2896,13 @@ namespace GameCore
             if (!state.IsAngry && !state.IsHurt)
             {
                 EnterIdleState(ref state);
+                state.HasCharmResistance = false;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
             else if (!state.IsAngry)
             {
+                state.HasCharmResistance = false;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
@@ -2923,8 +2936,7 @@ namespace GameCore
 
         private int GetMonsterTurnsBeforeAttack()
         {
-            var config = GetMonsterAggroConfig();
-            return Mathf.Max(1, config.turnsBeforeAttack);
+            return 2;
         }
 
         private int GetBossEnrageThresholdTurns()
@@ -3061,58 +3073,6 @@ namespace GameCore
 
             monsterTurnCounter++;
 
-            if (IsDamageTriggerAllowed() && damagedThisTurn.Count > 0)
-            {
-                var requireHpSurvivalCheck = IsHpSurvivalCheckRequired();
-                var damagedPieces = new List<Piece>(damagedThisTurn.Count);
-                foreach (var pieceId in damagedThisTurn)
-                {
-                    if (TryFindPieceById(pieceId, out var piece))
-                    {
-                        damagedPieces.Add(piece);
-                    }
-                }
-
-                foreach (var piece in damagedPieces)
-                {
-                    if (piece == null || piece.IsPlayer)
-                    {
-                        continue;
-                    }
-
-                    if (!monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
-                    {
-                        state = GetOrCreateMonsterState(piece);
-                    }
-
-                    if (state.IsHurt)
-                    {
-                        continue;
-                    }
-
-                    // Do not override committed attack state.
-                    if (state.IsEnraged)
-                    {
-                        continue;
-                    }
-
-                    // Do not re-apply Angry repeatedly.
-                    if (state.IsAngry)
-                    {
-                        continue;
-                    }
-
-                    if (requireHpSurvivalCheck && !WillMonsterSurviveUntilAttack(piece))
-                    {
-                        EnterHurtState(piece);
-                        continue;
-                    }
-
-                    SetGenericMonsterAngry(piece, playerPosition, false, allowTelegraph: false);
-                }
-
-            }
-
             // Always clear damage buffer so stale IDs never persist across turns.
             damagedThisTurn.Clear();
             pendingMinorDamageAggro = false;
@@ -3122,54 +3082,69 @@ namespace GameCore
                 return;
             }
 
-            var adjacencyCandidates = new List<Piece>();
-            var offsets = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-            var highestHp = int.MinValue;
-            for (var i = 0; i < offsets.Length; i++)
+            for (var x = 0; x < board.Width; x++)
             {
-                var candidatePosition = playerPosition + offsets[i];
-                if (!board.TryGetPieceAt(candidatePosition, out var candidate) || candidate == null || candidate.IsPlayer)
+                for (var y = 0; y < board.Height; y++)
                 {
-                    continue;
-                }
+                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var candidate)
+                        || candidate == null
+                        || candidate.IsPlayer)
+                    {
+                        continue;
+                    }
 
-                if (monsterStates.TryGetValue(candidate.GetInstanceID(), out var candidateState) && candidateState.IsHurt)
-                {
-                    continue;
-                }
+                    var candidatePosition = new Vector2Int(candidate.X, candidate.Y);
+                    var manhattanDistance = Mathf.Abs(candidatePosition.x - playerPosition.x) + Mathf.Abs(candidatePosition.y - playerPosition.y);
+                    if (manhattanDistance != 1)
+                    {
+                        continue;
+                    }
 
-                var candidateHp = GetMonsterHitPoints(candidate);
-                if (candidateHp > highestHp)
-                {
-                    highestHp = candidateHp;
-                    adjacencyCandidates.Clear();
-                    adjacencyCandidates.Add(candidate);
-                }
-                else if (candidateHp == highestHp)
-                {
-                    adjacencyCandidates.Add(candidate);
+                    var pieceId = candidate.GetInstanceID();
+                    var state = GetOrCreateMonsterState(candidate);
+                    if (state.IsHurt || state.IsConfused || state.IsTired || state.IsSleeping)
+                    {
+                        monsterStates[pieceId] = state;
+                        continue;
+                    }
+
+                    if (state.IsAngry)
+                    {
+                        state.IsAngry = false;
+                        state.IsEnraged = true;
+                        state.IsIdle = false;
+                        state.IsAdjacencyTriggered = false;
+                        state.HasCharmResistance = true;
+                        monsterStates[pieceId] = state;
+
+                        if (IsTelegraphOnlyOnEnrage())
+                        {
+                            AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                        }
+
+                        ApplyMonsterVisualState(candidate, state);
+                        adjacencyAggroUsedThisTurn = true;
+                        return;
+                    }
+
+                    if (state.IsEnraged)
+                    {
+                        continue;
+                    }
+
+                    if (IsAdjacencyMatchForecastRequired()
+                        && !board.CanMatchPieceWithinEnergyDepth(candidatePosition, Energy))
+                    {
+                        continue;
+                    }
+
+                    SetGenericMonsterAngry(candidate, playerPosition, true);
+                    adjacencyAggroUsedThisTurn = true;
+                    return;
                 }
             }
-
-            if (adjacencyCandidates.Count == 0)
-            {
-                return;
-            }
-
-            var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
-            var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
-            var monsterPosition = new Vector2Int(selected.X, selected.Y);
-            if (IsAdjacencyMatchForecastRequired() &&
-                !board.CanMatchPieceWithinEnergyDepth(
-                    monsterPosition,
-                    Energy))
-            {
-                return;
-            }
-
-            SetGenericMonsterAngry(selected, playerPosition, true);
-            adjacencyAggroUsedThisTurn = true;
         }
+
 
         private void SpawnGenericMonsterTelegraph(Vector2Int position)
         {
