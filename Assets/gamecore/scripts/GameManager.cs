@@ -2472,6 +2472,13 @@ namespace GameCore
 
             var pieceId = piece.GetInstanceID();
             var state = GetOrCreateMonsterState(piece);
+            if (state.IsHurt)
+            {
+                monsterStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
+                return;
+            }
+
             var hasBlockingState = state.IsEnraged || state.IsConfused || state.IsTired || state.IsSleeping;
             if (hasBlockingState)
             {
@@ -2480,31 +2487,24 @@ namespace GameCore
                 return;
             }
 
-            state.TargetTile = targetTile;
-            state.CurrentTile = new Vector2Int(piece.X, piece.Y);
-            state.IsAngry = false;
-            state.IsAdjacencyTriggered = false;
-            state.IsHurt = false;
-            state.IsCrying = false;
-            state.IsEnraged = false;
-            state.TurnsUntilAttack = 0;
-            state.StateTurnsRemaining = 0;
-            monsterStates[pieceId] = state;
-
-            if (IsHpSurvivalCheckRequired())
+            if (IsHpSurvivalCheckRequired() && !WillMonsterSurviveUntilAttack(piece))
             {
-                ReevaluateMonsterEmotionalState(piece);
-                if (debugMode && monsterStates.TryGetValue(pieceId, out var updatedState) && updatedState.IsAngry)
-                {
-                    Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
-                }
-
+                EnterHurtState(piece);
                 return;
             }
 
+            state.TargetTile = targetTile;
+            state.CurrentTile = new Vector2Int(piece.X, piece.Y);
             state.IsAngry = true;
             state.IsAdjacencyTriggered = triggeredByAdjacency;
+            state.IsHurt = false;
+            state.IsCrying = false;
+            state.IsEnraged = false;
+            state.IsTired = false;
+            state.IsSleeping = false;
+            state.IsConfused = false;
             state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
+            state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
 
             if (!IsTelegraphOnlyOnEnrage())
@@ -2614,21 +2614,26 @@ namespace GameCore
                 return false;
             }
 
+            if (!IsHpSurvivalCheckRequired())
+            {
+                return true;
+            }
+
             var predictedHP = GetMonsterHitPoints(piece);
+            var ticksToPredict = 2;
+            for (var tick = 0; tick < ticksToPredict; tick++)
+            {
+                predictedHP -= PredictGuaranteedDamageNextTick(piece);
+                if (predictedHP <= 0)
+                {
+                    return false;
+                }
+            }
 
-            // Include pending damage from current resolution.
-            predictedHP -= GetPendingDamageThisTurn(piece);
-
-            // Include DoT/poison ticks scheduled before next attack phase.
-            predictedHP -= GetScheduledDotDamage(piece);
-
-            // Include environment tick if applicable.
-            predictedHP -= GetPredictedEnvironmentDamage(piece);
-
-            return predictedHP > 0;
+            return true;
         }
 
-        private void SetMonsterHurt(Piece piece)
+        private void EnterHurtState(Piece piece)
         {
             if (piece == null || piece.IsPlayer)
             {
@@ -2637,18 +2642,16 @@ namespace GameCore
 
             var pieceId = piece.GetInstanceID();
             var state = GetOrCreateMonsterState(piece);
-            if (state.IsEnraged)
-            {
-                monsterStates[pieceId] = state;
-                ApplyMonsterVisualState(piece, state);
-                return;
-            }
-
             state.IsAngry = false;
             state.IsAdjacencyTriggered = false;
             state.IsHurt = true;
-            state.IsCrying = false;
+            state.IsCrying = true;
+            state.IsEnraged = false;
+            state.IsTired = false;
+            state.IsSleeping = false;
+            state.IsConfused = false;
             state.TurnsUntilAttack = 0;
+            state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
             AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
             RemoveGenericMonsterTelegraph(state.CurrentTile);
@@ -2683,7 +2686,7 @@ namespace GameCore
                 state = new MonsterState
                 {
                     CurrentTile = new Vector2Int(piece.X, piece.Y),
-                    CurrentHP = Mathf.Max(1, monsterAngerConfig != null ? monsterAngerConfig.defaultMonsterHP : 3)
+                    CurrentHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3)
                 };
             }
             else
@@ -2691,7 +2694,7 @@ namespace GameCore
                 state.CurrentTile = new Vector2Int(piece.X, piece.Y);
                 if (state.CurrentHP <= 0)
                 {
-                    state.CurrentHP = Mathf.Max(1, monsterAngerConfig != null ? monsterAngerConfig.defaultMonsterHP : 3);
+                    state.CurrentHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3);
                 }
             }
 
@@ -2713,6 +2716,13 @@ namespace GameCore
             var pieceId = piece.GetInstanceID();
             if (!monsterStates.TryGetValue(pieceId, out var state))
             {
+                return;
+            }
+
+            if (state.IsHurt)
+            {
+                ApplyMonsterVisualState(piece, state);
+                monsterStates[pieceId] = state;
                 return;
             }
 
@@ -2826,12 +2836,7 @@ namespace GameCore
             }
 
             piece.SetMonsterEnragedVisual(state.IsEnraged || state.IsAngry);
-            piece.SetMonsterOutStateVisual(state.IsCrying);
-
-            if (state.IsHurt)
-            {
-                piece.SetMonsterHurtVisual();
-            }
+            piece.SetMonsterOutStateVisual(state.IsCrying || state.IsHurt);
         }
 
         private void ReevaluateAllMonsterEmotionalStates()
@@ -2934,6 +2939,11 @@ namespace GameCore
                         state = GetOrCreateMonsterState(piece);
                     }
 
+                    if (state.IsHurt)
+                    {
+                        continue;
+                    }
+
                     // Do not override committed attack state.
                     if (state.IsEnraged)
                     {
@@ -2952,7 +2962,7 @@ namespace GameCore
                     }
                     else
                     {
-                        SetMonsterHurt(piece);
+                        EnterHurtState(piece);
                     }
                 }
 
@@ -2973,6 +2983,11 @@ namespace GameCore
             {
                 var candidatePosition = playerPosition + offsets[i];
                 if (!board.TryGetPieceAt(candidatePosition, out var candidate) || candidate == null || candidate.IsPlayer)
+                {
+                    continue;
+                }
+
+                if (monsterStates.TryGetValue(candidate.GetInstanceID(), out var candidateState) && candidateState.IsHurt)
                 {
                     continue;
                 }
