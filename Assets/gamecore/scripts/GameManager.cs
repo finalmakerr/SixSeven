@@ -139,8 +139,10 @@ namespace GameCore
         [SerializeField] private HardcoreConfig hardcoreConfig;
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
+        [SerializeField] private int maxEnergyCap = 7; // CODEX STAGE 10C
         [Header("Player Health")]
         [SerializeField] private int maxHearts = 1;
+        [SerializeField] private int maxHeartsCap = 7; // CODEX STAGE 10C
         private int baseMaxEnergy;
         private int baseMaxHearts;
         [Header("Player Inventory")]
@@ -425,6 +427,14 @@ namespace GameCore
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
+
+
+        private enum BossShardRewardType
+        {
+            MaxHp,
+            MaxEnergy,
+            SpellPower
+        }
 
         private readonly struct ItemDropOption
         {
@@ -1430,6 +1440,13 @@ namespace GameCore
             TickBossPowerCooldowns();
             board.TickLootTurnsForTurnEnd();
 
+            if (IsBossLevel && !CurrentBossState.bossAlive && !board.HasActivePowerShard)
+            {
+                TriggerInstantWin();
+                TriggerWin();
+                return;
+            }
+
             for (int x = 0; x < board.Width; x++)
             {
                 for (int y = 0; y < board.Height; y++)
@@ -1607,7 +1624,7 @@ namespace GameCore
 
             if (!board.TryGetPieceAt(targetPosition, out var lootPiece)
                 || lootPiece == null
-                || (lootPiece.SpecialType != SpecialType.Item && lootPiece.SpecialType != SpecialType.Bugada))
+                || (lootPiece.SpecialType != SpecialType.Item && lootPiece.SpecialType != SpecialType.Bugada && lootPiece.SpecialType != SpecialType.PowerShard))
             {
                 pendingLootCancelAction?.Invoke();
                 ClearPendingLootDecisionState();
@@ -1620,6 +1637,22 @@ namespace GameCore
                 ActivateBugada();
                 board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
                 pendingLootCommitAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            if (lootPiece.SpecialType == SpecialType.PowerShard)
+            {
+                if (TryBeginBossStatRewardChoice())
+                {
+                    board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                    pendingLootCommitAction?.Invoke();
+                    ClearPendingLootDecisionState();
+                    return;
+                }
+
+                pendingLootCancelAction?.Invoke();
                 ClearPendingLootDecisionState();
                 SetBoardInputLock(false);
                 return;
@@ -4242,8 +4275,17 @@ namespace GameCore
                 $"BossDefeated {source} at {position.x},{position.y} boss at {bossState.bossPosition.x},{bossState.bossPosition.y}",
                 this); // CODEX BOSS PR4
 
-            TriggerInstantWin();
-            TriggerWin();
+            var spawnedShard = false;
+            if (board != null)
+            {
+                spawnedShard = board.TrySpawnPowerShardAt(bossState.bossPosition);
+            }
+
+            if (!spawnedShard)
+            {
+                TriggerInstantWin();
+                TriggerWin();
+            }
         }
 
 
@@ -4439,18 +4481,6 @@ namespace GameCore
 
             // CODEX: LEVEL_LOOP
             SetEndPanels(true, false);
-            // CODEX BOSS PR4
-            if (IsBossLevel && !CurrentBossState.bossAlive)
-            {
-                if (!TryBeginBossStatRewardChoice())
-                {
-                    var bossPowerRewardStarted = GrantBossPowerIfEligible();
-                    if (!bossPowerRewardStarted)
-                    {
-                        SetBoardInputLock(false);
-                    }
-                }
-            }
             OnWin?.Invoke();
         }
 
@@ -6166,6 +6196,7 @@ namespace GameCore
                 bossPowerRewardPromptText.text = "Choose a reward.";
             }
 
+            var orderedRewards = BuildBossShardRewardOptionOrder();
             for (var i = 0; i < bossPowerRewardButtons.Length; i++)
             {
                 var button = bossPowerRewardButtons[i];
@@ -6174,13 +6205,9 @@ namespace GameCore
                     continue;
                 }
 
-                if (i == 0)
+                if (i < orderedRewards.Count)
                 {
-                    ConfigureBossStatRewardButton(button, "+1 Heart", true);
-                }
-                else if (i == 1)
-                {
-                    ConfigureBossStatRewardButton(button, "+1 Max Energy", false);
+                    ConfigureBossStatRewardButton(button, orderedRewards[i]);
                 }
                 else
                 {
@@ -6193,27 +6220,70 @@ namespace GameCore
             return true;
         }
 
-        private void ConfigureBossStatRewardButton(Button button, string label, bool isHeartReward)
+        private List<BossShardRewardType> BuildBossShardRewardOptionOrder()
+        {
+            var orderedRewards = new List<BossShardRewardType>
+            {
+                BossShardRewardType.MaxHp,
+                BossShardRewardType.MaxEnergy,
+                BossShardRewardType.SpellPower
+            };
+
+            var priority = SelectBossShardRewardPriority();
+            orderedRewards.Remove(priority);
+            orderedRewards.Insert(0, priority);
+            return orderedRewards;
+        }
+
+        private BossShardRewardType SelectBossShardRewardPriority()
+        {
+            if (CurrentBoss != null
+                && CurrentBoss.associatedPower != BossPower.None
+                && !HasBossPower(CurrentBoss.associatedPower))
+            {
+                return BossShardRewardType.SpellPower;
+            }
+
+            if (maxHearts == maxEnergy)
+            {
+                return UnityEngine.Random.Range(0, 2) == 0
+                    ? BossShardRewardType.MaxHp
+                    : BossShardRewardType.MaxEnergy;
+            }
+
+            return maxHearts < maxEnergy ? BossShardRewardType.MaxHp : BossShardRewardType.MaxEnergy;
+        }
+
+        private void ConfigureBossStatRewardButton(Button button, BossShardRewardType rewardType)
         {
             button.gameObject.SetActive(true);
             button.onClick.RemoveAllListeners();
+
             var textLabel = button.GetComponentInChildren<Text>();
             if (textLabel != null)
             {
-                textLabel.text = label;
+                textLabel.text = GetBossShardRewardLabel(rewardType);
             }
 
-            if (isHeartReward)
+            button.onClick.AddListener(() => ResolveBossStatRewardChoice(rewardType));
+        }
+
+        private static string GetBossShardRewardLabel(BossShardRewardType rewardType)
+        {
+            switch (rewardType)
             {
-                button.onClick.AddListener(() => ResolveBossStatRewardChoice(true));
-            }
-            else
-            {
-                button.onClick.AddListener(() => ResolveBossStatRewardChoice(false));
+                case BossShardRewardType.MaxHp:
+                    return "+1 Max HP";
+                case BossShardRewardType.MaxEnergy:
+                    return "+1 Max Energy";
+                case BossShardRewardType.SpellPower:
+                    return "+1 Spell Power";
+                default:
+                    return "+1 Reward";
             }
         }
 
-        private void ResolveBossStatRewardChoice(bool chooseHeart)
+        private void ResolveBossStatRewardChoice(BossShardRewardType rewardType)
         {
             if (!awaitingBossStatRewardChoice)
             {
@@ -6226,23 +6296,56 @@ namespace GameCore
                 bossPowerRewardPanel.SetActive(false);
             }
 
-            if (chooseHeart)
-            {
-                maxHearts = Mathf.Max(1, maxHearts + 1);
-                CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + 2);
-            }
-            else
-            {
-                maxEnergy = Mathf.Max(1, maxEnergy + 1);
-                energy = Mathf.Min(maxEnergy, energy);
-            }
-
+            ApplyBossShardReward(rewardType);
             UpdateUI();
 
             var bossPowerRewardStarted = GrantBossPowerIfEligible();
             if (!bossPowerRewardStarted)
             {
                 SetBoardInputLock(false);
+                if (IsBossLevel && !CurrentBossState.bossAlive)
+                {
+                    TriggerInstantWin();
+                    TriggerWin();
+                }
+            }
+        }
+
+        private void ApplyBossShardReward(BossShardRewardType rewardType)
+        {
+            switch (rewardType)
+            {
+                case BossShardRewardType.MaxHp:
+                {
+                    var clampedHearts = Mathf.Min(Mathf.Max(1, maxHeartsCap), maxHearts + 1);
+                    if (clampedHearts > maxHearts)
+                    {
+                        maxHearts = clampedHearts;
+                        CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + 2);
+                    }
+                    break;
+                }
+                case BossShardRewardType.MaxEnergy:
+                {
+                    var clampedEnergy = Mathf.Min(Mathf.Max(1, maxEnergyCap), maxEnergy + 1);
+                    if (clampedEnergy > maxEnergy)
+                    {
+                        maxEnergy = clampedEnergy;
+                    }
+
+                    energy = Mathf.Min(maxEnergy, energy);
+                    break;
+                }
+                case BossShardRewardType.SpellPower:
+                {
+                    if (CurrentBoss != null
+                        && CurrentBoss.associatedPower != BossPower.None
+                        && !HasBossPower(CurrentBoss.associatedPower))
+                    {
+                        TryAddBossPower(CurrentBoss.associatedPower);
+                    }
+                    break;
+                }
             }
         }
 
