@@ -533,6 +533,8 @@ namespace GameCore
 
         public void ResetGame()
         {
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
+
             Score = 0;
             // CODEX CHEST PR2
             crownsThisRun = 0;
@@ -2396,6 +2398,8 @@ namespace GameCore
 
             foreach (var pieceId in toAttack)
             {
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+
                 var state = monsterStates[pieceId];
                 state.IsAngry = false;
                 state.IsEnraged = false;
@@ -2437,6 +2441,8 @@ namespace GameCore
                 StateTurnsRemaining = 0,
                 CurrentTile = new Vector2Int(piece.X, piece.Y)
             };
+            AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, targetTile);
+
             if (debugMode)
             {
                 Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
@@ -2672,6 +2678,8 @@ namespace GameCore
             bossState.AttackTarget = targetPosition;
             bossState.TurnsUntilAttack = balanceConfig.BossAttackDelayTurns;
             CurrentBossState = bossState;
+            AttackTelegraphSystem.Instance?.SpawnTelegraph(bossState.AggressorPieceId, targetPosition);
+
             hasTriggeredMonsterWindup = false;
             SpawnBossTelegraph(CurrentBossState.AttackTarget);
             UpdateMonsterAttackTelegraph();
@@ -2687,6 +2695,8 @@ namespace GameCore
             {
                 return;
             }
+
+            AttackTelegraphSystem.Instance?.RemoveTelegraph(CurrentBossState.AggressorPieceId);
 
             isResolvingMonsterAttack = true;
             try
@@ -3254,6 +3264,10 @@ namespace GameCore
             {
                 ClearBossAttackState();
             }
+            else
+            {
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(piece.GetInstanceID());
+            }
 
             TryDefeatBossFromDestruction(piece, reason);
 
@@ -3643,6 +3657,8 @@ namespace GameCore
             }
 
             hasEnded = true;
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
+
             // CODEX: LEVEL_LOOP
             SetEndPanels(true, false);
             // CODEX BOSS PR4
@@ -3688,6 +3704,8 @@ namespace GameCore
             {
                 hasEnded = true;
             }
+
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
 
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, true);
