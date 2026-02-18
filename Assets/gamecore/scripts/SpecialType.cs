@@ -12,6 +12,7 @@ namespace GameCore
         Player = 6,
         Item = 7, // CODEX STAGE 7B: board-spawned items.
         Bugada = 8, // CODEX STAGE 7D: Bugada special item.
-        Tumor = 9 // CODEX REPLAYABILITY: level mini-goal target special.
+        Tumor = 9, // CODEX REPLAYABILITY: level mini-goal target special.
+        PowerShard = 10 // CODEX STAGE 10C: boss reward shard pickup.
     }
 }
