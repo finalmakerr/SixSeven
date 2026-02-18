@@ -2676,10 +2676,13 @@ namespace GameCore
 
         private void EnterIdleState(ref MonsterState state)
         {
+            // Do not allow Idle transition if monster is in terminal Hurt state
+            if (state.IsHurt)
+                return;
+
             state.IsIdle = true;
             state.IsAngry = false;
             state.IsEnraged = false;
-            state.IsHurt = false;
             state.IsConfused = false;
             state.IsTired = false;
             state.IsSleeping = false;
