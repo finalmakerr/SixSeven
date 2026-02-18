@@ -443,6 +443,10 @@ namespace GameCore
             {
                 SetSprite(matchedSprite);
             }
+            else if (isHurt)
+            {
+                SetSprite(hurtSprite);
+            }
             else if (isEnraged)
             {
                 SetSprite(enrageSprite);
@@ -450,10 +454,6 @@ namespace GameCore
             else if (isOutState)
             {
                 SetSprite(outSprite);
-            }
-            else if (isHurt)
-            {
-                SetSprite(hurtSprite);
             }
             else
             {
