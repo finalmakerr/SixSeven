@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace GameCore
@@ -21,8 +22,19 @@ namespace GameCore
         private SpriteRenderer spriteRenderer;
         private Sprite baseSprite;
         private Sprite bombSprite;
+        [SerializeField] private Sprite idleSprite;
+        [SerializeField] private Sprite hurtSprite;
+        [SerializeField] private Sprite enrageSprite;
+        [SerializeField] private Sprite outSprite;
+        [SerializeField] private Sprite deadSprite;
+        [SerializeField] private Sprite matchedSprite;
         private bool isPlayerPiece;
         private bool hasInitializedSpecialType;
+        private bool isDead;
+        private bool isMatched;
+        private bool isEnraged;
+        private bool isOutState;
+        private bool isHurt;
         // CODEX CHEST PR1
         private SpriteRenderer treasureOverlayRenderer;
         private SpriteRenderer hazardOverlayRenderer;
@@ -31,7 +43,6 @@ namespace GameCore
         private TextMesh itemTurnsText;
         private TileDebuffType currentTileDebuff = TileDebuffType.None;
         private int tileDebuffDuration;
-        private MonsterVisualState monsterVisualState = MonsterVisualState.Idle;
 
         private void Awake()
         {
@@ -86,8 +97,102 @@ namespace GameCore
                 return;
             }
 
-            monsterVisualState = state;
-            ApplySpecialVisual();
+            switch (state)
+            {
+                case MonsterVisualState.Angry:
+                    SetMonsterVisualStates(true, false, false);
+                    break;
+                case MonsterVisualState.Cry:
+                    SetMonsterVisualStates(false, true, false);
+                    break;
+                case MonsterVisualState.Hurt:
+                    SetMonsterVisualStates(false, false, false);
+                    SetMonsterHurtVisual();
+                    break;
+                case MonsterVisualState.Idle:
+                default:
+                    SetMonsterVisualStates(false, false, false);
+                    break;
+            }
+        }
+
+        public void SetMonsterVisualStates(bool enraged, bool outState, bool hurt)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isEnraged = enraged;
+            isOutState = outState;
+            isHurt = hurt;
+            RefreshVisual();
+        }
+
+        public void SetMonsterDeadVisual(bool dead)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isDead = dead;
+            RefreshVisual();
+        }
+
+        public void SetMonsterMatchedVisual(bool matched)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isMatched = matched;
+            RefreshVisual();
+        }
+
+        public void SetMonsterEnragedVisual(bool enraged)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isEnraged = enraged;
+            RefreshVisual();
+        }
+
+        public void SetMonsterOutStateVisual(bool outState)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isOutState = outState;
+            RefreshVisual();
+        }
+
+        public void SetMonsterHurtVisual(float duration = 0.3f)
+        {
+            if (isPlayerPiece || isDead || isMatched)
+            {
+                return;
+            }
+
+            StopCoroutine(nameof(HurtRoutine));
+            StartCoroutine(HurtRoutine(duration));
+        }
+
+        private IEnumerator HurtRoutine(float duration)
+        {
+            isHurt = true;
+            RefreshVisual();
+
+            yield return new WaitForSeconds(duration);
+
+            isHurt = false;
+            RefreshVisual();
         }
 
         private void UpdateTileDebuffVisual()
@@ -133,12 +238,14 @@ namespace GameCore
             baseSprite = null;
             bombSprite = null;
             hasInitializedSpecialType = true;
+            isDead = false;
+            isMatched = false;
+            isEnraged = false;
+            isOutState = false;
+            isHurt = false;
             ClearTreasureChestVisual();
             ClearItemVisual();
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.sprite = null;
-            }
+            SetSprite(null);
             ApplySpecialVisual();
             name = $"Piece_{x}_{y}";
         }
@@ -303,64 +410,94 @@ namespace GameCore
 
             if (isPlayerPiece)
             {
-                spriteRenderer.sprite = null;
+                SetSprite(null);
                 spriteRenderer.color = Color.white;
                 ClearHazardOverlay();
                 return;
-            }
-
-            if (SpecialType == SpecialType.Bomb && bombSprite != null)
-            {
-                spriteRenderer.sprite = bombSprite;
-            }
-            else if (baseSprite != null)
-            {
-                spriteRenderer.sprite = baseSprite;
-            }
-
-            if (hazardOverlayRenderer != null)
-            {
-                hazardOverlayRenderer.sprite = spriteRenderer.sprite;
             }
 
             if (SpecialType == SpecialType.Tumor)
             {
                 var tint = TumorTier >= 3 ? new Color(0.55f, 0.1f, 0.7f) : TumorTier == 2 ? new Color(0.7f, 0.15f, 0.15f) : new Color(0.85f, 0.3f, 0.3f);
                 spriteRenderer.color = tint;
-                ApplyMonsterVisualTint();
+                RefreshVisual();
                 return;
             }
 
             spriteRenderer.color = Color.white;
-            ApplyMonsterVisualTint();
+            RefreshVisual();
         }
 
-        private void ApplyMonsterVisualTint()
+        private void RefreshVisual()
+        {
+            if (spriteRenderer == null || isPlayerPiece)
+            {
+                return;
+            }
+
+            if (isDead)
+            {
+                SetSprite(deadSprite);
+            }
+            else if (isMatched)
+            {
+                SetSprite(matchedSprite);
+            }
+            else if (isEnraged)
+            {
+                SetSprite(enrageSprite);
+            }
+            else if (isOutState)
+            {
+                SetSprite(outSprite);
+            }
+            else if (isHurt)
+            {
+                SetSprite(hurtSprite);
+            }
+            else
+            {
+                SetSprite(ResolveIdleSprite());
+            }
+        }
+
+        private Sprite ResolveIdleSprite()
+        {
+            if (SpecialType == SpecialType.Bomb && bombSprite != null)
+            {
+                return bombSprite;
+            }
+
+            if (idleSprite != null)
+            {
+                return idleSprite;
+            }
+
+            return baseSprite;
+        }
+
+        private void SetSprite(Sprite sprite)
         {
             if (spriteRenderer == null)
             {
                 return;
             }
 
-            var tint = Color.white;
-            switch (monsterVisualState)
+            if (sprite == null)
             {
-                case MonsterVisualState.Cry:
-                    tint = new Color(0.65f, 0.8f, 1f);
-                    break;
-                case MonsterVisualState.Hurt:
-                    tint = new Color(1f, 0.75f, 0.75f);
-                    break;
-                case MonsterVisualState.Angry:
-                    tint = new Color(1f, 0.55f, 0.55f);
-                    break;
-                case MonsterVisualState.Idle:
-                default:
-                    tint = Color.white;
-                    break;
+                sprite = ResolveIdleSprite();
             }
 
-            spriteRenderer.color *= tint;
+            if (spriteRenderer.sprite == sprite)
+            {
+                return;
+            }
+
+            spriteRenderer.sprite = sprite;
+            if (hazardOverlayRenderer != null)
+            {
+                hazardOverlayRenderer.sprite = sprite;
+            }
         }
 
         // CODEX CHEST PR1

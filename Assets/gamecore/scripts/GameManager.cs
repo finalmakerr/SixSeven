@@ -2825,21 +2825,12 @@ namespace GameCore
                 return;
             }
 
-            if (state.IsCrying)
+            piece.SetMonsterEnragedVisual(state.IsEnraged || state.IsAngry);
+            piece.SetMonsterOutStateVisual(state.IsCrying);
+
+            if (state.IsHurt)
             {
-                piece.SetVisualState(MonsterVisualState.Cry);
-            }
-            else if (state.IsHurt)
-            {
-                piece.SetVisualState(MonsterVisualState.Hurt);
-            }
-            else if (state.IsAngry)
-            {
-                piece.SetVisualState(MonsterVisualState.Angry);
-            }
-            else
-            {
-                piece.SetVisualState(MonsterVisualState.Idle);
+                piece.SetMonsterHurtVisual();
             }
         }
 
