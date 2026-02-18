@@ -370,6 +370,7 @@ namespace GameCore
         private bool adjacencyAggroUsedThisTurn;
         private int monsterTurnCounter;
         private readonly Dictionary<int, MonsterState> monsterStates = new Dictionary<int, MonsterState>();
+        private readonly Dictionary<Vector2Int, GameObject> genericTelegraphs = new Dictionary<Vector2Int, GameObject>();
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
         // CODEX RAGE SCALE FINAL
@@ -412,6 +413,7 @@ namespace GameCore
         private struct MonsterState
         {
             public bool IsAngry;
+            public bool IsAdjacencyTriggered;
             public bool IsHurt;
             public bool IsCrying;
             public bool IsEnraged;
@@ -624,6 +626,7 @@ namespace GameCore
             adjacencyAggroUsedThisTurn = false;
             monsterTurnCounter = 0;
             monsterStates.Clear();
+            ClearGenericMonsterTelegraphs();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -706,6 +709,7 @@ namespace GameCore
             adjacencyAggroUsedThisTurn = false;
             monsterTurnCounter = 0;
             monsterStates.Clear();
+            ClearGenericMonsterTelegraphs();
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -2304,15 +2308,18 @@ namespace GameCore
                 var state = kvp.Value;
                 if (!TryFindPieceById(pieceId, out var piece))
                 {
+                    RemoveGenericMonsterTelegraph(state.CurrentTile);
                     continue;
                 }
 
+                var previousTile = state.CurrentTile;
                 var currentTile = new Vector2Int(piece.X, piece.Y);
                 var moved = currentTile != state.CurrentTile;
                 state.CurrentTile = currentTile;
 
                 if (moved && (state.IsAngry || state.IsEnraged))
                 {
+                    RemoveGenericMonsterTelegraph(previousTile);
                     state = CreateConfusedState(currentTile, state.CurrentHP);
                     if (debugMode)
                     {
@@ -2326,11 +2333,17 @@ namespace GameCore
 
                 if (state.IsAngry)
                 {
+                    var shouldSpawnAdjacencyTelegraph = state.IsAdjacencyTriggered;
                     state.IsAngry = false;
+                    state.IsAdjacencyTriggered = false;
                     state.IsHurt = false;
                     state.IsCrying = false;
                     state.IsEnraged = true;
                     AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                    if (shouldSpawnAdjacencyTelegraph)
+                    {
+                        SpawnGenericMonsterTelegraph(state.CurrentTile);
+                    }
                     if (debugMode)
                     {
                         Debug.Log($"GenericMonsterState: piece {pieceId} transitioned to Enraged", this);
@@ -2344,6 +2357,7 @@ namespace GameCore
 
                 if (state.IsConfused || state.IsTired || state.IsSleeping)
                 {
+                    RemoveGenericMonsterTelegraph(state.CurrentTile);
                     state.StateTurnsRemaining--;
                     if (state.StateTurnsRemaining <= 0)
                     {
@@ -2422,7 +2436,9 @@ namespace GameCore
                 }
 
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
                 state.IsAngry = false;
+                state.IsAdjacencyTriggered = false;
                 state.IsHurt = false;
                 state.IsCrying = false;
                 state.IsEnraged = false;
@@ -2439,7 +2455,7 @@ namespace GameCore
             }
         }
 
-        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile)
+        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile, bool triggeredByAdjacency)
         {
             if (piece == null || piece.IsPlayer)
             {
@@ -2459,6 +2475,7 @@ namespace GameCore
             state.TargetTile = targetTile;
             state.CurrentTile = new Vector2Int(piece.X, piece.Y);
             state.IsAngry = false;
+            state.IsAdjacencyTriggered = false;
             state.IsHurt = false;
             state.IsCrying = false;
             state.IsEnraged = false;
@@ -2478,6 +2495,7 @@ namespace GameCore
             }
 
             state.IsAngry = true;
+            state.IsAdjacencyTriggered = triggeredByAdjacency;
             state.TurnsUntilAttack = 2;
             monsterStates[pieceId] = state;
             ApplyMonsterVisualState(piece, state);
@@ -2609,11 +2627,13 @@ namespace GameCore
             }
 
             state.IsAngry = false;
+            state.IsAdjacencyTriggered = false;
             state.IsHurt = true;
             state.IsCrying = false;
             state.TurnsUntilAttack = 0;
             monsterStates[pieceId] = state;
             AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            RemoveGenericMonsterTelegraph(state.CurrentTile);
             ApplyMonsterVisualState(piece, state);
         }
 
@@ -2690,6 +2710,7 @@ namespace GameCore
             var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
 
             state.IsAngry = false;
+            state.IsAdjacencyTriggered = false;
             state.IsHurt = false;
             state.IsCrying = false;
 
@@ -2697,10 +2718,12 @@ namespace GameCore
             {
                 state.IsCrying = true;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
             else if (survivesFull)
             {
                 state.IsAngry = true;
+                state.IsAdjacencyTriggered = false;
                 state.TurnsUntilAttack = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.turnsBeforeAttack) : 2;
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -2711,11 +2734,13 @@ namespace GameCore
             {
                 state.IsHurt = true;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
 
             if (!state.IsAngry)
             {
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
 
             ApplyMonsterVisualState(piece, state);
@@ -2861,7 +2886,7 @@ namespace GameCore
 
                     if (WillMonsterSurviveUntilAttack(piece))
                     {
-                        SetGenericMonsterAngry(piece, playerPosition);
+                        SetGenericMonsterAngry(piece, playerPosition, false);
                     }
                     else
                     {
@@ -2922,8 +2947,74 @@ namespace GameCore
                 return;
             }
 
-            SetGenericMonsterAngry(selected, playerPosition);
+            SetGenericMonsterAngry(selected, playerPosition, true);
             adjacencyAggroUsedThisTurn = true;
+        }
+
+        private void SpawnGenericMonsterTelegraph(Vector2Int position)
+        {
+            if (board == null || !board.IsWithinBounds(position))
+            {
+                return;
+            }
+
+            if (genericTelegraphs.ContainsKey(position))
+            {
+                return;
+            }
+
+            var worldPosition = board.GridToWorld(position.x, position.y);
+            GameObject markerObject;
+            if (monsterAttackMarkerPrefab != null)
+            {
+                markerObject = Instantiate(monsterAttackMarkerPrefab, worldPosition, Quaternion.identity);
+            }
+            else
+            {
+                markerObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                markerObject.name = "GenericAttackTelegraph";
+                markerObject.transform.position = worldPosition;
+                markerObject.transform.localScale = Vector3.one * 0.9f;
+                var renderer = markerObject.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material = new Material(Shader.Find("Unlit/Color"));
+                    renderer.material.color = new Color(1f, 0.2f, 0.2f, 0.75f);
+                }
+            }
+
+            if (markerObject != null)
+            {
+                genericTelegraphs[position] = markerObject;
+            }
+        }
+
+        private void RemoveGenericMonsterTelegraph(Vector2Int position)
+        {
+            if (!genericTelegraphs.TryGetValue(position, out var telegraph))
+            {
+                return;
+            }
+
+            if (telegraph != null)
+            {
+                Destroy(telegraph);
+            }
+
+            genericTelegraphs.Remove(position);
+        }
+
+        private void ClearGenericMonsterTelegraphs()
+        {
+            foreach (var telegraph in genericTelegraphs.Values)
+            {
+                if (telegraph != null)
+                {
+                    Destroy(telegraph);
+                }
+            }
+
+            genericTelegraphs.Clear();
         }
 
 
@@ -3609,6 +3700,10 @@ namespace GameCore
             else
             {
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(piece.GetInstanceID());
+                if (monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
+                {
+                    RemoveGenericMonsterTelegraph(state.CurrentTile);
+                }
             }
 
             TryDefeatBossFromDestruction(piece, reason);
