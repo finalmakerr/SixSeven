@@ -401,6 +401,11 @@ namespace GameCore
                 return false;
             }
 
+            if (TryStartLootIntercept(first, second))
+            {
+                return true;
+            }
+
             if (GameManager.Instance != null && GameManager.Instance.IsMonsterEnraged(second.GetInstanceID()))
             {
                 return false;
@@ -413,6 +418,66 @@ namespace GameCore
 
             StartCoroutine(SwapRoutine(first, second));
             return true;
+        }
+
+        private bool TryStartLootIntercept(Piece first, Piece second)
+        {
+            if (first == null || second == null || GameManager.Instance == null)
+            {
+                return false;
+            }
+
+            Piece playerPiece;
+            Piece lootPiece;
+            if (first.IsPlayer && IsLootPiece(second))
+            {
+                playerPiece = first;
+                lootPiece = second;
+            }
+            else if (second.IsPlayer && IsLootPiece(first))
+            {
+                playerPiece = second;
+                lootPiece = first;
+            }
+            else
+            {
+                return false;
+            }
+
+            isBusy = true;
+            var targetPosition = new Vector2Int(lootPiece.X, lootPiece.Y);
+            GameManager.Instance.HandleLootIntercept(
+                targetPosition,
+                () => StartCoroutine(CommitLootInterceptMovementRoutine(playerPiece, lootPiece)),
+                () => { isBusy = false; });
+            return true;
+        }
+
+        private static bool IsLootPiece(Piece piece)
+        {
+            return piece != null && (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada);
+        }
+
+        private IEnumerator CommitLootInterceptMovementRoutine(Piece playerPiece, Piece lootPiece)
+        {
+            if (playerPiece == null || lootPiece == null)
+            {
+                isBusy = false;
+                yield break;
+            }
+
+            var sourcePosition = new Vector2Int(playerPiece.X, playerPiece.Y);
+            SwapPieces(playerPiece, lootPiece);
+
+            yield return new WaitForSeconds(0.05f);
+
+            TryDestroyPieceAt(sourcePosition, DestructionReason.ItemPickup);
+
+            activeMoveId = moveId + 1;
+            moveId = activeMoveId;
+            ValidSwap?.Invoke();
+            TurnEnded?.Invoke();
+            isBusy = false;
         }
 
         public bool CanJetpackSwap(Piece playerPiece, Vector2Int direction)
@@ -2253,7 +2318,6 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
-                TickItemTurns(); // CODEX STAGE 7B: every match counts as a turn for items.
                 // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
                 matchRunLengthsSnapshot = GetMatchRunLengthsSnapshot();
@@ -2261,6 +2325,11 @@ namespace GameCore
 
             EnsurePlayableBoard();
             isBusy = false;
+        }
+
+        public void TickLootTurnsForTurnEnd()
+        {
+            TickItemTurns();
         }
 
         private int ClearMatches(List<Piece> matches)

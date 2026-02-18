@@ -41,6 +41,7 @@ namespace GameCore
         [SerializeField] private Text inventoryOverflowIncomingItemText;
         [SerializeField] private Button[] inventoryOverflowReplaceButtons;
         [SerializeField] private Button inventoryOverflowDestroyButton;
+        [SerializeField] private Button inventoryOverflowCancelButton;
         [SerializeField] private Text shieldIconText;
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
@@ -351,6 +352,8 @@ namespace GameCore
         private bool awaitingInventoryOverflowDecision;
         private PlayerItemType pendingInventoryOverflowItem;
         private Vector2Int pendingInventoryOverflowPosition;
+        private Action pendingLootCommitAction;
+        private Action pendingLootCancelAction;
         private int energy;
         private bool applyRunStartResourceAdjustments;
         private int pickupRadius;
@@ -1425,7 +1428,7 @@ namespace GameCore
             TickHazardPressure();
             TickSpecialPowerCooldowns();
             TickBossPowerCooldowns();
-            TryPickupAdjacentItems();
+            board.TickLootTurnsForTurnEnd();
 
             for (int x = 0; x < board.Width; x++)
             {
@@ -1581,6 +1584,84 @@ namespace GameCore
             }
 
             isPlayerActionPhase = true;
+        }
+
+        public void HandleLootIntercept(Vector2Int targetPosition, Action commitMovement, Action cancelMovement)
+        {
+            pendingLootCommitAction = commitMovement;
+            pendingLootCancelAction = cancelMovement;
+            pendingInventoryOverflowPosition = targetPosition;
+            HandleLootIntercept(targetPosition);
+        }
+
+        private void HandleLootIntercept(Vector2Int targetPosition)
+        {
+            if (board == null)
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                return;
+            }
+
+            SetBoardInputLock(true);
+
+            if (!board.TryGetPieceAt(targetPosition, out var lootPiece)
+                || lootPiece == null
+                || (lootPiece.SpecialType != SpecialType.Item && lootPiece.SpecialType != SpecialType.Bugada))
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            if (lootPiece.SpecialType == SpecialType.Bugada)
+            {
+                ActivateBugada();
+                board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                pendingLootCommitAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            if (!TryRollItemTypeForPickup(out var itemType))
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            switch (itemType)
+            {
+                case PlayerItemType.BasicHeal:
+                    HealPlayer(1);
+                    board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                    pendingLootCommitAction?.Invoke();
+                    ClearPendingLootDecisionState();
+                    SetBoardInputLock(false);
+                    return;
+                case PlayerItemType.EnergyPack:
+                case PlayerItemType.Shield:
+                case PlayerItemType.SecondChance:
+                    if (TryAddInventoryItem(itemType))
+                    {
+                        board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                        pendingLootCommitAction?.Invoke();
+                        ClearPendingLootDecisionState();
+                        SetBoardInputLock(false);
+                        return;
+                    }
+
+                    BeginInventoryOverflowDecision(itemType, targetPosition);
+                    return;
+                default:
+                    pendingLootCancelAction?.Invoke();
+                    ClearPendingLootDecisionState();
+                    SetBoardInputLock(false);
+                    return;
+            }
         }
 
         private void RefreshDamageHeatmap()
@@ -4964,6 +5045,12 @@ namespace GameCore
                 inventoryOverflowDestroyButton.onClick.AddListener(ResolveInventoryOverflowByDestroyingLoot);
             }
 
+            if (inventoryOverflowCancelButton != null)
+            {
+                inventoryOverflowCancelButton.onClick.RemoveAllListeners();
+                inventoryOverflowCancelButton.onClick.AddListener(CancelInventoryOverflowDecision);
+            }
+
             HideInventoryOverflowPanel();
         }
 
@@ -5049,7 +5136,7 @@ namespace GameCore
                 return;
             }
 
-            CompleteInventoryOverflowDecision();
+            CompleteInventoryOverflowDecision(commitMovement: true, destroyLoot: true);
         }
 
         private void ResolveInventoryOverflowByDestroyingLoot()
@@ -5059,14 +5146,33 @@ namespace GameCore
                 return;
             }
 
-            CompleteInventoryOverflowDecision();
+            CompleteInventoryOverflowDecision(commitMovement: true, destroyLoot: true);
         }
 
-        private void CompleteInventoryOverflowDecision()
+        private void CancelInventoryOverflowDecision()
         {
-            if (board != null)
+            if (!awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision(commitMovement: false, destroyLoot: false);
+        }
+
+        private void CompleteInventoryOverflowDecision(bool commitMovement, bool destroyLoot)
+        {
+            if (board != null && destroyLoot)
             {
                 board.TryDestroyPieceAt(pendingInventoryOverflowPosition, DestructionReason.ItemPickup);
+            }
+
+            if (commitMovement)
+            {
+                pendingLootCommitAction?.Invoke();
+            }
+            else
+            {
+                pendingLootCancelAction?.Invoke();
             }
 
             awaitingInventoryOverflowDecision = false;
@@ -5074,8 +5180,15 @@ namespace GameCore
             pendingInventoryOverflowPosition = default;
             HideInventoryOverflowPanel();
             SetBoardInputLock(false);
+            ClearPendingLootDecisionState();
             UpdateBubbleAnimationState();
             UpdateUI();
+        }
+
+        private void ClearPendingLootDecisionState()
+        {
+            pendingLootCommitAction = null;
+            pendingLootCancelAction = null;
         }
 
         // CODEX BOSS PR2
