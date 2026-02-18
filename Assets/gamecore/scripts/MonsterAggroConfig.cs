@@ -15,5 +15,8 @@ namespace GameCore
         public bool damageTriggerAllowed = true;
         public bool telegraphOnlyOnEnrage = true;
         public bool requireHpSurvivalCheck = true;
+        public bool enableDamageHeatmap = true;
+        public bool showHeatmapOnlyIfEnergyAvailable = true;
+        public bool enableHeatmapPulseAnimation = true;
     }
 }
