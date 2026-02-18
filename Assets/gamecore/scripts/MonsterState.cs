@@ -5,9 +5,9 @@ namespace GameCore
     [System.Serializable]
     public struct MonsterState
     {
+        public bool IsIdle;
         public bool IsAngry;
         public bool IsHurt;
-        public bool IsCrying;
         public bool IsEnraged;
         public bool IsTired;
         public bool IsSleeping;
