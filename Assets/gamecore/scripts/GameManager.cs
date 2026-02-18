@@ -2367,21 +2367,30 @@ namespace GameCore
                     {
                         if (state.IsConfused)
                         {
-                            state = default;
+                            EnterIdleState(ref state);
                             state.CurrentTile = currentTile;
                             state.CurrentHP = kvp.Value.CurrentHP;
+                            state.TurnsUntilAttack = 0;
+                            state.StateTurnsRemaining = 0;
+                            state.TargetTile = default;
+                            state.IsAdjacencyTriggered = false;
                         }
                         else if (state.IsTired)
                         {
+                            state.IsIdle = false;
                             state.IsTired = false;
                             state.IsSleeping = true;
                             state.StateTurnsRemaining = GetMonsterSleepDuration();
                         }
                         else if (state.IsSleeping)
                         {
-                            state = default;
+                            EnterIdleState(ref state);
                             state.CurrentTile = currentTile;
                             state.CurrentHP = kvp.Value.CurrentHP;
+                            state.TurnsUntilAttack = 0;
+                            state.StateTurnsRemaining = 0;
+                            state.TargetTile = default;
+                            state.IsAdjacencyTriggered = false;
                         }
                     }
                 }
@@ -2665,6 +2674,38 @@ namespace GameCore
             ApplyMonsterVisualState(piece, state);
         }
 
+        private void EnterIdleState(ref MonsterState state)
+        {
+            state.IsIdle = true;
+            state.IsAngry = false;
+            state.IsEnraged = false;
+            state.IsHurt = false;
+            state.IsConfused = false;
+            state.IsTired = false;
+            state.IsSleeping = false;
+        }
+
+        private MonsterState CreateDefaultMonsterState(Vector2Int currentTile)
+        {
+            var defaultMonsterHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3);
+            return new MonsterState
+            {
+                IsIdle = true,
+                IsAngry = false,
+                IsHurt = false,
+                IsEnraged = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = false,
+                CurrentHP = defaultMonsterHP,
+                TurnsUntilAttack = 0,
+                StateTurnsRemaining = 0,
+                CurrentTile = currentTile,
+                TargetTile = default,
+                IsAdjacencyTriggered = false
+            };
+        }
+
         private bool WillMonsterSurviveFullAttackCycle(Piece piece)
         {
             if (!IsHpSurvivalCheckRequired())
@@ -2690,11 +2731,7 @@ namespace GameCore
             var pieceId = piece.GetInstanceID();
             if (!monsterStates.TryGetValue(pieceId, out var state))
             {
-                state = new MonsterState
-                {
-                    CurrentTile = new Vector2Int(piece.X, piece.Y),
-                    CurrentHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3)
-                };
+                state = CreateDefaultMonsterState(new Vector2Int(piece.X, piece.Y));
             }
             else
             {
@@ -2744,10 +2781,8 @@ namespace GameCore
             var diesNext = WillMonsterDieNextTick(piece);
             var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
 
-            state.IsAngry = false;
-            state.IsIdle = false;
+            EnterIdleState(ref state);
             state.IsAdjacencyTriggered = false;
-            state.IsHurt = false;
 
             if (diesNext)
             {
@@ -2757,6 +2792,7 @@ namespace GameCore
             }
             else if (survivesFull)
             {
+                state.IsIdle = false;
                 state.IsAngry = true;
                 state.IsAdjacencyTriggered = false;
                 state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
@@ -2772,7 +2808,13 @@ namespace GameCore
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
 
-            if (!state.IsAngry)
+            if (!state.IsAngry && !state.IsHurt)
+            {
+                EnterIdleState(ref state);
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
+            }
+            else if (!state.IsAngry)
             {
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
