@@ -628,35 +628,61 @@ namespace GameCore
             return CanMatchPieceInOneSwap(new Vector2Int(monster.X, monster.Y));
         }
 
-        public bool CanMatchPieceWithinTwoSwaps(Vector2Int monsterPosition)
+        public bool CanPlayerKillMonsterInTwoTurns(
+            Vector2Int monsterPosition,
+            Vector2Int playerPosition,
+            int currentEnergy,
+            int maxEnergy,
+            int meditationRange,
+            int telekinesisCost)
         {
             if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
             {
                 return false;
             }
 
-            var simulation = CreateSimulationState(monsterPosition);
-            if (!simulation.HasMonster)
+            var initialState = CreateSimulationState(monsterPosition);
+            if (!initialState.HasMonster)
             {
                 return false;
             }
 
-            var firstSwaps = EnumerateLegalSimulationSwaps(simulation);
-            for (var i = 0; i < firstSwaps.Count; i++)
+            var reachableTurn1 = EnumerateReachableSwaps(
+                initialState,
+                playerPosition,
+                currentEnergy,
+                meditationRange,
+                telekinesisCost);
+
+            for (var i = 0; i < reachableTurn1.Count; i++)
             {
-                var firstBranch = CloneSimulationState(simulation);
-                ApplySimulationSwap(firstBranch, firstSwaps[i]);
-                if (ResolveSimulationBoard(firstBranch))
+                var branch1 = CloneSimulationState(initialState);
+
+                var energyAfterTurn1 = currentEnergy;
+                if (reachableTurn1[i].Cost > 0)
+                {
+                    energyAfterTurn1 -= reachableTurn1[i].Cost;
+                }
+
+                ApplySimulationSwap(branch1, reachableTurn1[i]);
+                if (ResolveSimulationBoard(branch1))
                 {
                     return true;
                 }
 
-                var secondSwaps = EnumerateLegalSimulationSwaps(firstBranch);
-                for (var j = 0; j < secondSwaps.Count; j++)
+                var energyTurn2 = Mathf.Min(maxEnergy, energyAfterTurn1 + 1);
+                var reachableTurn2 = EnumerateReachableSwaps(
+                    branch1,
+                    playerPosition,
+                    energyTurn2,
+                    meditationRange,
+                    telekinesisCost);
+
+                for (var j = 0; j < reachableTurn2.Count; j++)
                 {
-                    var secondBranch = CloneSimulationState(firstBranch);
-                    ApplySimulationSwap(secondBranch, secondSwaps[j]);
-                    if (ResolveSimulationBoard(secondBranch))
+                    var branch2 = CloneSimulationState(branch1);
+                    ApplySimulationSwap(branch2, reachableTurn2[j]);
+                    if (ResolveSimulationBoard(branch2))
                     {
                         return true;
                     }
@@ -787,22 +813,46 @@ namespace GameCore
             };
         }
 
-        private List<SimSwap> EnumerateLegalSimulationSwaps(SimulationState state)
+        private List<SimSwap> EnumerateReachableSwaps(
+            SimulationState state,
+            Vector2Int playerPosition,
+            int availableEnergy,
+            int meditationRange,
+            int telekinesisCost)
         {
-            var legalSwaps = new List<SimSwap>();
+            var swaps = new List<SimSwap>();
             for (var x = 0; x < width; x++)
             {
                 for (var y = 0; y < height; y++)
                 {
-                    TryAddLegalSimulationSwap(state, x, y, x + 1, y, legalSwaps);
-                    TryAddLegalSimulationSwap(state, x, y, x, y + 1, legalSwaps);
+                    var dist = Mathf.Abs(playerPosition.x - x) + Mathf.Abs(playerPosition.y - y);
+                    if (dist > meditationRange)
+                    {
+                        continue;
+                    }
+
+                    var cost = dist <= 1 ? 0 : telekinesisCost;
+                    if (cost > availableEnergy)
+                    {
+                        continue;
+                    }
+
+                    TryAddReachableSwap(state, x, y, x + 1, y, cost, swaps);
+                    TryAddReachableSwap(state, x, y, x, y + 1, cost, swaps);
                 }
             }
 
-            return legalSwaps;
+            return swaps;
         }
 
-        private void TryAddLegalSimulationSwap(SimulationState state, int x1, int y1, int x2, int y2, List<SimSwap> legalSwaps)
+        private void TryAddReachableSwap(
+            SimulationState state,
+            int x1,
+            int y1,
+            int x2,
+            int y2,
+            int cost,
+            List<SimSwap> swaps)
         {
             if (!IsInBounds(x2, y2))
             {
@@ -826,7 +876,7 @@ namespace GameCore
                 return;
             }
 
-            legalSwaps.Add(new SimSwap(x1, y1, x2, y2));
+            swaps.Add(new SimSwap(x1, y1, x2, y2, cost));
         }
 
         private bool WouldSimulationSwapCreateMatch(SimPiece[,] cells, int x1, int y1, int x2, int y2)
@@ -1042,13 +1092,15 @@ namespace GameCore
             public readonly int Y1;
             public readonly int X2;
             public readonly int Y2;
+            public readonly int Cost;
 
-            public SimSwap(int x1, int y1, int x2, int y2)
+            public SimSwap(int x1, int y1, int x2, int y2, int cost)
             {
                 X1 = x1;
                 Y1 = y1;
                 X2 = x2;
                 Y2 = y2;
+                Cost = cost;
             }
         }
 
