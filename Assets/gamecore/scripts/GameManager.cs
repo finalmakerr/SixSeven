@@ -152,6 +152,7 @@ namespace GameCore
         [SerializeField] private MonsterAngerConfig monsterAngerConfig = new MonsterAngerConfig();
         [SerializeField] private MonsterAggroConfig monsterAggroConfig = new MonsterAggroConfig();
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
+        [SerializeField] private GameObject genericMonsterTelegraphPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
         [Header("Bugada")]
 
@@ -2299,6 +2300,7 @@ namespace GameCore
         {
             if (board == null || monsterStates.Count == 0)
             {
+                CleanupOrphanedGenericTelegraphs();
                 return;
             }
 
@@ -2334,7 +2336,7 @@ namespace GameCore
 
                 if (state.IsAngry)
                 {
-                    var shouldSpawnAdjacencyTelegraph = state.IsAdjacencyTriggered;
+                    var shouldSpawnAdjacencyTelegraph = state.IsAdjacencyTriggered && !state.IsHurt;
                     state.IsAngry = false;
                     state.IsIdle = false;
                     state.IsAdjacencyTriggered = false;
@@ -2343,11 +2345,13 @@ namespace GameCore
                     if (IsTelegraphOnlyOnEnrage())
                     {
                         AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
-                        if (shouldSpawnAdjacencyTelegraph)
-                        {
-                            SpawnGenericMonsterTelegraph(state.CurrentTile);
-                        }
                     }
+
+                    if (shouldSpawnAdjacencyTelegraph)
+                    {
+                        SpawnGenericMonsterTelegraph(state.CurrentTile);
+                    }
+
                     if (debugMode)
                     {
                         Debug.Log($"GenericMonsterState: piece {pieceId} transitioned to Enraged", this);
@@ -2404,6 +2408,8 @@ namespace GameCore
             {
                 monsterStates[kvp.Key] = kvp.Value;
             }
+
+            CleanupOrphanedGenericTelegraphs();
         }
 
         public void ProcessMonsterAttacks()
@@ -3096,9 +3102,9 @@ namespace GameCore
 
             var worldPosition = board.GridToWorld(position.x, position.y);
             GameObject markerObject;
-            if (monsterAttackMarkerPrefab != null)
+            if (genericMonsterTelegraphPrefab != null)
             {
-                markerObject = Instantiate(monsterAttackMarkerPrefab, worldPosition, Quaternion.identity);
+                markerObject = Instantiate(genericMonsterTelegraphPrefab, worldPosition, Quaternion.identity);
             }
             else
             {
@@ -3146,6 +3152,40 @@ namespace GameCore
             }
 
             genericTelegraphs.Clear();
+        }
+
+        private void CleanupOrphanedGenericTelegraphs()
+        {
+            if (board == null || genericTelegraphs.Count == 0)
+            {
+                return;
+            }
+
+            var toRemove = new List<Vector2Int>();
+            foreach (var kvp in genericTelegraphs)
+            {
+                var position = kvp.Key;
+                if (!board.IsWithinBounds(position)
+                    || !board.TryGetPieceAt(position, out var occupant)
+                    || occupant == null
+                    || occupant.IsPlayer)
+                {
+                    toRemove.Add(position);
+                    continue;
+                }
+
+                if (!monsterStates.TryGetValue(occupant.GetInstanceID(), out var state)
+                    || state.CurrentTile != position
+                    || !state.IsEnraged)
+                {
+                    toRemove.Add(position);
+                }
+            }
+
+            for (var i = 0; i < toRemove.Count; i++)
+            {
+                RemoveGenericMonsterTelegraph(toRemove[i]);
+            }
         }
 
 
