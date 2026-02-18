@@ -16,6 +16,7 @@ namespace GameCore
         public SpecialType SpecialType { get; private set; }
         public int BombTier { get; private set; } // CODEX BOMB TIERS: store tier for bomb specials.
         public int ItemTurnsRemaining { get; private set; } // CODEX STAGE 7B: track item lifetime.
+        public int PowerShardTurnsRemaining { get; private set; } // CODEX STAGE 10C: track shard lifetime.
         public int TumorTier { get; private set; } // CODEX REPLAYABILITY: optional tumor challenge tier.
         public bool IsPlayer => isPlayerPiece;
 
@@ -233,6 +234,7 @@ namespace GameCore
             BombTier = 0;
             TumorTier = 0;
             ItemTurnsRemaining = 0;
+            PowerShardTurnsRemaining = 0;
             baseSprite = null;
             bombSprite = null;
             hasInitializedSpecialType = true;
@@ -284,9 +286,10 @@ namespace GameCore
             {
                 ClearTreasureChestVisual();
             }
-            if (type != SpecialType.Item && type != SpecialType.Bugada)
+            if (type != SpecialType.Item && type != SpecialType.Bugada && type != SpecialType.PowerShard)
             {
                 ItemTurnsRemaining = 0;
+                PowerShardTurnsRemaining = 0;
                 ClearItemVisual();
             }
             if (type != SpecialType.Tumor)
@@ -309,6 +312,7 @@ namespace GameCore
             BombTier = tier;
             bombSprite = sprite;
             ItemTurnsRemaining = 0;
+            PowerShardTurnsRemaining = 0;
             ClearItemVisual();
             ApplySpecialVisual();
         }
@@ -327,6 +331,7 @@ namespace GameCore
             bombSprite = null;
             ClearTreasureChestVisual();
             ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
+            PowerShardTurnsRemaining = 0;
             UpdateItemTurnsVisual();
             ApplySpecialVisual();
         }
@@ -345,6 +350,7 @@ namespace GameCore
             bombSprite = null;
             ClearTreasureChestVisual();
             ItemTurnsRemaining = 0;
+            PowerShardTurnsRemaining = 0;
             UpdateBugadaVisual();
             ApplySpecialVisual();
         }
@@ -363,21 +369,60 @@ namespace GameCore
             BombTier = 0;
             bombSprite = null;
             ItemTurnsRemaining = 0;
+            PowerShardTurnsRemaining = 0;
             ClearItemVisual();
             ClearTreasureChestVisual();
             TumorTier = Mathf.Max(1, tier);
             ApplySpecialVisual();
         }
 
-        // CODEX STAGE 7B: update item turns remaining and indicator.
-        public void UpdateItemTurns(int remainingTurns)
+
+        public void ConfigureAsPowerShard(int remainingTurns)
         {
-            if (isPlayerPiece || SpecialType != SpecialType.Item)
+            if (isPlayerPiece)
             {
                 return;
             }
 
-            ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
+            SpecialType = SpecialType.PowerShard;
+            hasInitializedSpecialType = true;
+            BombTier = 0;
+            bombSprite = null;
+            ClearTreasureChestVisual();
+            ItemTurnsRemaining = 0;
+            PowerShardTurnsRemaining = Mathf.Max(0, remainingTurns);
+            UpdateItemTurnsVisual();
+            ApplySpecialVisual();
+        }
+
+        public void UpdatePowerShardTurns(int remainingTurns)
+        {
+            if (isPlayerPiece || SpecialType != SpecialType.PowerShard)
+            {
+                return;
+            }
+
+            PowerShardTurnsRemaining = Mathf.Max(0, remainingTurns);
+            UpdateItemTurnsVisual();
+        }
+
+        // CODEX STAGE 7B: update item turns remaining and indicator.
+        public void UpdateItemTurns(int remainingTurns)
+        {
+            if (isPlayerPiece || (SpecialType != SpecialType.Item && SpecialType != SpecialType.PowerShard))
+            {
+                return;
+            }
+
+            if (SpecialType == SpecialType.PowerShard)
+            {
+                PowerShardTurnsRemaining = Mathf.Max(0, remainingTurns);
+            }
+            else
+            {
+                ItemTurnsRemaining = Mathf.Max(0, remainingTurns);
+            }
+
             UpdateItemTurnsVisual();
         }
 
@@ -555,7 +600,8 @@ namespace GameCore
             }
 
             var text = EnsureItemTurnsText();
-            text.text = ItemTurnsRemaining.ToString();
+            var turns = SpecialType == SpecialType.PowerShard ? PowerShardTurnsRemaining : ItemTurnsRemaining;
+            text.text = turns.ToString();
             text.color = Color.white;
             text.gameObject.SetActive(true);
         }

@@ -36,6 +36,7 @@ namespace GameCore
         [SerializeField] private int maxShuffleAttempts = 10; // CODEX VERIFY: cap shuffle retries for dead boards.
         // CODEX STAGE 7B: board-spawned items.
         [SerializeField] private int itemLifetimeTurns = 2;
+        [SerializeField] private int powerShardLifetimeTurns = 3; // CODEX STAGE 10C: shard expires after 3 turns.
         [SerializeField] private float itemExpireFadeDuration = 0.2f;
         // CODEX CHEST PR1
         [SerializeField] [Range(1, 10)] private int chestSpawnChancePercent = 5; // CODEX CHEST PR1
@@ -65,6 +66,7 @@ namespace GameCore
         // CODEX STAGE 7B: track item spawns + lifetimes.
         private readonly HashSet<Vector2Int> pendingItemSpawnPositions = new HashSet<Vector2Int>();
         private readonly HashSet<Piece> activeItems = new HashSet<Piece>();
+        private readonly HashSet<Piece> activePowerShards = new HashSet<Piece>(); // CODEX STAGE 10C
         // CODEX STAGE 7D: track Bugada spawn.
         private bool bugadaSpawnedThisLevel;
         private Vector2Int? pendingBugadaSpawnPosition;
@@ -85,6 +87,7 @@ namespace GameCore
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
         public int Width => width;
         public int Height => height;
+        public bool HasActivePowerShard => activePowerShards.Count > 0;
         // CODEX BOSS PR1
         public int RandomSeed => randomSeed;
 
@@ -217,6 +220,7 @@ namespace GameCore
             pendingSpecialClearPositions.Clear(); // CODEX BOMB TIERS: reset pending bomb clears on new board.
             pendingItemSpawnPositions.Clear(); // CODEX STAGE 7B: reset item spawns.
             activeItems.Clear(); // CODEX STAGE 7B: reset item lifetimes.
+            activePowerShards.Clear(); // CODEX STAGE 10C: reset shard lifetimes.
             bugadaSpawnedThisLevel = false; // CODEX STAGE 7D: reset Bugada spawn tracking.
             pendingBugadaSpawnPosition = null; // CODEX STAGE 7D: reset Bugada pending spawn.
             chestCooldownMovesRemaining = 0; // CODEX CHEST PR1
@@ -455,7 +459,7 @@ namespace GameCore
 
         private static bool IsLootPiece(Piece piece)
         {
-            return piece != null && (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada);
+            return piece != null && (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada || piece.SpecialType == SpecialType.PowerShard);
         }
 
         private IEnumerator CommitLootInterceptMovementRoutine(Piece playerPiece, Piece lootPiece)
@@ -1895,9 +1899,9 @@ namespace GameCore
                     {
                         pendingBugadaSpawnPosition = itemSpawnPosition.Value; // CODEX STAGE 7D: Bugada spawn candidate.
                     }
-                    else if (GameManager.Instance == null || GameManager.Instance.CanRollItemDrop())
+                    else if (ShouldAddPendingItemSpawn())
                     {
-                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7I-A: weighted item drop candidate only when a valid drop exists.
+                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 10D: dynamic loot suppression evaluated per 4+ run.
                     }
                 }
             }
@@ -1929,6 +1933,51 @@ namespace GameCore
                     matchBuffer.Add(piece);
                 }
             }
+        }
+
+        private bool ShouldAddPendingItemSpawn()
+        {
+            var gameManager = GameManager.Instance;
+            if (gameManager == null)
+            {
+                return true;
+            }
+
+            if (!gameManager.CanRollItemDrop())
+            {
+                return false;
+            }
+
+            var activeLootCount = CountAllActiveLootPieces();
+            return gameManager.ShouldSpawnLootForRun(activeLootCount);
+        }
+
+        private int CountAllActiveLootPieces()
+        {
+            if (pieces == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    if (piece == null)
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType == SpecialType.Item && piece.ItemTurnsRemaining > 0)
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
         }
 
         private IReadOnlyList<int> GetMatchRunLengthsSnapshot()
@@ -2136,6 +2185,30 @@ namespace GameCore
             }
         }
 
+        public bool TrySpawnPowerShardAt(Vector2Int position)
+        {
+            if (!IsInBounds(position.x, position.y) || pieces == null)
+            {
+                return false;
+            }
+
+            var piece = pieces[position.x, position.y];
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (piece.SpecialType != SpecialType.None)
+            {
+                return false;
+            }
+
+            var lifetime = Mathf.Max(1, powerShardLifetimeTurns);
+            piece.ConfigureAsPowerShard(lifetime);
+            activePowerShards.Add(piece);
+            return true;
+        }
+
         // CODEX STAGE 7B: try to place an item into an empty cell.
         private void TrySpawnItemAt(Vector2Int position)
         {
@@ -2181,6 +2254,53 @@ namespace GameCore
 
             bugadaPiece.ConfigureAsBugada();
             return true;
+        }
+
+        // CODEX STAGE 10C: decrement shard turns at end of each player turn.
+        private void TickPowerShardTurns()
+        {
+            if (activePowerShards.Count == 0)
+            {
+                return;
+            }
+
+            var expiredShards = new List<Piece>();
+            foreach (var shard in activePowerShards)
+            {
+                if (shard == null)
+                {
+                    expiredShards.Add(shard);
+                    continue;
+                }
+
+                var remaining = shard.PowerShardTurnsRemaining - 1;
+                shard.UpdatePowerShardTurns(remaining);
+
+                if (remaining == 1)
+                {
+                    ApplyLootFadeVisual(shard, 0.75f);
+                }
+                else if (remaining >= 2)
+                {
+                    ApplyLootFadeVisual(shard, 1f);
+                }
+
+                if (remaining <= 0)
+                {
+                    expiredShards.Add(shard);
+                }
+            }
+
+            foreach (var shard in expiredShards)
+            {
+                activePowerShards.Remove(shard);
+                if (shard == null)
+                {
+                    continue;
+                }
+
+                StartCoroutine(FadeAndRemoveItem(shard));
+            }
         }
 
         // CODEX STAGE 7B: decrement item turns at end of each match.
@@ -2298,6 +2418,7 @@ namespace GameCore
             OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
             HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
             activeItems.Remove(piece); // CODEX STAGE 7B
+            activePowerShards.Remove(piece); // CODEX STAGE 10C
 
             if (IsInBounds(piece.X, piece.Y) && pieces[piece.X, piece.Y] == piece)
             {
@@ -2358,6 +2479,7 @@ namespace GameCore
         public void TickLootTurnsForTurnEnd()
         {
             TickItemTurns();
+            TickPowerShardTurns();
         }
 
         private int ClearMatches(List<Piece> matches)
@@ -2424,6 +2546,7 @@ namespace GameCore
                 OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
                 HandleTreasureChestDestroyed(piece); // CODEX CHEST PR1
                 activeItems.Remove(piece); // CODEX STAGE 7B: remove items cleared by specials.
+                activePowerShards.Remove(piece); // CODEX STAGE 10C: remove shards cleared by specials.
                 pieces[position.x, position.y] = null;
                 Destroy(piece.gameObject);
             }
@@ -2960,7 +3083,8 @@ namespace GameCore
                 && !piece.IsPlayer
                 && !ShouldBlockBossInstantKill(piece, DestructionReason.NormalMatch)
                 && piece.SpecialType != SpecialType.Item
-                && piece.SpecialType != SpecialType.Bugada;
+                && piece.SpecialType != SpecialType.Bugada
+                && piece.SpecialType != SpecialType.PowerShard;
         }
 
         private static bool IsSwappable(Piece piece)
@@ -2970,7 +3094,7 @@ namespace GameCore
                 return false;
             }
 
-            if (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada)
+            if (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada || piece.SpecialType == SpecialType.PowerShard)
             {
                 return false;
             }
@@ -3095,7 +3219,7 @@ namespace GameCore
                 return false;
             }
 
-            if (piece.SpecialType == SpecialType.Bugada || piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.TreasureChest)
+            if (piece.SpecialType == SpecialType.Bugada || piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.PowerShard || piece.SpecialType == SpecialType.TreasureChest)
             {
                 return false;
             }
