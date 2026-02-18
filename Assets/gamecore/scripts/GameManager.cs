@@ -137,9 +137,9 @@ namespace GameCore
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
         [Header("Player Health")]
-        [SerializeField] private int maxHP = 3;
+        [SerializeField] private int maxHearts = 1;
         private int baseMaxEnergy;
-        private int baseMaxHP;
+        private int baseMaxHearts;
         [Header("Player Inventory")]
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
         [Header("Pickup Radius")]
@@ -163,7 +163,8 @@ namespace GameCore
         public DifficultyMode CurrentDifficulty => difficultyMode;
         public bool HasMetTarget { get; private set; }
         public int Energy => energy;
-        public int MaxHP => maxHP;
+        public int MaxHP => maxHearts;
+        public int MaxHearts => maxHearts;
         public int CurrentHP { get; private set; }
         public int PickupRadius => pickupRadius;
         // CODEX: LEVEL_LOOP
@@ -466,7 +467,7 @@ namespace GameCore
             }
 
             baseMaxEnergy = Mathf.Max(1, maxEnergy);
-            baseMaxHP = Mathf.Max(1, maxHP);
+            baseMaxHearts = Mathf.Max(1, maxHearts);
 
             InitializeSpecialPowerCooldowns();
             InitializeBossPowerCooldowns();
@@ -637,12 +638,12 @@ namespace GameCore
             if (IsHardcoreEnabled())
             {
                 maxEnergy = Mathf.Max(1, baseMaxEnergy - HardcoreConfig.maxEnergyCapReduction);
-                maxHP = Mathf.Max(1, baseMaxHP - HardcoreConfig.maxHpCapReduction);
+                maxHearts = Mathf.Max(1, baseMaxHearts - HardcoreConfig.maxHpCapReduction);
             }
             else
             {
                 maxEnergy = baseMaxEnergy;
-                maxHP = baseMaxHP;
+                maxHearts = baseMaxHearts;
             }
         }
 
@@ -1052,7 +1053,7 @@ namespace GameCore
                 return false;
             }
 
-            if (CurrentHP >= maxHP)
+            if (CurrentHP >= maxHearts * 2)
             {
                 return false;
             }
@@ -1109,7 +1110,8 @@ namespace GameCore
                 return;
             }
 
-            CurrentHP = Mathf.Min(maxHP, CurrentHP + amount);
+            var healHalfUnits = amount * 2;
+            CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + healHalfUnits);
             UpdateUI();
         }
 
@@ -1592,7 +1594,7 @@ namespace GameCore
                 return;
             }
 
-            ApplyPlayerDamage(1);
+            TakeDamage(1);
             ApplyEnergyDrain(1);
         }
 
@@ -2002,7 +2004,7 @@ namespace GameCore
         {
             itemDropOptionsBuffer.Clear();
 
-            var missingHp = Mathf.Max(0, maxHP - CurrentHP);
+            var missingHp = Mathf.Max(0, ((maxHearts * 2) - CurrentHP + 1) / 2);
             var missingEnergy = Mathf.Max(0, maxEnergy - energy);
             var shieldCount = GetShieldCount();
 
@@ -2743,10 +2745,7 @@ namespace GameCore
         private void ResolvePlayerHit()
         {
             TriggerStunnedAnimation();
-            if (!TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
-            {
-                ApplyPlayerDamage(GetCurrentMonsterDamage());
-            }
+            TakeDamage(1);
         }
 
         private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
@@ -3780,12 +3779,12 @@ namespace GameCore
 
         private void ResetPlayerHealth()
         {
-            if (maxHP < 1)
+            if (maxHearts < 1)
             {
-                maxHP = 1;
+                maxHearts = 1;
             }
 
-            CurrentHP = maxHP;
+            CurrentHP = maxHearts * 2;
         }
 
         private int GetCurrentMonsterRange()
@@ -3819,9 +3818,9 @@ namespace GameCore
             return Mathf.Max(baseDamage + 1, Mathf.CeilToInt(baseDamage * multiplier) + bonus);
         }
 
-        private void ApplyPlayerDamage(int damage)
+        public void TakeDamage(int halfUnits)
         {
-            if (damage <= 0 || hasEnded || IsBugadaActive)
+            if (halfUnits <= 0 || hasEnded || IsBugadaActive)
             {
                 return;
             }
@@ -3832,10 +3831,19 @@ namespace GameCore
                 return;
             }
 
-            var remainingHp = CurrentHP - damage;
+            if (isShieldActive)
+            {
+                SetShieldActive(false);
+                shieldTurnsRemaining = 0;
+                BeginShieldCooldown();
+                UpdateUI();
+                return;
+            }
+
+            var remainingHp = CurrentHP - halfUnits;
             if (remainingHp <= 0 && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
             {
-                CurrentHP = 1;
+                CurrentHP = Mathf.Min(maxHearts * 2, 2);
                 UpdateUI();
                 return;
             }
@@ -3843,10 +3851,15 @@ namespace GameCore
             CurrentHP = Mathf.Max(0, remainingHp);
             if (CurrentHP <= 0)
             {
-                TriggerLose();
+                GameOverFlow();
             }
 
             UpdateUI();
+        }
+
+        private void GameOverFlow()
+        {
+            TriggerLose();
         }
 
         public void TriggerJetpackDoubleSuccess()
@@ -5370,8 +5383,8 @@ namespace GameCore
 
             if (chooseHeart)
             {
-                maxHP = Mathf.Max(1, maxHP + 1);
-                CurrentHP = Mathf.Min(maxHP, CurrentHP + 1);
+                maxHearts = Mathf.Max(1, maxHearts + 1);
+                CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + 2);
             }
             else
             {
