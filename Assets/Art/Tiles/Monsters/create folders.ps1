@@ -1,4 +1,6 @@
-$monstersPath = "D:\Documents\GitHub\SixSeven\Assets\Art\Tiles\Monsters"
+# Run script from inside the parent folder that contains monster folders
+
+$basePath = Get-Location
 
 $states = @(
     "attack",
@@ -14,11 +16,13 @@ $states = @(
     "suprise",
     "angry",
     "calm",
-    "thinking"
+    "thinking",
+    "video"   # added video folder
 )
 
-# Create state folders (safe, no overwrite)
-Get-ChildItem -Path $monstersPath -Directory | ForEach-Object {
+# Create state folders inside each first-level subfolder
+Get-ChildItem -Path $basePath -Directory | ForEach-Object {
+
     foreach ($state in $states) {
         $statePath = Join-Path $_.FullName $state
         if (-not (Test-Path $statePath)) {
@@ -28,8 +32,10 @@ Get-ChildItem -Path $monstersPath -Directory | ForEach-Object {
 }
 
 # Add .gitkeep ONLY to truly empty folders
-Get-ChildItem -Path $monstersPath -Directory -Recurse | ForEach-Object {
+Get-ChildItem -Path $basePath -Directory -Recurse | ForEach-Object {
+
     $hasFiles = Get-ChildItem $_.FullName -Recurse -File -ErrorAction SilentlyContinue
+
     if (-not $hasFiles) {
         $gitkeep = Join-Path $_.FullName ".gitkeep"
         if (-not (Test-Path $gitkeep)) {
@@ -37,3 +43,5 @@ Get-ChildItem -Path $monstersPath -Directory -Recurse | ForEach-Object {
         }
     }
 }
+
+Write-Host "Done. State folders + video folder ensured in all subdirectories." -ForegroundColor Green

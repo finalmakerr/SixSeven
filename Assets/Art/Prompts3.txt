@@ -15,3 +15,71 @@ Create 2D Energy icon
 Create 2D items slots
 Create 2D main menu: Continue, New, Leaderboard, Shop
 Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+Create 2D 
+---------------------------------
+Create 2D consumable: Energy Pack
+Create 2D consumable: Health Pack
+Create 2D consumable: 
+Create 2D consumable: 
+Create 2D consumable: 
+Create 2D consumable: 
+Create 2D consumable: 
+---------------------------------
+Create 2D weapon gear: Sword
+Create 2D weapon gear: 
+Create 2D weapon gear: 
+Create 2D weapon gear: 
+Create 2D weapon gear: 
+Create 2D weapon gear: 
+Create 2D weapon gear: 
+---------------------------------
+Create 2D head gear: 
+Create 2D head gear: 
+Create 2D head gear: 
+Create 2D head gear: 
+Create 2D head gear: 
+Create 2D head gear: 
+Create 2D head gear: 
+---------------------------------
+Create 2D chest gear: 
+Create 2D chest gear: 
+Create 2D chest gear: 
+Create 2D chest gear: 
+Create 2D chest gear: 
+Create 2D chest gear: 
+Create 2D chest gear: 
+---------------------------------
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+Create 2D gloves gear: 
+---------------------------------
+Create 2D boots gear: 
+Create 2D boots gear: 
+Create 2D boots gear: 
+Create 2D boots gear: 
+Create 2D boots gear: 
+Create 2D boots gear: 
+Create 2D boots gear: 
+---------------------------------
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+Create 2D necklace gear: 
+---------------------------------
+Create 2D +1 Max Energy:
+Create 2D +1 Max HP:
+Create 2D Spellbook:

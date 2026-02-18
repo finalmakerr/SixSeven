@@ -33,3 +33,28 @@ Redesign 2D model , fix the align grid center = head Idle state
 generate identical photo but some/few frames ahead/back for continue effect, Keep everything else the same!
 generate identical photo but stronger tier effect (1->2), Keep everything else the same!
 --------------------------------------------------
+Apply completely new materials, textures, colors, and surface details to the subject.
+--------------------------------------------------
+"Redraw the subject shown in the attached image into a specific game asset style with precise framing and pose constraints. Make the image square.
+
+Character Pose & Orientation Instructions:
+
+The subject must be positioned in a full-body standing pose, facing directly forward.
+
+The subject's eyes must be looking straight ahead at the 'camera'.
+
+Art Style Instructions:
+
+Convert the subject into a high-quality 2D game asset illustration.
+
+Use clean, sharp vector line art with soft cel-shading and vibrant colors.
+
+Layout & Framing Instructions:
+
+The subject must be perfectly horizontally centered on the canvas.
+
+Vertical Scaling is crucial: Scale the subject so that the highest point of the subject (e.g., top of head) is exactly 10% below the top edge of the image.
+
+The lowest point of the subject (e.g., bottom of feet) must be exactly 10% above the bottom edge of the image.
+
+The background should be a solid purple color."

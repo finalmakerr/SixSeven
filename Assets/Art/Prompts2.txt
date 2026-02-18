@@ -23,3 +23,7 @@ get hand back, Keep everything else the same!
 suprise face, Keep everything else the same!, Keep everything else the same! no abstract shapes, no symbols, no extra eyes, solid background color
 stunned-got hit face, Keep everything else the same!
 just got hit face / can't move face, Keep everything else the same! no abstract shapes, no symbols
+
+
+------------------------------
+head layout bottom area must be exactly the same
