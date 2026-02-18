@@ -6,6 +6,8 @@ namespace GameCore
     public struct MonsterState
     {
         public bool IsAngry;
+        public bool IsHurt;
+        public bool IsCrying;
         public bool IsEnraged;
         public bool IsTired;
         public bool IsSleeping;
@@ -16,5 +18,6 @@ namespace GameCore
         public int TurnsUntilAttack;
         public int StateTurnsRemaining;
         public Vector2Int CurrentTile;
+        public int CurrentHP;
     }
 }
