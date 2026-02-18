@@ -2999,13 +2999,9 @@ namespace GameCore
             var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
             var monsterPosition = new Vector2Int(selected.X, selected.Y);
             if (IsAdjacencyMatchForecastRequired() &&
-                !board.CanPlayerKillMonsterInTwoTurns(
+                !board.CanMatchPieceWithinEnergyDepth(
                     monsterPosition,
-                    playerPosition,
-                    energy,
-                    maxEnergy,
-                    monsterReachDistance,
-                    telekinesisCost))
+                    Energy))
             {
                 return;
             }
