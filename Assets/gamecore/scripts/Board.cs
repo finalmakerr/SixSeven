@@ -646,10 +646,11 @@ namespace GameCore
                     return true;
                 }
 
+                var firstBranchSnapshot = CloneSimulationState(firstBranch);
                 var secondSwaps = EnumerateLegalSimulationSwaps(firstBranch);
                 for (var j = 0; j < secondSwaps.Count; j++)
                 {
-                    var secondBranch = CloneSimulationState(firstBranch);
+                    var secondBranch = CloneSimulationState(firstBranchSnapshot);
                     ApplySimulationSwap(secondBranch, secondSwaps[j]);
                     if (ResolveSimulationBoard(secondBranch))
                     {
@@ -740,7 +741,7 @@ namespace GameCore
                 }
             }
 
-            var branchSeed = randomSeed ^ (monsterPosition.x * 48611) ^ (monsterPosition.y * 98473);
+            var branchSeed = RandomSeed ^ (monsterPosition.x * 48611) ^ (monsterPosition.y * 98473);
             return new SimulationState
             {
                 Cells = cells,
