@@ -2202,11 +2202,12 @@ namespace GameCore
 
                 var remaining = item.ItemTurnsRemaining - 1;
                 item.UpdateItemTurns(remaining);
+
                 if (remaining == 1)
                 {
                     ApplyLootFadeVisual(item, 0.75f);
                 }
-                else
+                else if (remaining >= 2)
                 {
                     ApplyLootFadeVisual(item, 1f);
                 }
