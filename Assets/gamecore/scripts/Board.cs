@@ -157,6 +157,27 @@ namespace GameCore
         }
 
 
+        public bool IsHazardTile(int x, int y)
+        {
+            if (!IsInBounds(x, y))
+            {
+                return false;
+            }
+
+            if (!TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null)
+            {
+                return false;
+            }
+
+            return piece.GetTileDebuff() == TileDebuffType.Entangled;
+        }
+
+        public int GetHazardDamageAt(int x, int y)
+        {
+            return IsHazardTile(x, y) ? 1 : 0;
+        }
+
+
         public void InitializeBoard(int newWidth, int newHeight)
         {
             if (!enabled)

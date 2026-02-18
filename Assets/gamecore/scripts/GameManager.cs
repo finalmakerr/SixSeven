@@ -754,6 +754,7 @@ namespace GameCore
             {
                 TriggerHazardTransition(currentHazardType);
                 previousHazardType = currentHazardType;
+                ReevaluateAllMonsterEmotionalStates();
             }
 
             UpdateHazardVisuals();
@@ -1386,6 +1387,8 @@ namespace GameCore
                 }
             }
 
+            ReevaluateAllMonsterEmotionalStates();
+
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
             var isOnBottomRow = hasPlayerPosition && playerPosition.y == 0;
             if (hasPlayerPosition
@@ -1647,6 +1650,7 @@ namespace GameCore
                 {
                     tile.ApplyTileDebuff(debuffType, balanceConfig.HazardTileDuration);
                     infectionIndex++;
+                    ReevaluateMonsterEmotionalState(tile);
                 }
             }
         }
@@ -1694,6 +1698,7 @@ namespace GameCore
             }
 
             tile.ApplyTileDebuff(TileDebuffType.Golden, balanceConfig.GoldenTileDuration);
+            ReevaluateMonsterEmotionalState(tile);
             return true;
         }
 
@@ -2315,6 +2320,7 @@ namespace GameCore
                     }
 
                     updatedStates[pieceId] = state;
+                    ApplyMonsterVisualState(piece, state);
                     continue;
                 }
 
@@ -2362,6 +2368,7 @@ namespace GameCore
                 }
 
                 updatedStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
             }
 
             monsterStates.Clear();
@@ -2420,6 +2427,10 @@ namespace GameCore
                 state.IsEnraged = false;
                 state.TurnsUntilAttack = 0;
                 monsterStates[pieceId] = state;
+                if (TryFindPieceById(pieceId, out var attackingPiece))
+                {
+                    ApplyMonsterVisualState(attackingPiece, state);
+                }
                 if (debugMode)
                 {
                     Debug.Log($"GenericMonsterState: piece {pieceId} attacked target {targetTile.x},{targetTile.y}", this);
@@ -2440,6 +2451,7 @@ namespace GameCore
             if (hasBlockingState)
             {
                 monsterStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
                 return;
             }
 
@@ -2451,37 +2463,16 @@ namespace GameCore
             state.IsEnraged = false;
             state.TurnsUntilAttack = 0;
             state.StateTurnsRemaining = 0;
+            monsterStates[pieceId] = state;
 
             if (monsterAngerConfig != null && monsterAngerConfig.requireHpSurvivalCheck)
             {
-                var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
-                var diesNext = WillMonsterDieNextTick(piece);
-
-                if (survivesFull)
+                ReevaluateMonsterEmotionalState(piece);
+                if (debugMode && monsterStates.TryGetValue(pieceId, out var updatedState) && updatedState.IsAngry)
                 {
-                    state.IsAngry = true;
-                    state.TurnsUntilAttack = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.turnsBeforeAttack) : 2;
-                    monsterStates[pieceId] = state;
-                    AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, targetTile);
-                    if (debugMode)
-                    {
-                        Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
-                    }
-
-                    return;
+                    Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
                 }
 
-                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
-                if (diesNext)
-                {
-                    state.IsCrying = true;
-                }
-                else
-                {
-                    state.IsHurt = true;
-                }
-
-                monsterStates[pieceId] = state;
                 return;
             }
 
@@ -2489,6 +2480,7 @@ namespace GameCore
             state.TurnsUntilAttack = 2;
             monsterStates[pieceId] = state;
             AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, targetTile);
+            ApplyMonsterVisualState(piece, state);
 
             if (debugMode)
             {
@@ -2535,8 +2527,15 @@ namespace GameCore
 
             var damage = 0;
 
-            // ONLY deterministic system damage.
-            // Integrate additional guaranteed debuff damage sources here as they are implemented.
+            // A) Debuff damage already on monster.
+            damage += piece.GetGuaranteedDebuffDamage();
+
+            // B) Environmental guaranteed damage (e.g., toxic floor).
+            if (board != null && board.IsHazardTile(piece.X, piece.Y))
+            {
+                damage += board.GetHazardDamageAt(piece.X, piece.Y);
+            }
+
             return damage;
         }
 
@@ -2601,11 +2600,89 @@ namespace GameCore
                 return;
             }
 
-            if (state.IsAngry || state.IsHurt || state.IsCrying)
+            var hasBlockingState = state.IsEnraged || state.IsConfused || state.IsTired || state.IsSleeping;
+            if (hasBlockingState)
             {
+                ApplyMonsterVisualState(piece, state);
+                monsterStates[pieceId] = state;
+                return;
+            }
+
+            var diesNext = WillMonsterDieNextTick(piece);
+            var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
+
+            state.IsAngry = false;
+            state.IsHurt = false;
+            state.IsCrying = false;
+
+            if (diesNext)
+            {
+                state.IsCrying = true;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            }
+            else if (survivesFull)
+            {
+                state.IsAngry = true;
+                state.TurnsUntilAttack = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.turnsBeforeAttack) : 2;
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
-                    SetGenericMonsterAngry(piece, playerPosition);
+                    state.TargetTile = playerPosition;
+                    AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, playerPosition);
+                }
+            }
+            else
+            {
+                state.IsHurt = true;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            }
+
+            if (!state.IsAngry)
+            {
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            }
+
+            ApplyMonsterVisualState(piece, state);
+            monsterStates[pieceId] = state;
+        }
+
+        private void ApplyMonsterVisualState(Piece piece, MonsterState state)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            if (state.IsCrying)
+            {
+                piece.SetVisualState(MonsterVisualState.Cry);
+            }
+            else if (state.IsHurt)
+            {
+                piece.SetVisualState(MonsterVisualState.Hurt);
+            }
+            else if (state.IsAngry)
+            {
+                piece.SetVisualState(MonsterVisualState.Angry);
+            }
+            else
+            {
+                piece.SetVisualState(MonsterVisualState.Idle);
+            }
+        }
+
+        private void ReevaluateAllMonsterEmotionalStates()
+        {
+            if (board == null || monsterStates.Count == 0)
+            {
+                return;
+            }
+
+            var pieceIds = new List<int>(monsterStates.Keys);
+            foreach (var pieceId in pieceIds)
+            {
+                if (TryFindPieceById(pieceId, out var piece))
+                {
+                    ReevaluateMonsterEmotionalState(piece);
                 }
             }
         }
