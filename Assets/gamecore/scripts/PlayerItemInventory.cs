@@ -7,6 +7,8 @@ namespace GameCore
     [Serializable]
     public class PlayerItemInventory
     {
+        private const int InventoryMaxSlots = 3;
+
         public int MaxSlots => maxSlots;
         public IReadOnlyList<PlayerItemType> Items => items;
         public int Count => items.Count;
@@ -20,11 +22,12 @@ namespace GameCore
 
         public PlayerItemInventory(int maxSlots)
         {
-            this.maxSlots = Math.Max(1, maxSlots);
+            this.maxSlots = Math.Min(InventoryMaxSlots, Math.Max(1, maxSlots));
         }
 
         public bool TryAddItem(PlayerItemType item)
         {
+            maxSlots = Math.Min(InventoryMaxSlots, Math.Max(1, maxSlots));
             if (items.Count >= maxSlots)
             {
                 return false;
@@ -52,6 +55,7 @@ namespace GameCore
 
         public bool TryReplaceItemAt(int slotIndex, PlayerItemType item)
         {
+            maxSlots = Math.Min(InventoryMaxSlots, Math.Max(1, maxSlots));
             if (slotIndex < 0 || slotIndex >= items.Count)
             {
                 return false;
