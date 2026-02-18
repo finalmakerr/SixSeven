@@ -83,6 +83,8 @@ namespace GameCore
         private SceneAssetLoader sceneAssetLoader;
 
         public bool IsBusy => isBusy || externalInputLock; // CODEX VERIFY: input lock gate for stable board state.
+        public int Width => width;
+        public int Height => height;
         // CODEX BOSS PR1
         public int RandomSeed => randomSeed;
 
@@ -118,6 +120,63 @@ namespace GameCore
         {
             externalInputLock = locked;
         }
+
+
+        public void SetBottomRowHazardVisual(Color color)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!IsInBounds(x, 0))
+                {
+                    continue;
+                }
+
+                var tile = pieces[x, 0];
+                if (tile != null)
+                {
+                    tile.SetHazardOverlay(color);
+                }
+            }
+        }
+
+        public void ClearBottomRowHazardVisual()
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (!IsInBounds(x, 0))
+                {
+                    continue;
+                }
+
+                var tile = pieces[x, 0];
+                if (tile != null)
+                {
+                    tile.ClearHazardOverlay();
+                }
+            }
+        }
+
+
+        public bool IsHazardTile(int x, int y)
+        {
+            if (!IsInBounds(x, y))
+            {
+                return false;
+            }
+
+            if (!TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null)
+            {
+                return false;
+            }
+
+            return piece.GetTileDebuff() == TileDebuffType.Entangled;
+        }
+
+        public int GetHazardDamageAt(int x, int y)
+        {
+            return IsHazardTile(x, y) ? 1 : 0;
+        }
+
 
         public void InitializeBoard(int newWidth, int newHeight)
         {
@@ -342,6 +401,16 @@ namespace GameCore
                 return false;
             }
 
+            if (TryStartLootIntercept(first, second))
+            {
+                return true;
+            }
+
+            if (GameManager.Instance != null && GameManager.Instance.IsMonsterEnraged(second.GetInstanceID()))
+            {
+                return false;
+            }
+
             if (!IsSwapValid(first, second))
             {
                 return false;
@@ -349,6 +418,66 @@ namespace GameCore
 
             StartCoroutine(SwapRoutine(first, second));
             return true;
+        }
+
+        private bool TryStartLootIntercept(Piece first, Piece second)
+        {
+            if (first == null || second == null || GameManager.Instance == null)
+            {
+                return false;
+            }
+
+            Piece playerPiece;
+            Piece lootPiece;
+            if (first.IsPlayer && IsLootPiece(second))
+            {
+                playerPiece = first;
+                lootPiece = second;
+            }
+            else if (second.IsPlayer && IsLootPiece(first))
+            {
+                playerPiece = second;
+                lootPiece = first;
+            }
+            else
+            {
+                return false;
+            }
+
+            isBusy = true;
+            var targetPosition = new Vector2Int(lootPiece.X, lootPiece.Y);
+            GameManager.Instance.HandleLootIntercept(
+                targetPosition,
+                () => StartCoroutine(CommitLootInterceptMovementRoutine(playerPiece, lootPiece)),
+                () => { isBusy = false; });
+            return true;
+        }
+
+        private static bool IsLootPiece(Piece piece)
+        {
+            return piece != null && (piece.SpecialType == SpecialType.Item || piece.SpecialType == SpecialType.Bugada);
+        }
+
+        private IEnumerator CommitLootInterceptMovementRoutine(Piece playerPiece, Piece lootPiece)
+        {
+            if (playerPiece == null || lootPiece == null)
+            {
+                isBusy = false;
+                yield break;
+            }
+
+            var sourcePosition = new Vector2Int(playerPiece.X, playerPiece.Y);
+            SwapPieces(playerPiece, lootPiece);
+
+            yield return new WaitForSeconds(0.05f);
+
+            TryDestroyPieceAt(sourcePosition, DestructionReason.ItemPickup);
+
+            activeMoveId = moveId + 1;
+            moveId = activeMoveId;
+            ValidSwap?.Invoke();
+            TurnEnded?.Invoke();
+            isBusy = false;
         }
 
         public bool CanJetpackSwap(Piece playerPiece, Vector2Int direction)
@@ -575,6 +704,193 @@ namespace GameCore
             return piece != null;
         }
 
+        public bool HasMatchOpportunityForMonster(Piece monster)
+        {
+            if (monster == null || monster.IsPlayer)
+            {
+                return false;
+            }
+
+            return CanMatchPieceWithinEnergyDepth(new Vector2Int(monster.X, monster.Y), 1);
+        }
+
+        public bool CanMatchPieceWithinEnergyDepth(Vector2Int monsterPosition, int availableEnergy)
+        {
+            if (availableEnergy <= 0)
+            {
+                return false;
+            }
+
+            if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
+            {
+                return false;
+            }
+
+            var originalGrid = CloneGridState(monsterPosition);
+            if (!originalGrid.HasMonster)
+            {
+                return false;
+            }
+
+            try
+            {
+                var maxDepth = Mathf.Min(2, availableEnergy);
+                return SearchDepth(originalGrid, maxDepth, 0);
+            }
+            finally
+            {
+                RestoreGridState(originalGrid);
+            }
+        }
+
+        private bool SearchDepth(SimulationState state, int maxDepth, int currentDepth)
+        {
+            if (currentDepth >= maxDepth)
+            {
+                return false;
+            }
+
+            var legalSwaps = GetAllLegalSwaps(state);
+            for (var i = 0; i < legalSwaps.Count; i++)
+            {
+                var branchState = CloneGridState(state);
+                ApplySwap(branchState, legalSwaps[i]);
+
+                if (!ResolveAllMatchesAndCascades(branchState))
+                {
+                    continue;
+                }
+
+                if (WasMonsterDirectlyMatched(branchState))
+                {
+                    return true;
+                }
+
+                if (!branchState.HasMonster)
+                {
+                    return true;
+                }
+
+                if (currentDepth + 1 >= maxDepth)
+                {
+                    continue;
+                }
+
+                if (SearchDepth(branchState, maxDepth, currentDepth + 1))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool WasMonsterDirectlyMatched(SimulationState state)
+        {
+            return state.MonsterMatchedDuringResolve;
+        }
+
+        private bool ResolveAllMatchesAndCascades(SimulationState state)
+        {
+            var anyMatch = false;
+            state.MonsterMatchedDuringResolve = false;
+
+            while (true)
+            {
+                var matches = FindMatches(state);
+                if (matches.Count == 0)
+                {
+                    break;
+                }
+
+                anyMatch = true;
+                for (var i = 0; i < matches.Count; i++)
+                {
+                    var position = matches[i];
+                    if (!IsInBounds(position.x, position.y))
+                    {
+                        continue;
+                    }
+
+                    if (state.Cells[position.x, position.y].IsTargetMonster)
+                    {
+                        state.MonsterMatchedDuringResolve = true;
+                    }
+
+                    RemovePiece(state, position);
+                }
+
+                ApplyGravity(state);
+                RefillBoardDeterministic(state);
+            }
+
+            return anyMatch;
+        }
+
+        public bool CanPlayerKillMonsterInTwoTurns(
+            Vector2Int monsterPosition,
+            Vector2Int playerPosition,
+            int currentEnergy,
+            int maxEnergy,
+            int meditationRange,
+            int telekinesisCost)
+        {
+            if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
+            {
+                return false;
+            }
+
+            var initialState = CreateSimulationState(monsterPosition);
+            if (!initialState.HasMonster)
+            {
+                return false;
+            }
+
+            var reachableTurn1 = EnumerateReachableSwaps(
+                initialState,
+                playerPosition,
+                currentEnergy,
+                meditationRange,
+                telekinesisCost);
+
+            for (var i = 0; i < reachableTurn1.Count; i++)
+            {
+                var branch1 = CloneSimulationState(initialState);
+
+                var energyAfterTurn1 = currentEnergy;
+                if (reachableTurn1[i].Cost > 0)
+                {
+                    energyAfterTurn1 -= reachableTurn1[i].Cost;
+                }
+
+                ApplySimulationSwap(branch1, reachableTurn1[i]);
+                if (ResolveSimulationBoard(branch1))
+                {
+                    return true;
+                }
+
+                var energyTurn2 = Mathf.Min(maxEnergy, energyAfterTurn1 + 1);
+                var reachableTurn2 = EnumerateReachableSwaps(
+                    branch1,
+                    playerPosition,
+                    energyTurn2,
+                    meditationRange,
+                    telekinesisCost);
+
+                for (var j = 0; j < reachableTurn2.Count; j++)
+                {
+                    var branch2 = CloneSimulationState(branch1);
+                    ApplySimulationSwap(branch2, reachableTurn2[j]);
+                    if (ResolveSimulationBoard(branch2))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         // CODEX RAGE SCALE FINAL
         public int GetMonsterRageMatchabilityScore(Vector2Int monsterPosition)
         {
@@ -635,6 +951,435 @@ namespace GameCore
             }
 
             return false;
+        }
+
+        private SimulationState CreateSimulationState(Vector2Int monsterPosition)
+        {
+            var cells = new SimPiece[width, height];
+            var hasMonster = false;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    cells[x, y] = CreateSimPiece(piece, x, y, x == monsterPosition.x && y == monsterPosition.y);
+                    if (cells[x, y].IsTargetMonster)
+                    {
+                        hasMonster = true;
+                    }
+                }
+            }
+
+            var branchSeed = randomSeed ^ (monsterPosition.x * 48611) ^ (monsterPosition.y * 98473);
+            return new SimulationState
+            {
+                Cells = cells,
+                RandomState = branchSeed,
+                HasMonster = hasMonster,
+                MonsterMatchedDuringResolve = false,
+            };
+        }
+
+        private SimulationState CloneSimulationState(SimulationState source)
+        {
+            var cloneCells = (SimPiece[,])source.Cells.Clone();
+            return new SimulationState
+            {
+                Cells = cloneCells,
+                RandomState = source.RandomState,
+                HasMonster = source.HasMonster,
+                MonsterMatchedDuringResolve = source.MonsterMatchedDuringResolve,
+            };
+        }
+
+        private SimulationState CloneGridState(Vector2Int monsterPosition)
+        {
+            return CreateSimulationState(monsterPosition);
+        }
+
+        private SimulationState CloneGridState(SimulationState source)
+        {
+            return CloneSimulationState(source);
+        }
+
+        private void RestoreGridState(SimulationState state)
+        {
+            _ = state;
+        }
+
+        private SimPiece CreateSimPiece(Piece piece, int x, int y, bool isTargetMonster)
+        {
+            if (piece == null)
+            {
+                return SimPiece.Empty;
+            }
+
+            return new SimPiece
+            {
+                Occupied = true,
+                ColorIndex = piece.ColorIndex,
+                IsMatchable = IsMatchable(piece),
+                IsSwappable = IsSwappable(piece),
+                IsTargetMonster = isTargetMonster,
+                IsBossLocked = GameManager.Instance != null
+                    && GameManager.Instance.IsBossLevel
+                    && GameManager.Instance.CurrentBossState.bossAlive
+                    && x == GameManager.Instance.CurrentBossState.bossPosition.x
+                    && y == GameManager.Instance.CurrentBossState.bossPosition.y
+            };
+        }
+
+        private List<SimSwap> EnumerateReachableSwaps(
+            SimulationState state,
+            Vector2Int playerPosition,
+            int availableEnergy,
+            int meditationRange,
+            int telekinesisCost)
+        {
+            var swaps = new List<SimSwap>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var dist = Mathf.Abs(playerPosition.x - x) + Mathf.Abs(playerPosition.y - y);
+                    if (dist > meditationRange)
+                    {
+                        continue;
+                    }
+
+                    var cost = dist <= 1 ? 0 : telekinesisCost;
+                    if (cost > availableEnergy)
+                    {
+                        continue;
+                    }
+
+                    TryAddReachableSwap(state, x, y, x + 1, y, cost, swaps);
+                    TryAddReachableSwap(state, x, y, x, y + 1, cost, swaps);
+                }
+            }
+
+            return swaps;
+        }
+
+        private void TryAddReachableSwap(
+            SimulationState state,
+            int x1,
+            int y1,
+            int x2,
+            int y2,
+            int cost,
+            List<SimSwap> swaps)
+        {
+            if (!IsInBounds(x2, y2))
+            {
+                return;
+            }
+
+            var first = state.Cells[x1, y1];
+            var second = state.Cells[x2, y2];
+            if (!first.IsSwappable || !second.IsSwappable || first.ColorIndex == second.ColorIndex)
+            {
+                return;
+            }
+
+            if (first.IsBossLocked || second.IsBossLocked)
+            {
+                return;
+            }
+
+            if (!WouldSimulationSwapCreateMatch(state.Cells, x1, y1, x2, y2))
+            {
+                return;
+            }
+
+            swaps.Add(new SimSwap(x1, y1, x2, y2, cost));
+        }
+
+        private bool WouldSimulationSwapCreateMatch(SimPiece[,] cells, int x1, int y1, int x2, int y2)
+        {
+            SwapSimCells(cells, x1, y1, x2, y2);
+            var createsMatch = HasSimulationMatchAt(cells, x1, y1) || HasSimulationMatchAt(cells, x2, y2);
+            SwapSimCells(cells, x1, y1, x2, y2);
+            return createsMatch;
+        }
+
+        private List<SimSwap> GetAllLegalSwaps(SimulationState state)
+        {
+            var swaps = new List<SimSwap>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    TryAddReachableSwap(state, x, y, x + 1, y, 0, swaps);
+                    TryAddReachableSwap(state, x, y, x, y + 1, 0, swaps);
+                }
+            }
+
+            return swaps;
+        }
+
+        private void ApplySwap(SimulationState state, SimSwap swap)
+        {
+            ApplySimulationSwap(state, swap);
+        }
+
+        private void ApplySimulationSwap(SimulationState state, SimSwap swap)
+        {
+            SwapSimCells(state.Cells, swap.X1, swap.Y1, swap.X2, swap.Y2);
+        }
+
+        private void SwapSimCells(SimPiece[,] cells, int x1, int y1, int x2, int y2)
+        {
+            var temp = cells[x1, y1];
+            cells[x1, y1] = cells[x2, y2];
+            cells[x2, y2] = temp;
+        }
+
+        private bool ResolveSimulationBoard(SimulationState state)
+        {
+            var cells = state.Cells;
+            while (true)
+            {
+                var toRemove = FindSimulationMatches(cells);
+                if (toRemove.Count == 0)
+                {
+                    return false;
+                }
+
+                for (var i = 0; i < toRemove.Count; i++)
+                {
+                    var position = toRemove[i];
+                    if (!IsInBounds(position.x, position.y))
+                    {
+                        continue;
+                    }
+
+                    if (cells[position.x, position.y].IsTargetMonster)
+                    {
+                        return true;
+                    }
+
+                    cells[position.x, position.y] = SimPiece.Empty;
+                }
+
+                ApplySimulationGravity(state);
+            }
+        }
+
+        private List<Vector2Int> FindMatches(SimulationState state)
+        {
+            return FindSimulationMatches(state.Cells);
+        }
+
+        private void RemovePiece(SimulationState state, Vector2Int position)
+        {
+            var cell = state.Cells[position.x, position.y];
+
+            if (cell.IsTargetMonster)
+            {
+                state.MonsterMatchedDuringResolve = true;
+                state.HasMonster = false;
+            }
+
+            state.Cells[position.x, position.y] = SimPiece.Empty;
+        }
+
+        private void ApplyGravity(SimulationState state)
+        {
+            ApplySimulationGravity(state);
+        }
+
+        private void RefillBoardDeterministic(SimulationState state)
+        {
+            // Refill is part of gravity in simulation path.
+            _ = state;
+        }
+
+        private List<Vector2Int> FindSimulationMatches(SimPiece[,] cells)
+        {
+            var uniqueMatches = new HashSet<Vector2Int>();
+            for (var y = 0; y < height; y++)
+            {
+                var x = 0;
+                while (x < width)
+                {
+                    if (!cells[x, y].IsMatchable)
+                    {
+                        x++;
+                        continue;
+                    }
+
+                    var color = cells[x, y].ColorIndex;
+                    var start = x;
+                    x++;
+                    while (x < width && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+                    {
+                        x++;
+                    }
+
+                    if (x - start >= 3)
+                    {
+                        for (var runX = start; runX < x; runX++)
+                        {
+                            uniqueMatches.Add(new Vector2Int(runX, y));
+                        }
+                    }
+                }
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                var y = 0;
+                while (y < height)
+                {
+                    if (!cells[x, y].IsMatchable)
+                    {
+                        y++;
+                        continue;
+                    }
+
+                    var color = cells[x, y].ColorIndex;
+                    var start = y;
+                    y++;
+                    while (y < height && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+                    {
+                        y++;
+                    }
+
+                    if (y - start >= 3)
+                    {
+                        for (var runY = start; runY < y; runY++)
+                        {
+                            uniqueMatches.Add(new Vector2Int(x, runY));
+                        }
+                    }
+                }
+            }
+
+            return new List<Vector2Int>(uniqueMatches);
+        }
+
+        private void ApplySimulationGravity(SimulationState state)
+        {
+            var cells = state.Cells;
+            for (var x = 0; x < width; x++)
+            {
+                var writeY = 0;
+                for (var y = 0; y < height; y++)
+                {
+                    if (!cells[x, y].Occupied)
+                    {
+                        continue;
+                    }
+
+                    if (writeY != y)
+                    {
+                        cells[x, writeY] = cells[x, y];
+                        cells[x, y] = SimPiece.Empty;
+                    }
+
+                    writeY++;
+                }
+
+                for (var spawnY = writeY; spawnY < height; spawnY++)
+                {
+                    cells[x, spawnY] = new SimPiece
+                    {
+                        Occupied = true,
+                        ColorIndex = NextSimulationColorIndex(state),
+                        IsMatchable = true,
+                        IsSwappable = true,
+                        IsTargetMonster = false,
+                        IsBossLocked = false
+                    };
+                }
+            }
+        }
+
+        private int NextSimulationColorIndex(SimulationState state)
+        {
+            unchecked
+            {
+                state.RandomState = (state.RandomState * 1103515245) + 12345;
+            }
+
+            var value = state.RandomState & int.MaxValue;
+            return value % Mathf.Max(1, colorCount);
+        }
+
+        private bool HasSimulationMatchAt(SimPiece[,] cells, int x, int y)
+        {
+            if (!IsInBounds(x, y) || !cells[x, y].IsMatchable)
+            {
+                return false;
+            }
+
+            var color = cells[x, y].ColorIndex;
+            var horizontal = 1;
+            horizontal += CountSimulationDirection(cells, x, y, 1, 0, color);
+            horizontal += CountSimulationDirection(cells, x, y, -1, 0, color);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            var vertical = 1;
+            vertical += CountSimulationDirection(cells, x, y, 0, 1, color);
+            vertical += CountSimulationDirection(cells, x, y, 0, -1, color);
+            return vertical >= 3;
+        }
+
+        private int CountSimulationDirection(SimPiece[,] cells, int startX, int startY, int stepX, int stepY, int color)
+        {
+            var count = 0;
+            var x = startX + stepX;
+            var y = startY + stepY;
+            while (IsInBounds(x, y) && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+            {
+                count++;
+                x += stepX;
+                y += stepY;
+            }
+
+            return count;
+        }
+
+        private sealed class SimulationState
+        {
+            public SimPiece[,] Cells;
+            public int RandomState;
+            public bool HasMonster;
+            public bool MonsterMatchedDuringResolve;
+        }
+
+        private readonly struct SimSwap
+        {
+            public readonly int X1;
+            public readonly int Y1;
+            public readonly int X2;
+            public readonly int Y2;
+            public readonly int Cost;
+
+            public SimSwap(int x1, int y1, int x2, int y2, int cost)
+            {
+                X1 = x1;
+                Y1 = y1;
+                X2 = x2;
+                Y2 = y2;
+                Cost = cost;
+            }
+        }
+
+        private struct SimPiece
+        {
+            public bool Occupied;
+            public int ColorIndex;
+            public bool IsMatchable;
+            public bool IsSwappable;
+            public bool IsTargetMonster;
+            public bool IsBossLocked;
+
+            public static SimPiece Empty => default;
         }
 
         // CODEX RAGE SCALE FINAL
@@ -903,12 +1648,12 @@ namespace GameCore
                 return false;
             }
 
-            if (piece.SpecialType != SpecialType.None)
+            if (IsBossPiece(piece))
             {
                 return false;
             }
 
-            return !IsBossPiece(piece);
+            return piece.SpecialType == SpecialType.None || piece.SpecialType == SpecialType.Tumor;
         }
 
         private bool IsBugadaActive()
@@ -1141,7 +1886,7 @@ namespace GameCore
                 }
             }
 
-            if (runLength >= 4)
+            if (runLength >= GameManager.Instance.BalanceConfig.MinRunForSpecialBomb)
             {
                 var itemSpawnPosition = FindItemSpawnPosition(endX, endY, runLength, direction, bombPosition);
                 if (itemSpawnPosition.HasValue)
@@ -1150,14 +1895,14 @@ namespace GameCore
                     {
                         pendingBugadaSpawnPosition = itemSpawnPosition.Value; // CODEX STAGE 7D: Bugada spawn candidate.
                     }
-                    else
+                    else if (GameManager.Instance == null || GameManager.Instance.CanRollItemDrop())
                     {
-                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7B: item spawn candidate.
+                        pendingItemSpawnPositions.Add(itemSpawnPosition.Value); // CODEX STAGE 7I-A: weighted item drop candidate only when a valid drop exists.
                     }
                 }
             }
 
-            if (runLength >= 4 && debugMode)
+            if (runLength >= GameManager.Instance.BalanceConfig.MinRunForLootRoll && debugMode)
             {
                 var specialPosition = new Vector2Int(endX, endY); // CODEX VERIFY 2: log once per match run.
                 if (specialCreationLogged.Add(specialPosition))
@@ -1457,6 +2202,16 @@ namespace GameCore
 
                 var remaining = item.ItemTurnsRemaining - 1;
                 item.UpdateItemTurns(remaining);
+
+                if (remaining == 1)
+                {
+                    ApplyLootFadeVisual(item, 0.75f);
+                }
+                else if (remaining >= 2)
+                {
+                    ApplyLootFadeVisual(item, 1f);
+                }
+
                 if (remaining <= 0)
                 {
                     expiredItems.Add(item);
@@ -1474,6 +2229,24 @@ namespace GameCore
                 StartCoroutine(FadeAndRemoveItem(item));
             }
 
+        }
+
+        private void ApplyLootFadeVisual(Piece piece, float alpha)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            var renderer = piece.GetComponent<SpriteRenderer>();
+            if (renderer == null)
+            {
+                return;
+            }
+
+            var color = renderer.color;
+            color.a = alpha;
+            renderer.color = color;
         }
 
         // CODEX STAGE 7B: fade expired items before removing them.
@@ -1573,7 +2346,6 @@ namespace GameCore
                 yield return new WaitForSeconds(refillDelay);
                 RefillBoard();
                 yield return new WaitForSeconds(refillDelay);
-                TickItemTurns(); // CODEX STAGE 7B: every match counts as a turn for items.
                 // Continue clearing until the board settles with no matches.
                 matches = FindMatches();
                 matchRunLengthsSnapshot = GetMatchRunLengthsSnapshot();
@@ -1581,6 +2353,11 @@ namespace GameCore
 
             EnsurePlayableBoard();
             isBusy = false;
+        }
+
+        public void TickLootTurnsForTurnEnd()
+        {
+            TickItemTurns();
         }
 
         private int ClearMatches(List<Piece> matches)
@@ -2198,13 +2975,17 @@ namespace GameCore
                 return false;
             }
 
-            if (GameManager.Instance != null && GameManager.Instance.IsBossLevel)
+            if (GameManager.Instance != null)
             {
-                var bossState = GameManager.Instance.CurrentBossState;
-                if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
+                if (GameManager.Instance.IsMonsterSwapLockedAtPosition(new Vector2Int(piece.X, piece.Y)))
                 {
-                    var boss = GameManager.Instance.CurrentBoss;
-                    if (boss == null || boss.immuneToSwaps)
+                    return false;
+                }
+
+                if (GameManager.Instance.IsBossLevel)
+                {
+                    var bossState = GameManager.Instance.CurrentBossState;
+                    if (bossState.bossAlive && piece.X == bossState.bossPosition.x && piece.Y == bossState.bossPosition.y)
                     {
                         return false;
                     }

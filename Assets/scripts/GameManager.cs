@@ -1,17 +1,35 @@
 using System;
 using System.Collections;
+using System.Threading.Tasks;
 using UnityEngine;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using TMPro;
 
 public class GameManager : MonoBehaviour
 {
+    public static GameManager Instance { get; private set; }
+
     [Header("Timing")]
     [SerializeField] private float loadingDuration = 0.75f;
 
     [Header("Death Flow")]
     [SerializeField] private bool allowDeathAutoRetry = true;
+    [SerializeField] private GameOverConfig gameOverConfig;
+    [SerializeField] private TipsConfig tipsConfig;
+    [SerializeField] private int startingOneUps;
+    [SerializeField] private bool hardcoreModeEnabled;
+    [SerializeField] private GameMode startingGameMode = GameMode.Normal;
+    [SerializeField] private ModeAuraController modeAuraController;
+    [SerializeField] private TextMeshProUGUI weeklyModeCountText;
 
     public event Action<GameState> StateChanged;
     public event Action AutoRetryPopupRequested;
+    public event Action ResurrectionStarted;
+    public event Action<string> ResurrectionVideoRequested;
+    public event Action<string> ResurrectionTipRequested;
+    public event Action<bool> ShopOfferOneUpChanged;
+    public static event Action<GameMode> OnModeUnlocked;
 
     /// <summary>
     /// Hook this from your level/gameplay systems.
@@ -21,11 +39,55 @@ public class GameManager : MonoBehaviour
     public Func<bool> TryAutoRetryOnDeath;
 
     public GameState CurrentState { get; private set; } = GameState.MainMenu;
+    public int OneUps { get; private set; }
+    public GameMode CurrentGameMode { get; private set; } = GameMode.Normal;
 
     private Coroutine loadingRoutine;
+    private Coroutine resurrectionRoutine;
+    private bool resolvingIronmanGameOver;
+    private const string LastModeKey = "LastPlayedGameMode";
+    private const string TipsCycleIndexPrefsKey = "SixSeven.Tips.NextIndex";
+    private const string ProfilePrefsKey = "SixSeven.PlayerProfile";
+    private int nextTipIndex;
+    [SerializeField] private PlayerProfile profile = new PlayerProfile();
+    public PlayerProfile Profile => profile;
+    private bool runCompletionRegistered;
+    private WeeklyStatsService weeklyService;
+
+    private DateTime lastWeeklyCountFetchTimeUtc = DateTime.MinValue;
+    private int cachedWeeklyCount;
+    private const float WeeklyCountCacheDurationSeconds = 30f;
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        LoadProfile();
+        ResetWeeklyIfNeeded();
+        ApplyLastKnownModeAura();
+        weeklyService = new WeeklyStatsService();
+    }
+
+    private void ApplyLastKnownModeAura()
+    {
+        GameMode savedMode = (GameMode)PlayerPrefs.GetInt(LastModeKey, (int)GameMode.Normal);
+        CurrentGameMode = ValidateGameModeAvailability(savedMode);
+        PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
+        PlayerPrefs.Save();
+        modeAuraController?.ApplyModeAura(CurrentGameMode);
+    }
 
     private void Start()
     {
+        OneUps = Mathf.Max(0, startingOneUps);
+        nextTipIndex = Mathf.Max(0, PlayerPrefs.GetInt(TipsCycleIndexPrefsKey, 0));
         SetState(GameState.MainMenu);
     }
 
@@ -33,6 +95,14 @@ public class GameManager : MonoBehaviour
     {
         if (CurrentState == GameState.Loading || CurrentState == GameState.Playing)
             return;
+
+        runCompletionRegistered = false;
+
+        CurrentGameMode = ResolveCurrentGameMode();
+        modeAuraController?.ApplyModeAura(CurrentGameMode);
+        PlayerPrefs.SetInt(LastModeKey, (int)CurrentGameMode);
+        PlayerPrefs.Save();
+        UpdateWeeklyModeUI();
 
         SetState(GameState.Loading);
         BeginLoading();
@@ -46,18 +116,100 @@ public class GameManager : MonoBehaviour
         StartGame();
     }
 
-    public void CompleteLevel()
+    public async Task CompleteLevel()
     {
         if (CurrentState != GameState.Playing)
             return;
 
         SetState(GameState.LevelComplete);
+
+        bool runCompleted = currentLevel == 67;
+
+        if (runCompleted && !runCompletionRegistered)
+        {
+            runCompletionRegistered = true;
+
+            if (CurrentGameMode == GameMode.Normal)
+            {
+                if (!profile.hasUnlockedHardcore)
+                {
+                    profile.hasUnlockedHardcore = true;
+                    profile.pendingUnlockMode = GameMode.Hardcore;
+                    OnModeUnlocked?.Invoke(GameMode.Hardcore);
+                }
+            }
+
+            if (CurrentGameMode == GameMode.Hardcore)
+            {
+                if (!profile.hasUnlockedIronman)
+                {
+                    profile.hasUnlockedIronman = true;
+                    profile.pendingUnlockMode = GameMode.Ironman;
+                    OnModeUnlocked?.Invoke(GameMode.Ironman);
+                }
+            }
+
+            ResetWeeklyIfNeeded();
+
+            switch (CurrentGameMode)
+            {
+                case GameMode.Normal:
+                    profile.weeklyModeStats.normalCompleted++;
+                    break;
+
+                case GameMode.Hardcore:
+                    profile.weeklyModeStats.hardcoreCompleted++;
+                    break;
+
+                case GameMode.Ironman:
+                    profile.weeklyModeStats.ironmanCompleted++;
+                    break;
+            }
+
+            var weeklyService = new WeeklyStatsService();
+            _ = SubmitWeeklyRunCompletionSafelyAsync(weeklyService, CurrentGameMode);
+
+            SaveProfile();
+        }
+    }
+
+    private static async Task SubmitWeeklyRunCompletionSafelyAsync(WeeklyStatsService weeklyService, GameMode mode)
+    {
+        try
+        {
+            await weeklyService.SubmitWeeklyRunCompletionAsync(mode);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError($"Weekly run completion submission failed unexpectedly: {exception}");
+        }
     }
 
     public void TriggerGameOver()
     {
         if (CurrentState != GameState.Playing)
             return;
+
+        if (resolvingIronmanGameOver)
+        {
+            SetState(GameState.GameOver);
+            return;
+        }
+
+        if (CurrentGameMode == GameMode.Ironman)
+        {
+            resolvingIronmanGameOver = true;
+            TriggerGameOver();
+            resolvingIronmanGameOver = false;
+            return;
+        }
+
+        if (ShouldUseOneUp())
+        {
+            OneUps = Mathf.Max(0, OneUps - 1);
+            BeginResurrectionFlow();
+            return;
+        }
 
         if (allowDeathAutoRetry && TryAutoRetryOnDeath?.Invoke() == true)
         {
@@ -69,6 +221,15 @@ public class GameManager : MonoBehaviour
         SetState(GameState.GameOver);
     }
 
+    public void EnterShop()
+    {
+        if (CurrentState != GameState.Playing && CurrentState != GameState.LevelComplete)
+            return;
+
+        SetState(GameState.Shop);
+        ShopOfferOneUpChanged?.Invoke(ForceOfferOneUpInShop());
+    }
+
     public void ReturnToMainMenu()
     {
         if (CurrentState == GameState.MainMenu)
@@ -76,6 +237,26 @@ public class GameManager : MonoBehaviour
 
         StopLoadingRoutine();
         SetState(GameState.MainMenu);
+    }
+
+    private GameMode ResolveCurrentGameMode()
+    {
+        GameMode selectedMode = hardcoreModeEnabled ? GameMode.Hardcore : startingGameMode;
+        return ValidateGameModeAvailability(selectedMode);
+    }
+
+    private GameMode ValidateGameModeAvailability(GameMode selectedMode)
+    {
+        if (profile == null)
+            return GameMode.Normal;
+
+        if (selectedMode == GameMode.Hardcore && !profile.hasUnlockedHardcore)
+            return GameMode.Normal;
+
+        if (selectedMode == GameMode.Ironman && !profile.hasUnlockedIronman)
+            return profile.hasUnlockedHardcore ? GameMode.Hardcore : GameMode.Normal;
+
+        return selectedMode;
     }
 
     private void BeginLoading()
@@ -108,12 +289,215 @@ public class GameManager : MonoBehaviour
         loadingRoutine = null;
     }
 
+    private bool ShouldUseOneUp()
+    {
+        if (OneUps <= 0)
+            return false;
+
+        if (gameOverConfig != null && !gameOverConfig.consumeOneUpOnDeath)
+            return false;
+
+        if (hardcoreModeEnabled && gameOverConfig != null && gameOverConfig.allowHardcoreMode)
+            return false;
+
+        return true;
+    }
+
+    private bool ForceOfferOneUpInShop()
+    {
+        if (CurrentGameMode == GameMode.Ironman)
+            return false;
+
+        if (gameOverConfig == null)
+            return true;
+
+        return gameOverConfig.shopForceOfferOneUp;
+    }
+
+    private void BeginResurrectionFlow()
+    {
+        if (resurrectionRoutine != null)
+            StopCoroutine(resurrectionRoutine);
+
+        resurrectionRoutine = StartCoroutine(ResurrectionRoutine());
+    }
+
+    private IEnumerator ResurrectionRoutine()
+    {
+        if (CurrentGameMode == GameMode.Ironman)
+        {
+            resurrectionRoutine = null;
+            yield break;
+        }
+
+        ResurrectionStarted?.Invoke();
+
+        var fadeDuration = gameOverConfig != null ? Mathf.Max(0f, gameOverConfig.fadeToBlackDuration) : 0.4f;
+        if (fadeDuration > 0f)
+            yield return new WaitForSeconds(fadeDuration);
+
+        if (gameOverConfig != null)
+        {
+            ResurrectionVideoRequested?.Invoke(gameOverConfig.resurrectionVideoPath);
+            var videoDuration = Mathf.Max(0f, gameOverConfig.resurrectionVideoDuration);
+            if (videoDuration > 0f)
+                yield return new WaitForSeconds(videoDuration);
+
+            var nextTip = GetNextTip();
+            if (!string.IsNullOrWhiteSpace(nextTip))
+                ResurrectionTipRequested?.Invoke(nextTip);
+        }
+
+        SetState(GameState.Shop);
+        ShopOfferOneUpChanged?.Invoke(ForceOfferOneUpInShop());
+        resurrectionRoutine = null;
+    }
+
+    private string GetNextTip()
+    {
+        if (tipsConfig == null || tipsConfig.tips == null || tipsConfig.tips.Count == 0)
+            return string.Empty;
+
+        if (nextTipIndex >= tipsConfig.tips.Count)
+            nextTipIndex = 0;
+
+        var tipEntry = tipsConfig.tips[nextTipIndex];
+        var selectedText = tipEntry != null ? tipEntry.tip : string.Empty;
+
+        nextTipIndex++;
+        if (nextTipIndex >= tipsConfig.tips.Count)
+            nextTipIndex = 0;
+
+        PlayerPrefs.SetInt(TipsCycleIndexPrefsKey, nextTipIndex);
+        PlayerPrefs.Save();
+
+        return selectedText;
+    }
+
     private void SetState(GameState newState)
     {
         if (CurrentState == newState)
             return;
 
+        ResetWeeklyIfNeeded();
         CurrentState = newState;
+        UpdateWeeklyModeUI();
         StateChanged?.Invoke(CurrentState);
+    }
+
+    private void UpdateWeeklyModeUI()
+    {
+        if (weeklyModeCountText == null || profile == null)
+            return;
+
+        ResetWeeklyIfNeeded();
+
+        int count = 0;
+        switch (CurrentGameMode)
+        {
+            case GameMode.Normal:
+                count = profile.weeklyModeStats.normalCompleted;
+                break;
+            case GameMode.Hardcore:
+                count = profile.weeklyModeStats.hardcoreCompleted;
+                break;
+            case GameMode.Ironman:
+                count = profile.weeklyModeStats.ironmanCompleted;
+                break;
+        }
+
+        // Show local immediately (optional)
+        weeklyModeCountText.text = $"Players Beat This Mode This Week: {count}";
+        
+        // Then fetch global async
+        UpdateOnlineWeeklyCount();
+
+    }
+
+    private async void UpdateOnlineWeeklyCount()
+    {
+        if (weeklyService == null || weeklyModeCountText == null)
+            return;
+
+        if ((DateTime.UtcNow - lastWeeklyCountFetchTimeUtc).TotalSeconds < WeeklyCountCacheDurationSeconds)
+        {
+            weeklyModeCountText.text = $"Players Beat This Mode This Week: {cachedWeeklyCount}";
+            return;
+        }
+
+        int count = await weeklyService.GetWeeklyCountAsync(CurrentGameMode);
+
+        if (!isActiveAndEnabled || weeklyModeCountText == null)
+            return;
+
+        cachedWeeklyCount = count;
+        lastWeeklyCountFetchTimeUtc = DateTime.UtcNow;
+        weeklyModeCountText.text = $"Players Beat This Mode This Week: {count}";
+    }
+
+
+    private void ResetWeeklyIfNeeded()
+    {
+        if (profile == null)
+            return;
+
+        if (profile.weeklyModeStats == null)
+            profile.weeklyModeStats = new WeeklyModeStats();
+
+        var stats = profile.weeklyModeStats;
+
+        var now = DateTime.UtcNow;
+
+        int diff = (7 + (int)now.DayOfWeek - (int)DayOfWeek.Monday) % 7;
+        var monday = now.Date.AddDays(-diff);
+
+        if (stats.weekStartUtc == default)
+        {
+            stats.weekStartUtc = monday;
+            SaveProfile();
+            return;
+        }
+
+        if (stats.weekStartUtc.Date != monday)
+        {
+            stats.normalCompleted = 0;
+            stats.hardcoreCompleted = 0;
+            stats.ironmanCompleted = 0;
+
+            stats.weekStartUtc = monday;
+            SaveProfile();
+        }
+    }
+
+    private void LoadProfile()
+    {
+        var raw = PlayerPrefs.GetString(ProfilePrefsKey, string.Empty);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            profile = new PlayerProfile();
+            return;
+        }
+
+        var root = JObject.Parse(raw);
+        var weekStartToken = root["weeklyModeStats"]?["weekStartUtc"];
+        if (weekStartToken != null && weekStartToken.Type == JTokenType.String)
+        {
+            var parsed = DateTime.Parse(
+                weekStartToken.Value<string>(),
+                null,
+                System.Globalization.DateTimeStyles.RoundtripKind);
+            root["weeklyModeStats"]["weekStartUtc"] = JToken.FromObject(parsed);
+        }
+
+        profile = JsonConvert.DeserializeObject<PlayerProfile>(root.ToString());
+        if (profile == null)
+            profile = new PlayerProfile();
+    }
+
+    public void SaveProfile()
+    {
+        var raw = JsonConvert.SerializeObject(profile, Formatting.Indented);
+        PlayerPrefs.SetString(ProfilePrefsKey, raw);
+        PlayerPrefs.Save();
     }
 }

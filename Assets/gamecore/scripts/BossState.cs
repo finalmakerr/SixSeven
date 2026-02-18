@@ -13,7 +13,11 @@ namespace GameCore
         public int CurrentHP;
         public int CurrentPhaseIndex;
         public bool IsPermanentlyEnraged;
+        public bool IsAngry;
         public bool IsEnraged;
+        public bool HasCharmResistance;
+        public Vector2Int AggressorPosition;
+        public int AggressorPieceId;
         public Vector2Int AttackTarget;
         public int TurnsUntilAttack;
         public int TumorShield;

@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace GameCore
@@ -7,6 +8,7 @@ namespace GameCore
     public class Piece : MonoBehaviour
     {
         [SerializeField] private float size = 0.9f;
+        [SerializeField] private GameObject tileDebuffOverlay;
 
         public int X { get; private set; }
         public int Y { get; private set; }
@@ -20,19 +22,185 @@ namespace GameCore
         private SpriteRenderer spriteRenderer;
         private Sprite baseSprite;
         private Sprite bombSprite;
+        [SerializeField] private Sprite idleSprite;
+        [SerializeField] private Sprite hurtSprite;
+        [SerializeField] private Sprite enrageSprite;
+        [SerializeField] private Sprite outSprite;
+        [SerializeField] private Sprite deadSprite;
+        [SerializeField] private Sprite matchedSprite;
         private bool isPlayerPiece;
         private bool hasInitializedSpecialType;
+        private bool isDead;
+        private bool isMatched;
+        private bool isEnraged;
+        private bool isOutState;
+        private bool isHurt;
         // CODEX CHEST PR1
         private SpriteRenderer treasureOverlayRenderer;
+        private SpriteRenderer hazardOverlayRenderer;
         private TextMesh treasureDebugText;
         // CODEX STAGE 7B
         private TextMesh itemTurnsText;
+        private TileDebuffType currentTileDebuff = TileDebuffType.None;
+        private int tileDebuffDuration;
 
         private void Awake()
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
             var collider = GetComponent<BoxCollider2D>();
             collider.size = new Vector2(size, size);
+            UpdateTileDebuffVisual();
+        }
+
+        public void ApplyTileDebuff(TileDebuffType type, int duration)
+        {
+            currentTileDebuff = type;
+            tileDebuffDuration = Mathf.Max(0, duration);
+            UpdateTileDebuffVisual();
+        }
+
+        public void ClearTileDebuff()
+        {
+            currentTileDebuff = TileDebuffType.None;
+            tileDebuffDuration = 0;
+            UpdateTileDebuffVisual();
+        }
+
+        public TileDebuffType GetTileDebuff()
+        {
+            return currentTileDebuff;
+        }
+
+        public void TickTileDebuff()
+        {
+            if (currentTileDebuff == TileDebuffType.None)
+            {
+                return;
+            }
+
+            tileDebuffDuration--;
+            if (tileDebuffDuration <= 0)
+            {
+                ClearTileDebuff();
+            }
+        }
+
+        public int GetGuaranteedDebuffDamage()
+        {
+            return currentTileDebuff == TileDebuffType.Entangled ? 1 : 0;
+        }
+
+        public void SetVisualState(MonsterVisualState state)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            switch (state)
+            {
+                case MonsterVisualState.Angry:
+                    SetMonsterVisualStates(true, false, false);
+                    break;
+                case MonsterVisualState.Cry:
+                    SetMonsterVisualStates(false, true, false);
+                    break;
+                case MonsterVisualState.Hurt:
+                    SetMonsterVisualStates(false, false, false);
+                    SetMonsterHurtVisual();
+                    break;
+                case MonsterVisualState.Idle:
+                default:
+                    SetMonsterVisualStates(false, false, false);
+                    break;
+            }
+        }
+
+        public void SetMonsterVisualStates(bool enraged, bool outState, bool hurt)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isEnraged = enraged;
+            isOutState = outState;
+            isHurt = hurt;
+            RefreshVisual();
+        }
+
+        public void SetMonsterDeadVisual(bool dead)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isDead = dead;
+            RefreshVisual();
+        }
+
+        public void SetMonsterMatchedVisual(bool matched)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isMatched = matched;
+            RefreshVisual();
+        }
+
+        public void SetMonsterEnragedVisual(bool enraged)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isEnraged = enraged;
+            RefreshVisual();
+        }
+
+        public void SetMonsterOutStateVisual(bool outState)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            isOutState = outState;
+            RefreshVisual();
+        }
+
+        public void SetMonsterHurtVisual(float duration = 0.3f)
+        {
+            if (isPlayerPiece || isDead || isMatched)
+                return;
+
+            StopCoroutine(nameof(HurtRoutine));
+            StartCoroutine(HurtRoutine(duration));
+        }
+
+        private IEnumerator HurtRoutine(float duration)
+        {
+            isHurt = true;
+            RefreshVisual();
+
+            yield return new WaitForSeconds(duration);
+
+            isHurt = false;
+            RefreshVisual();
+        }
+
+        private void UpdateTileDebuffVisual()
+        {
+            if (tileDebuffOverlay == null)
+            {
+                return;
+            }
+
+            tileDebuffOverlay.SetActive(currentTileDebuff != TileDebuffType.None);
         }
 
         public void Initialize(int x, int y, int colorIndex, Sprite sprite)
@@ -68,12 +236,14 @@ namespace GameCore
             baseSprite = null;
             bombSprite = null;
             hasInitializedSpecialType = true;
+            isDead = false;
+            isMatched = false;
+            isEnraged = false;
+            isOutState = false;
+            isHurt = false;
             ClearTreasureChestVisual();
             ClearItemVisual();
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.sprite = null;
-            }
+            SetSprite(null);
             ApplySpecialVisual();
             name = $"Piece_{x}_{y}";
         }
@@ -238,28 +408,92 @@ namespace GameCore
 
             if (isPlayerPiece)
             {
-                spriteRenderer.sprite = null;
+                SetSprite(null);
                 spriteRenderer.color = Color.white;
+                ClearHazardOverlay();
                 return;
-            }
-
-            if (SpecialType == SpecialType.Bomb && bombSprite != null)
-            {
-                spriteRenderer.sprite = bombSprite;
-            }
-            else if (baseSprite != null)
-            {
-                spriteRenderer.sprite = baseSprite;
             }
 
             if (SpecialType == SpecialType.Tumor)
             {
                 var tint = TumorTier >= 3 ? new Color(0.55f, 0.1f, 0.7f) : TumorTier == 2 ? new Color(0.7f, 0.15f, 0.15f) : new Color(0.85f, 0.3f, 0.3f);
                 spriteRenderer.color = tint;
+                RefreshVisual();
                 return;
             }
 
             spriteRenderer.color = Color.white;
+            RefreshVisual();
+        }
+
+        private void RefreshVisual()
+        {
+            if (spriteRenderer == null || isPlayerPiece)
+                return;
+
+            if (isDead)
+            {
+                SetSprite(deadSprite);
+            }
+            else if (isMatched)
+            {
+                SetSprite(matchedSprite);
+            }
+            else if (isHurt) // Hurt temporarily overrides Enrage/OutState
+            {
+                SetSprite(hurtSprite);
+            }
+            else if (isEnraged)
+            {
+                SetSprite(enrageSprite);
+            }
+            else if (isOutState)
+            {
+                SetSprite(outSprite);
+            }
+            else
+            {
+                SetSprite(ResolveIdleSprite());
+            }
+        }
+
+        private Sprite ResolveIdleSprite()
+        {
+            if (SpecialType == SpecialType.Bomb && bombSprite != null)
+            {
+                return bombSprite;
+            }
+
+            if (idleSprite != null)
+            {
+                return idleSprite;
+            }
+
+            return baseSprite;
+        }
+
+        private void SetSprite(Sprite sprite)
+        {
+            if (spriteRenderer == null)
+            {
+                return;
+            }
+
+            if (sprite == null)
+            {
+                sprite = ResolveIdleSprite();
+            }
+
+            if (spriteRenderer.sprite == sprite)
+            {
+                return;
+            }
+
+            spriteRenderer.sprite = sprite;
+            if (hazardOverlayRenderer != null)
+            {
+                hazardOverlayRenderer.sprite = sprite;
+            }
         }
 
         // CODEX CHEST PR1
@@ -400,6 +634,47 @@ namespace GameCore
             treasureDebugText.fontSize = 50;
             treasureDebugText.color = Color.yellow;
             return treasureDebugText;
+        }
+
+
+        public void SetHazardOverlay(Color color)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            var overlay = EnsureHazardOverlayRenderer();
+            color.a = 0.35f;
+            overlay.color = color;
+            overlay.enabled = true;
+        }
+
+        public void ClearHazardOverlay()
+        {
+            if (hazardOverlayRenderer != null)
+            {
+                hazardOverlayRenderer.enabled = false;
+            }
+        }
+
+        private SpriteRenderer EnsureHazardOverlayRenderer()
+        {
+            if (hazardOverlayRenderer != null)
+            {
+                return hazardOverlayRenderer;
+            }
+
+            var overlayObject = new GameObject("HazardOverlay");
+            overlayObject.transform.SetParent(transform, false);
+            hazardOverlayRenderer = overlayObject.AddComponent<SpriteRenderer>();
+            hazardOverlayRenderer.sortingLayerID = spriteRenderer.sortingLayerID;
+            hazardOverlayRenderer.sortingOrder = spriteRenderer.sortingOrder + 2;
+            hazardOverlayRenderer.sprite = spriteRenderer.sprite;
+            var overlayColor = Color.white;
+            overlayColor.a = 0.35f;
+            hazardOverlayRenderer.color = overlayColor;
+            return hazardOverlayRenderer;
         }
 
         public void SetPosition(int x, int y, Vector3 worldPosition)

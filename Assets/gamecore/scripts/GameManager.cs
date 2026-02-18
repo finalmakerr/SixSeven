@@ -8,6 +8,8 @@ namespace GameCore
 {
     public class GameManager : MonoBehaviour
     {
+        private const string HeatmapTutorialKey = "HeatmapTutorialShown";
+
         public event Action OnWin;
         public event Action OnLose;
 
@@ -19,9 +21,12 @@ namespace GameCore
         [SerializeField] private int fallbackTargetScore = 500;
         [SerializeField] private LevelDatabase levelDatabase;
         [SerializeField] private LevelManager levelManager;
+        [SerializeField] private DifficultyMode difficultyMode = DifficultyMode.Normal;
 
         [Header("References")]
         [SerializeField] private Board board;
+        [SerializeField] private BottomRowHazardEffect bottomRowHazardEffect;
+        [SerializeField] private GameBalanceConfig balanceConfig;
         // CODEX BOSS PR1
         [SerializeField] private BossManager bossManager;
         [SerializeField] private PlayerAnimationStateController playerAnimationStateController;
@@ -31,10 +36,17 @@ namespace GameCore
         [SerializeField] private Text movesText;
         [SerializeField] private Text energyText;
         [SerializeField] private Text inventoryText;
+        [SerializeField] private GameObject inventoryOverflowPanel;
+        [SerializeField] private Text inventoryOverflowPromptText;
+        [SerializeField] private Text inventoryOverflowIncomingItemText;
+        [SerializeField] private Button[] inventoryOverflowReplaceButtons;
+        [SerializeField] private Button inventoryOverflowDestroyButton;
+        [SerializeField] private Button inventoryOverflowCancelButton;
         [SerializeField] private Text shieldIconText;
         [SerializeField] private Text toxicWarningIconText;
         [SerializeField] private Text meditationText;
         [SerializeField] private Text bugadaText;
+        [SerializeField] private GameObject iceStatusIcon;
         // CODEX: LEVEL_LOOP
         [SerializeField] private GameObject winPanel;
         [SerializeField] private GameObject losePanel;
@@ -83,6 +95,12 @@ namespace GameCore
         // CODEX BONUS PR4
         [SerializeField] private Text bonusStageResultText;
         [SerializeField] private Text miniGoalsText; // CODEX REPLAYABILITY
+        [SerializeField] private CanvasGroup hazardTransitionCanvas;
+        [SerializeField] private Text hazardTransitionText;
+        [SerializeField] private AudioSource hazardTransitionAudio;
+        [SerializeField] private AudioClip poisonTransitionClip;
+        [SerializeField] private AudioClip fireTransitionClip;
+        [SerializeField] private AudioClip iceTransitionClip;
         // CODEX BONUS PR4
         [SerializeField] private Transform bonusStageListRoot;
         // CODEX BONUS PR3
@@ -117,18 +135,30 @@ namespace GameCore
         [SerializeField] private float bigClearShakeDuration = 0.1f;
         [SerializeField] private float bigClearShakeMagnitude = 0.08f;
         [SerializeField] private bool debugMode; // CODEX VERIFY: toggle lightweight stability instrumentation.
+        [SerializeField] private bool hardcoreModeEnabled;
+        [SerializeField] private HardcoreConfig hardcoreConfig;
         [Header("Energy")]
         [SerializeField] private int maxEnergy = 3;
         [Header("Player Health")]
-        [SerializeField] private int maxHP = 3;
+        [SerializeField] private int maxHearts = 1;
+        private int baseMaxEnergy;
+        private int baseMaxHearts;
         [Header("Player Inventory")]
         [SerializeField] private PlayerItemInventory playerItemInventory = new PlayerItemInventory(3);
+        [Header("Pickup Radius")]
+        [SerializeField] private int maxPickupRadius = 3;
         [Header("Player Special Powers")]
         [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
+        [SerializeField] private int telekinesisCost = 1;
+        [SerializeField] private MonsterAngerConfig monsterAngerConfig = new MonsterAngerConfig();
+        [SerializeField] private MonsterAggroConfig monsterAggroConfig = new MonsterAggroConfig();
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
+        [SerializeField] private GameObject genericMonsterTelegraphPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
+        [SerializeField] private DamageHeatmapSystem damageHeatmapSystem;
+        [SerializeField] private DamageHeatmapOverlay damageHeatmapOverlay;
         [Header("Bugada")]
 
         public static GameManager Instance { get; private set; }
@@ -137,10 +167,14 @@ namespace GameCore
         public int Score { get; private set; }
         public int TargetScore { get; private set; }
         public int CurrentLevelIndex { get; private set; }
+        public int CurrentLevel => CurrentLevelIndex;
+        public DifficultyMode CurrentDifficulty => difficultyMode;
         public bool HasMetTarget { get; private set; }
         public int Energy => energy;
-        public int MaxHP => maxHP;
+        public int MaxHP => maxHearts;
+        public int MaxHearts => maxHearts;
         public int CurrentHP { get; private set; }
+        public int PickupRadius => pickupRadius;
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
         // CODEX BOSS PR1
@@ -151,8 +185,89 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
-        public bool HasMonsterAttackTarget => CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
+        public bool HasMonsterAttackTarget => CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
+
+        public HazardType CurrentHazardType => currentHazardType;
+
+        public bool IsHardcoreEnabled()
+        {
+            return hardcoreModeEnabled && hardcoreConfig != null;
+        }
+
+        public HardcoreConfig HardcoreConfig
+        {
+            get
+            {
+                return IsHardcoreEnabled() ? hardcoreConfig : null;
+            }
+        }
+
+        public bool IsMonsterSwapLockedAtPosition(Vector2Int position)
+        {
+            if (board == null || !board.TryGetPieceAt(position, out var piece) || piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (IsBossLevel)
+            {
+                var bossState = CurrentBossState;
+                if (bossState.bossAlive && position == bossState.bossPosition)
+                {
+                    return false;
+                }
+            }
+
+            if (!monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
+            {
+                return false;
+            }
+
+            return state.IsAngry || state.IsEnraged;
+        }
+
+        public bool IsMonsterEnraged(int pieceId)
+        {
+            return monsterStates.TryGetValue(pieceId, out var state) && state.IsEnraged;
+        }
+
+        public int GetEffectiveLevel()
+        {
+            if (IsHardcoreEnabled())
+            {
+                return CurrentLevel + HardcoreConfig.levelOffset;
+            }
+
+            return CurrentLevel;
+        }
+
+        public int GetEffectiveLevel(int baseLevel)
+        {
+            if (difficultyMode == DifficultyMode.Hardcore)
+            {
+                return Mathf.Max(1, baseLevel + balanceConfig.HardcoreLevelOffset);
+            }
+
+            return baseLevel;
+        }
+
+        public bool IsLevelScalingThreshold(int level)
+        {
+            return level > 0 && level % balanceConfig.LevelScalingStep == 0;
+        }
+
+        public int GetBossPickupRadius()
+        {
+            var effectiveLevel = GetEffectiveLevel(CurrentLevel);
+
+            if (effectiveLevel >= balanceConfig.BossPickupLevelThreshold)
+            {
+                return balanceConfig.BossPickupIncreasedRadius;
+            }
+
+            return balanceConfig.BossPickupBaseRadius;
+        }
         // CODEX BOSS PR4
         public BossPowerInventory BossPowerInventory => bossPowerInventory;
         public IReadOnlyList<SpecialPowerDefinition> PlayerSpecialPowers => playerSpecialPowers;
@@ -188,6 +303,9 @@ namespace GameCore
         private bool awaitingBossChallengeChoice;
         // CODEX BOSS PR4
         [SerializeField] private BossPowerInventory bossPowerInventory = new BossPowerInventory(3);
+        [SerializeField] private int defaultBossPowerEnergyCost = 1;
+        [SerializeField] private int defaultBossPowerCooldownTurns = 7;
+        [SerializeField] private int maxBossPowersVisible = 3;
         // CODEX POWER PR5
         [SerializeField] private bool persistBossPowersToPlayerPrefs;
         // CODEX POWER PR5
@@ -230,16 +348,36 @@ namespace GameCore
         private int turnsSurvivedThisLevel; // CODEX REPLAYABILITY
         private bool clearedPathGoalThisLevel; // CODEX REPLAYABILITY
         private readonly System.Random bossTumorRandom = new System.Random(); // CODEX BOSS TUMOR SYNERGY PR1
+        private readonly List<ItemDropOption> itemDropOptionsBuffer = new List<ItemDropOption>();
+        private bool awaitingInventoryOverflowDecision;
+        private PlayerItemType pendingInventoryOverflowItem;
+        private Vector2Int pendingInventoryOverflowPosition;
+        private Action pendingLootCommitAction;
+        private Action pendingLootCancelAction;
         private int energy;
-        private bool isShieldActive;
-        private bool shieldJustActivated;
-        private bool shieldCooldownJustStarted;
-        private int shieldTurnsRemaining;
-        private int shieldCooldownTurnsRemaining;
+        private bool applyRunStartResourceAdjustments;
+        private int pickupRadius;
+        private bool hasBossPickupRadiusUpgrade;
+        private bool hasShopPickupRadiusUpgrade;
+        private bool isBubbleActive;
+        private int bubbleTurnsRemaining;
+        private int bubbleCooldownRemaining;
         private bool isMeditating;
         private int meditationTurnsRemaining;
         private int toxicStacks;
         private bool toxicDrainActive;
+        private HazardType currentHazardType;
+        private HazardType previousHazardType;
+        private bool wasOnBottomRowLastTurn;
+        private bool applyBottomLayerHazardOnNextTurn;
+        private int hazardTurnCounter;
+        private readonly List<Vector2Int> infectionQueue = new List<Vector2Int>();
+        private int infectionIndex;
+        private bool isSlowedByIce;
+        private bool forceMoveNextTurn;
+        private bool iceEnergyPenaltyActive;
+        private bool pendingIceEnergyCompensation;
+        private bool pendingEntangleCompensation;
         private bool isHappy;
         private bool isExcited;
         private bool isStunned;
@@ -255,6 +393,12 @@ namespace GameCore
         private MonsterAttackAnimationController monsterAttackAnimationController;
         private Coroutine monsterAttackVisualResetRoutine;
         private bool hasTriggeredMonsterWindup;
+        private bool pendingMinorDamageAggro;
+        private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
+        private bool adjacencyAggroUsedThisTurn;
+        private int monsterTurnCounter;
+        private readonly Dictionary<int, MonsterState> monsterStates = new Dictionary<int, MonsterState>();
+        private readonly Dictionary<Vector2Int, GameObject> genericTelegraphs = new Dictionary<Vector2Int, GameObject>();
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
         // CODEX RAGE SCALE FINAL
@@ -265,8 +409,10 @@ namespace GameCore
         private MonsterEnrageIndicator monsterEnrageIndicator;
         // CODEX BOSS PHASE PR1
         private readonly List<BossPower> unlockedBossPhasePowers = new List<BossPower>();
-        private const int ToxicGraceStacks = 2;
         private readonly Dictionary<SpecialPowerDefinition, int> specialPowerCooldowns = new Dictionary<SpecialPowerDefinition, int>();
+        private readonly Dictionary<BossPower, int> bossPowerCooldowns = new Dictionary<BossPower, int>();
+        private bool isBossPowerAccessActive;
+        private int bossPowerSelectedIndex;
         private bool isActivatingSpecialPower;
         private SpecialPowerDefinition activeSpecialPower;
         private bool activeSpecialPowerAllowsHpModification;
@@ -274,6 +420,8 @@ namespace GameCore
         private bool isResolvingMonsterAttack;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
+        public bool IsShielded => isBubbleActive;
+        public GameBalanceConfig BalanceConfig => balanceConfig;
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
@@ -290,6 +438,24 @@ namespace GameCore
             }
         }
 
+        private struct MonsterState
+        {
+            public bool IsIdle;
+            public bool IsAngry;
+            public bool IsAdjacencyTriggered;
+            public bool HasCharmResistance;
+            public bool IsHurt;
+            public bool IsEnraged;
+            public bool IsTired;
+            public bool IsSleeping;
+            public bool IsConfused;
+            public Vector2Int TargetTile;
+            public int TurnsUntilAttack;
+            public int StateTurnsRemaining;
+            public Vector2Int CurrentTile;
+            public int CurrentHP;
+        }
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -299,6 +465,11 @@ namespace GameCore
             }
 
             Instance = this;
+            if (balanceConfig == null)
+            {
+                Debug.LogError("GameBalanceConfig is not assigned in GameManager.");
+            }
+
             if (board == null)
             {
                 board = FindObjectOfType<Board>();
@@ -312,6 +483,24 @@ namespace GameCore
             if (playerAnimationStateController == null)
             {
                 playerAnimationStateController = FindObjectOfType<PlayerAnimationStateController>();
+            }
+
+            if (damageHeatmapSystem == null)
+            {
+                damageHeatmapSystem = FindObjectOfType<DamageHeatmapSystem>();
+                if (damageHeatmapSystem == null)
+                {
+                    damageHeatmapSystem = gameObject.AddComponent<DamageHeatmapSystem>();
+                }
+            }
+
+            if (damageHeatmapOverlay == null)
+            {
+                damageHeatmapOverlay = FindObjectOfType<DamageHeatmapOverlay>();
+                if (damageHeatmapOverlay == null)
+                {
+                    damageHeatmapOverlay = gameObject.AddComponent<DamageHeatmapOverlay>();
+                }
             }
 
             if (bossPowerInventory == null)
@@ -329,7 +518,13 @@ namespace GameCore
                 playerSpecialPowers = new List<SpecialPowerDefinition>();
             }
 
+            EnsureMonsterAggroConfig();
+
+            baseMaxEnergy = Mathf.Max(1, maxEnergy);
+            baseMaxHearts = Mathf.Max(1, maxHearts);
+
             InitializeSpecialPowerCooldowns();
+            InitializeBossPowerCooldowns();
 
             // CODEX POWER PR5
             if (persistBossPowersToPlayerPrefs)
@@ -353,6 +548,7 @@ namespace GameCore
             LoadBonusStageAssetsFromSceneAssetLoader();
             ConfigureBossChallengeButtons();
             ConfigureBossPowerDiscardConfirmButtons();
+            ConfigureInventoryOverflowButtons();
             ConfigureBonusStageButton();
 
             // CODEX BONUS PR5
@@ -372,7 +568,7 @@ namespace GameCore
             }
 
             RegisterBoardEvents();
-            UpdateShieldAnimationState();
+            UpdateBubbleAnimationState();
         }
 
         private void OnDisable()
@@ -382,6 +578,10 @@ namespace GameCore
 
         private void Start()
         {
+            applyRunStartResourceAdjustments = true;
+            currentHazardType = balanceConfig != null ? balanceConfig.DefaultHazardType : HazardType.Poison;
+            previousHazardType = currentHazardType;
+
             if (levelManager != null)
             {
                 levelManager.LoadStartingLevel(this);
@@ -393,6 +593,8 @@ namespace GameCore
 
         public void ResetGame()
         {
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
+
             Score = 0;
             // CODEX CHEST PR2
             crownsThisRun = 0;
@@ -410,19 +612,52 @@ namespace GameCore
             HasMetTarget = false;
             hasEnded = false;
             awaitingBossStatRewardChoice = false;
-            energy = 0;
+            awaitingInventoryOverflowDecision = false;
+            pendingInventoryOverflowItem = default;
+            pendingInventoryOverflowPosition = default;
+            HideInventoryOverflowPanel();
+            if (applyRunStartResourceAdjustments)
+            {
+                RecalculateMaxResourcesFromBase();
+                energy = maxEnergy;
+                if (IsHardcoreEnabled())
+                {
+                    energy = Mathf.Max(1, energy - HardcoreConfig.startingEnergyPenalty);
+                }
+
+                applyRunStartResourceAdjustments = false;
+            }
+            else
+            {
+                energy = 0;
+            }
+
             ResetPlayerHealth();
+            ResetPickupRadius();
             playerItemInventory?.Clear();
             toxicStacks = 0;
             toxicDrainActive = false;
+            wasOnBottomRowLastTurn = false;
+            applyBottomLayerHazardOnNextTurn = false;
+            hazardTurnCounter = 0;
+            infectionIndex = 0;
+            isSlowedByIce = false;
+            forceMoveNextTurn = false;
+            iceEnergyPenaltyActive = false;
+            pendingIceEnergyCompensation = false;
+            pendingEntangleCompensation = false;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(false);
+            }
             isPlayerActionPhase = false;
             isResolvingMonsterAttack = false;
             InitializeSpecialPowerCooldowns();
-            SetShieldActive(false);
-            shieldJustActivated = false;
-            shieldCooldownJustStarted = false;
-            shieldTurnsRemaining = 0;
-            shieldCooldownTurnsRemaining = 0;
+            InitializeBossPowerCooldowns();
+            EndBossPowerAccess();
+            SetBubbleActive(false);
+            bubbleTurnsRemaining = 0;
+            bubbleCooldownRemaining = 0;
             CancelMeditation();
             ClearTransientEmotionFlags();
             isStunned = false;
@@ -435,6 +670,12 @@ namespace GameCore
             ResetMonsterAttackState();
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
+            pendingMinorDamageAggro = false;
+            damagedThisTurn.Clear();
+            adjacencyAggroUsedThisTurn = false;
+            monsterTurnCounter = 0;
+            monsterStates.Clear();
+            ClearGenericMonsterTelegraphs();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -443,11 +684,27 @@ namespace GameCore
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
+            RefreshDamageHeatmap();
+        }
+
+        private void RecalculateMaxResourcesFromBase()
+        {
+            if (IsHardcoreEnabled())
+            {
+                maxEnergy = Mathf.Max(1, baseMaxEnergy - HardcoreConfig.maxEnergyCapReduction);
+                maxHearts = Mathf.Max(1, baseMaxHearts - HardcoreConfig.maxHpCapReduction);
+            }
+            else
+            {
+                maxEnergy = baseMaxEnergy;
+                maxHearts = baseMaxHearts;
+            }
         }
 
         public void LoadLevel(int levelIndex)
         {
             CurrentLevelIndex = levelIndex;
+            ResolveHazardTypeForLevel();
             // CODEX DIFFICULTY PR7
             var level = DifficultyScaling.GenerateLevelDefinition(levelIndex, fallbackGridSize);
 
@@ -472,6 +729,13 @@ namespace GameCore
                 CurrentHP = initialBossHp,
                 CurrentPhaseIndex = 0,
                 IsPermanentlyEnraged = false,
+                IsAngry = false,
+                IsEnraged = false,
+                HasCharmResistance = false,
+                AggressorPosition = default,
+                AggressorPieceId = 0,
+                AttackTarget = default,
+                TurnsUntilAttack = 0,
                 TumorShield = 0
             };
             currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
@@ -486,9 +750,16 @@ namespace GameCore
             // CODEX RAGE SCALE FINAL
             monstersCanAttack = !IsBossLevel;
             // CODEX RAGE SCALE FINAL
-            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(levelIndex / 10f));
+            var effectiveLevel = GetEffectiveLevel();
+            rageCooldownTurns = Mathf.Max(1, 7 - Mathf.FloorToInt(effectiveLevel / 10f));
             // CODEX RAGE SCALE FINAL
             rageCooldownRemaining = 0;
+            pendingMinorDamageAggro = false;
+            damagedThisTurn.Clear();
+            adjacencyAggroUsedThisTurn = false;
+            monsterTurnCounter = 0;
+            monsterStates.Clear();
+            ClearGenericMonsterTelegraphs();
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
 
@@ -501,6 +772,9 @@ namespace GameCore
                 board.PlaceTumors(currentRunDefinition.tumors);
             }
 
+            GenerateInfectionQueue();
+            infectionIndex = 0;
+
             ResetGame();
             UpdateMiniGoalsUI();
 
@@ -511,6 +785,111 @@ namespace GameCore
             {
                 BeginBossChallengeChoice();
             }
+        }
+
+        private void ResolveHazardTypeForLevel()
+        {
+            int effectiveLevel = GetEffectiveLevel(CurrentLevel);
+
+            if (effectiveLevel >= balanceConfig.IceHazardLevelThreshold)
+            {
+                currentHazardType = HazardType.Ice;
+            }
+            else if (effectiveLevel >= balanceConfig.FireHazardLevelThreshold)
+            {
+                currentHazardType = HazardType.Fire;
+            }
+            else
+            {
+                currentHazardType = HazardType.Poison;
+            }
+
+            if (currentHazardType != previousHazardType)
+            {
+                TriggerHazardTransition(currentHazardType);
+                previousHazardType = currentHazardType;
+                ReevaluateAllMonsterEmotionalStates();
+            }
+
+            UpdateHazardVisuals();
+        }
+
+        private void TriggerHazardTransition(HazardType type)
+        {
+            if (hazardTransitionCanvas == null || hazardTransitionText == null)
+            {
+                return;
+            }
+
+            string label = string.Empty;
+            AudioClip clip = null;
+
+            switch (type)
+            {
+                case HazardType.Poison:
+                    label = "Toxic Floor";
+                    clip = poisonTransitionClip;
+                    break;
+                case HazardType.Fire:
+                    label = "Fire Floor";
+                    clip = fireTransitionClip;
+                    break;
+                case HazardType.Ice:
+                    label = "Frozen Floor";
+                    clip = iceTransitionClip;
+                    break;
+            }
+
+            hazardTransitionText.text = label;
+            StartCoroutine(HazardTransitionRoutine());
+
+            if (hazardTransitionAudio != null && clip != null)
+            {
+                hazardTransitionAudio.PlayOneShot(clip);
+            }
+
+            if (bottomRowHazardEffect != null)
+            {
+                bottomRowHazardEffect.Pulse();
+            }
+        }
+
+        private IEnumerator HazardTransitionRoutine()
+        {
+            hazardTransitionCanvas.alpha = 0f;
+            hazardTransitionCanvas.gameObject.SetActive(true);
+
+            float duration = 0.4f;
+            float timer = 0f;
+
+            while (timer < duration)
+            {
+                timer += Time.deltaTime;
+                hazardTransitionCanvas.alpha = Mathf.Lerp(0f, 1f, timer / duration);
+                yield return null;
+            }
+
+            yield return new WaitForSeconds(1f);
+
+            timer = 0f;
+            while (timer < duration)
+            {
+                timer += Time.deltaTime;
+                hazardTransitionCanvas.alpha = Mathf.Lerp(1f, 0f, timer / duration);
+                yield return null;
+            }
+
+            hazardTransitionCanvas.gameObject.SetActive(false);
+        }
+
+        private void UpdateHazardVisuals()
+        {
+            if (bottomRowHazardEffect == null)
+            {
+                return;
+            }
+
+            bottomRowHazardEffect.SetHazard(currentHazardType);
         }
 
         public bool LoadNextLevel()
@@ -551,6 +930,13 @@ namespace GameCore
             bossState.CurrentHP = maxHp;
             bossState.CurrentPhaseIndex = 0;
             bossState.IsPermanentlyEnraged = false;
+            bossState.IsAngry = false;
+            bossState.IsEnraged = false;
+            bossState.HasCharmResistance = false;
+            bossState.AggressorPosition = default;
+            bossState.AggressorPieceId = 0;
+            bossState.AttackTarget = default;
+            bossState.TurnsUntilAttack = 0;
             bossState.TumorShield = 0;
             CurrentBossState = bossState;
             unlockedBossPhasePowers.Clear();
@@ -723,7 +1109,7 @@ namespace GameCore
                 return false;
             }
 
-            if (CurrentHP >= maxHP)
+            if (CurrentHP >= maxHearts * 2)
             {
                 return false;
             }
@@ -780,55 +1166,51 @@ namespace GameCore
                 return;
             }
 
-            CurrentHP = Mathf.Min(maxHP, CurrentHP + amount);
+            var healHalfUnits = amount * 2;
+            CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + healHalfUnits);
             UpdateUI();
         }
 
-        public bool TryActivateShield()
+        public bool TryActivateBubble()
         {
             if (!CanUseManualAbility())
             {
                 return false;
             }
 
-            if (isShieldActive)
+            if (bubbleCooldownRemaining > 0)
             {
                 return false;
             }
 
-            if (shieldCooldownTurnsRemaining > 0)
+            if (isBubbleActive)
             {
                 return false;
             }
 
-            if (playerItemInventory == null || !playerItemInventory.HasItem(PlayerItemType.Shield))
+            const int bubbleEnergyCost = 2;
+            if (!HasEnoughEnergy(bubbleEnergyCost))
             {
                 return false;
             }
 
-            const int shieldEnergyCost = 2;
-            if (!HasEnoughEnergy(shieldEnergyCost))
+            if (!TrySpendEnergy(bubbleEnergyCost))
             {
-                return false;
-            }
-
-            if (!playerItemInventory.TryConsumeItem(PlayerItemType.Shield))
-            {
-                return false;
-            }
-
-            if (!TrySpendEnergy(shieldEnergyCost))
-            {
-                playerItemInventory.TryAddItem(PlayerItemType.Shield);
                 return false;
             }
 
             CancelMeditation();
-            SetShieldActive(true);
-            shieldTurnsRemaining = 2;
-            shieldJustActivated = true;
+            SetBubbleActive(true);
+            bubbleTurnsRemaining = 2;
+            bubbleCooldownRemaining = 0;
+            ClearPlayerDebuffs();
             UpdateUI();
             return true;
+        }
+
+        public bool TryActivateShield()
+        {
+            return TryActivateBubble();
         }
 
         public bool TryActivateMeditation()
@@ -892,35 +1274,33 @@ namespace GameCore
                 return false;
             }
 
-            if (!isShieldActive)
+            if (!isBubbleActive)
             {
                 return false;
             }
 
-            SetShieldActive(false);
-            shieldTurnsRemaining = 0;
-            BeginShieldCooldown();
+            EndBubbleAndStartCooldown();
             UpdateUI();
             return true;
         }
 
         private bool HasShieldVisual()
         {
-            return isShieldActive || (playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.Shield));
+            return isBubbleActive || (playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.Shield));
         }
 
-        private void SetShieldActive(bool active)
+        private void SetBubbleActive(bool active)
         {
-            if (isShieldActive == active)
+            if (isBubbleActive == active)
             {
                 return;
             }
 
-            isShieldActive = active;
-            UpdateShieldAnimationState();
+            isBubbleActive = active;
+            UpdateBubbleAnimationState();
         }
 
-        private void UpdateShieldAnimationState()
+        private void UpdateBubbleAnimationState()
         {
             UpdatePlayerAnimationFlags();
         }
@@ -996,7 +1376,7 @@ namespace GameCore
                 return 3;
             }
 
-            if (runLength >= 4)
+            if (runLength >= balanceConfig.MinRunForLootRoll)
             {
                 return 2;
             }
@@ -1020,6 +1400,16 @@ namespace GameCore
                 return;
             }
 
+            if (forceMoveNextTurn)
+            {
+                forceMoveNextTurn = false;
+                isSlowedByIce = false;
+                if (iceStatusIcon != null)
+                {
+                    iceStatusIcon.SetActive(false);
+                }
+            }
+
             TryUseMove();
             if (MovesRemaining <= 0 && !HasMetTarget)
             {
@@ -1034,25 +1424,98 @@ namespace GameCore
                 return;
             }
 
+            ApplyBottomLayerHazardIfNeeded();
+            TickHazardPressure();
             TickSpecialPowerCooldowns();
-            TryPickupAdjacentItems();
+            TickBossPowerCooldowns();
+            board.TickLootTurnsForTurnEnd();
+
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    if (board.TryGetPieceAt(new Vector2Int(x, y), out var tile) && tile != null)
+                    {
+                        tile.TickTileDebuff();
+                    }
+                }
+            }
+
+            ReevaluateAllMonsterEmotionalStates();
 
             var hasPlayerPosition = board.TryGetPlayerPosition(out var playerPosition);
-            if (!hasPlayerPosition || playerPosition.y > 0)
+            var isOnBottomRow = hasPlayerPosition && playerPosition.y == 0;
+            if (hasPlayerPosition
+                && board.TryGetPieceAt(playerPosition, out var playerTile)
+                && playerTile != null
+                && playerTile.GetTileDebuff() == TileDebuffType.Entangled
+                && energy == 0)
             {
-                ClearToxicStacks();
+                pendingEntangleCompensation = true;
             }
-            else
+            if (!IsBugadaActive)
             {
-                toxicStacks += 1;
-                if (toxicStacks >= ToxicGraceStacks)
+                applyBottomLayerHazardOnNextTurn = isOnBottomRow;
+            }
+            if (currentHazardType == HazardType.Poison)
+            {
+                if (!isOnBottomRow)
                 {
-                    toxicDrainActive = true;
-                    ApplyEnergyDrain(1);
+                    ClearToxicStacks();
+                }
+                else if (!IsBugadaActive)
+                {
+                    if (isBubbleActive)
+                    {
+                        toxicDrainActive = false;
+                    }
+                    else
+                    {
+                        toxicStacks += 1;
+                        if (toxicStacks >= balanceConfig.ToxicGraceStacks)
+                        {
+                            toxicDrainActive = true;
+                            ApplyEnergyDrain(1);
+                        }
+                        else
+                        {
+                            toxicDrainActive = false;
+                        }
+                    }
+                }
+            }
+
+            if (currentHazardType == HazardType.Fire)
+            {
+                if (IsBugadaActive)
+                {
+                    wasOnBottomRowLastTurn = isOnBottomRow;
                 }
                 else
                 {
-                    toxicDrainActive = false;
+                    if (isOnBottomRow && !wasOnBottomRowLastTurn)
+                    {
+                        ApplyBurnFromHazard();
+                    }
+
+                    wasOnBottomRowLastTurn = isOnBottomRow;
+                }
+            }
+
+            if (currentHazardType == HazardType.Ice)
+            {
+                if (IsBugadaActive)
+                {
+                    wasOnBottomRowLastTurn = isOnBottomRow;
+                }
+                else
+                {
+                    if (isOnBottomRow && !wasOnBottomRowLastTurn)
+                    {
+                        ApplyIceHazard();
+                    }
+
+                    wasOnBottomRowLastTurn = isOnBottomRow;
                 }
             }
 
@@ -1085,7 +1548,7 @@ namespace GameCore
             }
 
             TickBugadaDuration();
-            TickShieldStatus();
+            TickBubbleStatus();
             turnsSurvivedThisLevel += 1;
             EvaluateMiniGoalsProgress();
             UpdateWorriedState();
@@ -1094,12 +1557,396 @@ namespace GameCore
             UpdateMonsterEnrageVisuals();
             if (CanEnemiesReactAtTurnEnd())
             {
+                adjacencyAggroUsedThisTurn = false;
                 TickRageCooldown(); // CODEX RAGE SCALE FINAL
-                TickMonsterAttackMarker();
-                TryTriggerMonsterEnrage();
+                EvaluateMonsterAggro();
+                UpdateMonsterStates();
+                ProcessMonsterAttacks();
                 ProcessBossTumorTurn();
             }
+
+            int previousEnergy = energy;
+            int gain = CalculateTurnStartEnergyGain();
+            if (gain > 0)
+            {
+                energy = Mathf.Min(maxEnergy, energy + gain);
+            }
+
+            hasGainedEnergy = energy > previousEnergy;
+            UpdateTiredState();
+            UpdateUI();
+
+            HandleStartOfPlayerTurn();
+            RefreshDamageHeatmap();
+            if (!isPlayerActionPhase)
+            {
+                return;
+            }
+
             isPlayerActionPhase = true;
+        }
+
+        public void HandleLootIntercept(Vector2Int targetPosition, Action commitMovement, Action cancelMovement)
+        {
+            pendingLootCommitAction = commitMovement;
+            pendingLootCancelAction = cancelMovement;
+            pendingInventoryOverflowPosition = targetPosition;
+            HandleLootIntercept(targetPosition);
+        }
+
+        private void HandleLootIntercept(Vector2Int targetPosition)
+        {
+            if (board == null)
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                return;
+            }
+
+            SetBoardInputLock(true);
+
+            if (!board.TryGetPieceAt(targetPosition, out var lootPiece)
+                || lootPiece == null
+                || (lootPiece.SpecialType != SpecialType.Item && lootPiece.SpecialType != SpecialType.Bugada))
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            if (lootPiece.SpecialType == SpecialType.Bugada)
+            {
+                ActivateBugada();
+                board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                pendingLootCommitAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            if (!TryRollItemTypeForPickup(out var itemType))
+            {
+                pendingLootCancelAction?.Invoke();
+                ClearPendingLootDecisionState();
+                SetBoardInputLock(false);
+                return;
+            }
+
+            switch (itemType)
+            {
+                case PlayerItemType.BasicHeal:
+                    HealPlayer(1);
+                    board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                    pendingLootCommitAction?.Invoke();
+                    ClearPendingLootDecisionState();
+                    SetBoardInputLock(false);
+                    return;
+                case PlayerItemType.EnergyPack:
+                case PlayerItemType.Shield:
+                case PlayerItemType.SecondChance:
+                    if (TryAddInventoryItem(itemType))
+                    {
+                        board.TryDestroyPieceAt(targetPosition, DestructionReason.ItemPickup);
+                        pendingLootCommitAction?.Invoke();
+                        ClearPendingLootDecisionState();
+                        SetBoardInputLock(false);
+                        return;
+                    }
+
+                    BeginInventoryOverflowDecision(itemType, targetPosition);
+                    return;
+                default:
+                    pendingLootCancelAction?.Invoke();
+                    ClearPendingLootDecisionState();
+                    SetBoardInputLock(false);
+                    return;
+            }
+        }
+
+        private void RefreshDamageHeatmap()
+        {
+            if (monsterAngerConfig != null && !monsterAngerConfig.enableDamageHeatmap)
+            {
+                return;
+            }
+
+            if (damageHeatmapSystem == null)
+            {
+                return;
+            }
+
+            damageHeatmapSystem.RecalculateHeatmap();
+
+            if (CurrentLevelIndex == 0 &&
+                PlayerPrefs.GetInt(HeatmapTutorialKey, 0) == 0 &&
+                damageHeatmapSystem.CurrentHeatmap != null &&
+                damageHeatmapSystem.CurrentHeatmap.Count > 0)
+            {
+                ShowFloatingText("Tiles glow when monsters will strike next turn.", Color.white);
+                PlayerPrefs.SetInt(HeatmapTutorialKey, 1);
+                PlayerPrefs.Save();
+            }
+
+            if (damageHeatmapOverlay != null)
+            {
+                var fadeHeatmap = monsterAngerConfig != null &&
+                    monsterAngerConfig.showHeatmapOnlyIfEnergyAvailable &&
+                    Energy <= 0;
+                var pulseEnabled = monsterAngerConfig == null || monsterAngerConfig.enableHeatmapPulseAnimation;
+                damageHeatmapOverlay.SetPulseAnimationEnabled(pulseEnabled);
+                damageHeatmapOverlay.SetFadedMode(fadeHeatmap);
+                damageHeatmapOverlay.Render(damageHeatmapSystem.CurrentHeatmap);
+            }
+        }
+
+        private void HandleStartOfPlayerTurn()
+        {
+            if (isSlowedByIce && energy <= 0)
+            {
+                pendingIceEnergyCompensation = true;
+                isSlowedByIce = false;
+                forceMoveNextTurn = false;
+                if (iceStatusIcon != null)
+                {
+                    iceStatusIcon.SetActive(false);
+                }
+                ShowFloatingText("Frozen!", Color.cyan);
+                SkipPlayerTurn();
+                return;
+            }
+
+            isPlayerActionPhase = true;
+        }
+
+        private int CalculateTurnStartEnergyGain()
+        {
+            int gain = 1;
+            if (iceEnergyPenaltyActive)
+            {
+                iceEnergyPenaltyActive = false;
+                return 0;
+            }
+
+            if (pendingIceEnergyCompensation)
+            {
+                pendingIceEnergyCompensation = false;
+                return 2;
+            }
+
+            if (pendingEntangleCompensation)
+            {
+                pendingEntangleCompensation = false;
+                return 2;
+            }
+
+            return gain;
+        }
+
+
+        private void ApplyBottomLayerHazardIfNeeded()
+        {
+            if (currentHazardType != HazardType.Poison)
+            {
+                return;
+            }
+
+            if (!applyBottomLayerHazardOnNextTurn)
+            {
+                return;
+            }
+
+            applyBottomLayerHazardOnNextTurn = false;
+            if (hasEnded || CurrentHP <= 0 || IsBugadaActive)
+            {
+                return;
+            }
+
+            TakeDamage(1);
+            ApplyEnergyDrain(1);
+        }
+
+        private void TickHazardPressure()
+        {
+            hazardTurnCounter++;
+
+            if (hazardTurnCounter <= balanceConfig.HazardGraceTurns)
+            {
+                return;
+            }
+
+            var spreadInterval = Mathf.Max(1, balanceConfig.HazardSpreadInterval);
+            if ((hazardTurnCounter - balanceConfig.HazardGraceTurns) % spreadInterval != 0)
+            {
+                return;
+            }
+
+            SpreadNextTile();
+        }
+
+        private void SpreadNextTile()
+        {
+            if (board == null)
+            {
+                return;
+            }
+
+            if (infectionIndex >= infectionQueue.Count)
+            {
+                return;
+            }
+
+            var debuffType = GetTileDebuffForCurrentWorld();
+            if (debuffType == TileDebuffType.None)
+            {
+                return;
+            }
+
+            var targetPos = infectionQueue[infectionIndex];
+
+            if (board.TryGetPieceAt(targetPos, out var tile) && tile != null)
+            {
+                var existing = tile.GetTileDebuff();
+
+                // Golden blocks infection but still counts as progressed
+                if (existing == TileDebuffType.Golden)
+                {
+                    infectionIndex++;
+                    return;
+                }
+
+                if (existing == TileDebuffType.None)
+                {
+                    tile.ApplyTileDebuff(debuffType, balanceConfig.HazardTileDuration);
+                    infectionIndex++;
+                    ReevaluateMonsterEmotionalState(tile);
+                }
+            }
+        }
+
+        private void GenerateInfectionQueue()
+        {
+            infectionQueue.Clear();
+            if (board == null)
+            {
+                return;
+            }
+
+            bool leftToRight = UnityEngine.Random.value < 0.5f;
+
+            for (int y = 0; y < board.Height; y++)
+            {
+                if (leftToRight)
+                {
+                    for (int x = 0; x < board.Width; x++)
+                    {
+                        infectionQueue.Add(new Vector2Int(x, y));
+                    }
+                }
+                else
+                {
+                    for (int x = board.Width - 1; x >= 0; x--)
+                    {
+                        infectionQueue.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+        }
+
+        public bool TryApplyGoldenTile(Vector2Int position)
+        {
+            if (board == null || !board.TryGetPieceAt(position, out var tile) || tile == null)
+            {
+                return false;
+            }
+
+            if (tile.GetTileDebuff() == TileDebuffType.Golden)
+            {
+                TriggerConfusedPose();
+                return false;
+            }
+
+            tile.ApplyTileDebuff(TileDebuffType.Golden, balanceConfig.GoldenTileDuration);
+            ReevaluateMonsterEmotionalState(tile);
+            return true;
+        }
+
+        private TileDebuffType GetTileDebuffForCurrentWorld()
+        {
+            switch (currentHazardType)
+            {
+                case HazardType.Poison:
+                    return TileDebuffType.Entangled;
+                case HazardType.Fire:
+                    return TileDebuffType.None;
+                case HazardType.Ice:
+                    return TileDebuffType.None;
+                default:
+                    return TileDebuffType.Entangled;
+            }
+        }
+
+        private void ApplyBurnFromHazard()
+        {
+            if (IsPlayerStunned)
+            {
+                return;
+            }
+
+            ApplyOrRefreshBurn();
+        }
+
+        private void ApplyOrRefreshBurn()
+        {
+            if (isBubbleActive)
+            {
+                return;
+            }
+
+            // Integrate with debuff system:
+            // If burn exists -> refresh duration.
+            // Else -> apply burn with base duration.
+            const int baseBurnDurationTurns = 1;
+            ApplyBurnDebuff(baseBurnDurationTurns);
+        }
+
+        private void ApplyIceHazard()
+        {
+            if (isBubbleActive)
+            {
+                return;
+            }
+
+            isSlowedByIce = true;
+            forceMoveNextTurn = true;
+            iceEnergyPenaltyActive = true;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(true);
+            }
+        }
+
+        private void SkipPlayerTurn()
+        {
+            isPlayerActionPhase = false;
+            StartCoroutine(SkipPlayerTurnRoutine());
+        }
+
+        private IEnumerator SkipPlayerTurnRoutine()
+        {
+            yield return null;
+            if (hasEnded || board == null)
+            {
+                yield break;
+            }
+
+            HandleTurnEnded();
+        }
+
+        private void ApplyBurnDebuff(int durationTurns)
+        {
+            // Burn debuff integration placeholder.
+            // Hook into the debuff system when burn status effects are implemented.
         }
 
         // CODEX BOSS TUMOR SYNERGY PR1
@@ -1204,7 +2051,7 @@ namespace GameCore
 
         private void TryPickupAdjacentItems()
         {
-            if (board == null)
+            if (awaitingInventoryOverflowDecision || board == null)
             {
                 return;
             }
@@ -1214,118 +2061,106 @@ namespace GameCore
                 return;
             }
 
-            var offsets = new[]
+            var effectivePickupRadius = Mathf.Max(1, pickupRadius);
+            for (var dx = -effectivePickupRadius; dx <= effectivePickupRadius; dx++)
             {
-                Vector2Int.left,
-                Vector2Int.right,
-                Vector2Int.up,
-                Vector2Int.down
-            };
-
-            foreach (var offset in offsets)
-            {
-                var position = playerPosition + offset;
-                if (!board.TryGetPieceAt(position, out var piece))
+                for (var dy = -effectivePickupRadius; dy <= effectivePickupRadius; dy++)
                 {
-                    continue;
-                }
-
-                if (piece.SpecialType != SpecialType.Item)
-                {
-                    if (piece.SpecialType == SpecialType.Bugada)
+                    if (dx == 0 && dy == 0)
                     {
-                        ActivateBugada();
-                        board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                        continue;
                     }
 
-                    continue;
-                }
+                    var position = playerPosition + new Vector2Int(dx, dy);
+                    if (DistanceManhattan(playerPosition, position) > effectivePickupRadius)
+                    {
+                        continue;
+                    }
 
-                if (TryPickupItem())
-                {
-                    board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    if (!board.TryGetPieceAt(position, out var piece))
+                    {
+                        continue;
+                    }
+
+                    if (piece.SpecialType != SpecialType.Item)
+                    {
+                        if (piece.SpecialType == SpecialType.Bugada)
+                        {
+                            ActivateBugada();
+                            board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                        }
+
+                        continue;
+                    }
+
+                    var pickupResult = TryPickupItem(position);
+                    if (pickupResult == PickupItemResult.PickedUp)
+                    {
+                        board.TryDestroyPieceAt(position, DestructionReason.ItemPickup);
+                    }
+                    else if (pickupResult == PickupItemResult.PendingDecision)
+                    {
+                        return;
+                    }
                 }
             }
         }
 
-        private bool TryPickupItem()
+        private enum PickupItemResult
         {
-            var itemType = RollItemTypeForPickup();
+            Failed = 0,
+            PickedUp = 1,
+            PendingDecision = 2
+        }
+
+        private PickupItemResult TryPickupItem(Vector2Int pickupPosition)
+        {
+            if (!TryRollItemTypeForPickup(out var itemType))
+            {
+                return PickupItemResult.Failed;
+            }
+
             switch (itemType)
             {
                 case PlayerItemType.BasicHeal:
-                    if (CurrentHP >= maxHP)
-                    {
-                        return false;
-                    }
-
                     HealPlayer(1);
-                    return true;
-                case PlayerItemType.EnergyItem:
-                    GainEnergy(1);
-                    return true;
+                    return PickupItemResult.PickedUp;
                 case PlayerItemType.EnergyPack:
-                    if (playerItemInventory == null)
-                    {
-                        playerItemInventory = new PlayerItemInventory(3);
-                    }
-
-                    if (!playerItemInventory.TryAddItem(itemType))
-                    {
-                        return false;
-                    }
-
-                    UpdateUI();
-                    return true;
                 case PlayerItemType.Shield:
                 case PlayerItemType.SecondChance:
-                    if (playerItemInventory == null)
+                    if (TryAddInventoryItem(itemType))
                     {
-                        playerItemInventory = new PlayerItemInventory(3);
+                        UpdateBubbleAnimationState();
+                        UpdateUI();
+                        return PickupItemResult.PickedUp;
                     }
 
-                    if (!playerItemInventory.TryAddItem(itemType))
-                    {
-                        return false;
-                    }
-
-                    UpdateShieldAnimationState();
-                    UpdateUI();
-                    return true;
+                    BeginInventoryOverflowDecision(itemType, pickupPosition);
+                    return PickupItemResult.PendingDecision;
                 default:
-                    return false;
+                    return PickupItemResult.Failed;
             }
         }
 
-        private PlayerItemType RollItemTypeForPickup()
+        public bool CanRollItemDrop()
         {
-            var options = new List<ItemDropOption>
-            {
-                new ItemDropOption(PlayerItemType.Shield, 1),
-                new ItemDropOption(PlayerItemType.SecondChance, 1),
-                new ItemDropOption(PlayerItemType.EnergyItem, 1)
-            };
+            BuildWeightedItemDropOptions();
+            return itemDropOptionsBuffer.Count > 0;
+        }
 
-            if (CurrentHP < maxHP)
-            {
-                options.Add(new ItemDropOption(PlayerItemType.BasicHeal, 1));
-            }
-
-            var missingEnergy = Mathf.Max(0, maxEnergy - energy);
-            if (missingEnergy > 0)
-            {
-                options.Add(new ItemDropOption(PlayerItemType.EnergyPack, missingEnergy));
-            }
-
+        private bool TryRollItemTypeForPickup(out PlayerItemType itemType)
+        {
+            var options = BuildWeightedItemDropOptions();
             var totalWeight = 0;
             for (var i = 0; i < options.Count; i++)
             {
-                totalWeight += Mathf.Max(0, options[i].Weight);
+                totalWeight += options[i].Weight;
             }
 
             if (totalWeight <= 0)
             {
-                return PlayerItemType.Shield;
+                itemType = PlayerItemType.BasicHeal;
+                return false;
             }
 
             var roll = UnityEngine.Random.Range(0, totalWeight);
@@ -1334,13 +2169,77 @@ namespace GameCore
                 var option = options[i];
                 if (roll < option.Weight)
                 {
-                    return option.Type;
+                    itemType = option.Type;
+                    return true;
                 }
 
                 roll -= option.Weight;
             }
 
-            return options[0].Type;
+            itemType = options[options.Count - 1].Type;
+            return true;
+        }
+
+        private List<ItemDropOption> BuildWeightedItemDropOptions()
+        {
+            itemDropOptionsBuffer.Clear();
+
+            var missingHp = Mathf.Max(0, ((maxHearts * 2) - CurrentHP + 1) / 2);
+            var missingEnergy = Mathf.Max(0, maxEnergy - energy);
+            var shieldCount = GetShieldInventoryCount();
+
+            var potionDropChance = missingHp > 0 ? missingHp * 2 : 0;
+            if (IsHardcoreEnabled())
+            {
+                potionDropChance *= HardcoreConfig.potionDropMultiplier;
+            }
+
+            AddWeightedDropOption(PlayerItemType.BasicHeal, Mathf.RoundToInt(potionDropChance));
+            AddWeightedDropOption(PlayerItemType.EnergyPack, missingEnergy > 0 ? missingEnergy : 0);
+            AddWeightedDropOption(PlayerItemType.Shield, CanCarryItem(PlayerItemType.Shield) ? (shieldCount == 0 ? 3 : 1) : 0);
+            AddWeightedDropOption(PlayerItemType.SecondChance, CanCarryItem(PlayerItemType.SecondChance) ? (CurrentHP <= 1 ? 5 : 1) : 0);
+
+            return itemDropOptionsBuffer;
+        }
+
+        private void AddWeightedDropOption(PlayerItemType itemType, int weight)
+        {
+            if (weight <= 0)
+            {
+                return;
+            }
+
+            itemDropOptionsBuffer.Add(new ItemDropOption(itemType, weight));
+        }
+
+        private bool TryAddInventoryItem(PlayerItemType itemType)
+        {
+            if (playerItemInventory == null)
+            {
+                playerItemInventory = new PlayerItemInventory(3);
+            }
+
+            return playerItemInventory.TryAddItem(itemType);
+        }
+
+        private bool CanCarryItem(PlayerItemType itemType)
+        {
+            if (itemType != PlayerItemType.Shield && itemType != PlayerItemType.SecondChance && itemType != PlayerItemType.EnergyPack)
+            {
+                return false;
+            }
+
+            if (playerItemInventory == null)
+            {
+                return true;
+            }
+
+            return playerItemInventory.Count < playerItemInventory.MaxSlots;
+        }
+
+        private int GetShieldInventoryCount()
+        {
+            return playerItemInventory != null ? playerItemInventory.CountOf(PlayerItemType.Shield) : 0;
         }
 
         // CODEX STAGE 7D: Bugada activation + duration handling.
@@ -1353,6 +2252,7 @@ namespace GameCore
 
             bugadaTurnsRemaining = 3;
             bugadaJustActivated = true;
+            ClearPlayerDebuffsForBugada();
             UpdateBugadaMusic(true);
             UpdateUI();
         }
@@ -1389,43 +2289,28 @@ namespace GameCore
             UpdateUI();
         }
 
-        private void TickShieldStatus()
+        private void TickBubbleStatus()
         {
             var updated = false;
 
-            if (isShieldActive && shieldTurnsRemaining > 0)
+            if (isBubbleActive)
             {
-                if (shieldJustActivated)
+                bubbleTurnsRemaining -= 1;
+                if (bubbleTurnsRemaining <= 0)
                 {
-                    shieldJustActivated = false;
+                    SetBubbleActive(false);
+                    bubbleTurnsRemaining = 0;
+                    bubbleCooldownRemaining = 2;
                 }
-                else
-                {
-                    shieldTurnsRemaining -= 1;
-                    if (shieldTurnsRemaining <= 0)
-                    {
-                        SetShieldActive(false);
-                        BeginShieldCooldown();
-                        updated = true;
-                    }
-                }
+
+                updated = true;
             }
 
-            if (shieldCooldownTurnsRemaining > 0)
+            if (bubbleCooldownRemaining > 0)
             {
-                if (shieldCooldownJustStarted)
-                {
-                    shieldCooldownJustStarted = false;
-                }
-                else
-                {
-                    shieldCooldownTurnsRemaining -= 1;
-                    if (shieldCooldownTurnsRemaining < 0)
-                    {
-                        shieldCooldownTurnsRemaining = 0;
-                    }
-                    updated = true;
-                }
+                bubbleCooldownRemaining -= 1;
+                bubbleCooldownRemaining = Mathf.Max(0, bubbleCooldownRemaining);
+                updated = true;
             }
 
             if (updated)
@@ -1434,10 +2319,11 @@ namespace GameCore
             }
         }
 
-        private void BeginShieldCooldown()
+        private void EndBubbleAndStartCooldown()
         {
-            shieldCooldownTurnsRemaining = 3;
-            shieldCooldownJustStarted = true;
+            SetBubbleActive(false);
+            bubbleTurnsRemaining = 0;
+            bubbleCooldownRemaining = 2;
         }
 
         private void ResetBugadaState()
@@ -1465,64 +2351,778 @@ namespace GameCore
             }
         }
 
-        private void ResetMonsterAttackState(bool delayVisualReset = false)
+        private void ClearBossAttackState()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsPermanentlyEnraged)
-            {
-                bossState.IsEnraged = false;
-            }
-            bossState.AttackTarget = default;
+            bossState.IsAngry = false;
+            bossState.IsEnraged = false;
+            bossState.IsPermanentlyEnraged = false;
+            bossState.HasCharmResistance = false;
+            bossState.AggressorPosition = Vector2Int.zero;
+            bossState.AggressorPieceId = 0;
+            bossState.AttackTarget = Vector2Int.zero;
             bossState.TurnsUntilAttack = 0;
             CurrentBossState = bossState;
             hasTriggeredMonsterWindup = false;
+            RemoveBossTelegraph();
+            UpdateWorriedState();
+            UpdatePlayerAnimationFlags();
+            UpdateMonsterEnrageVisuals();
+            RefreshDamageHeatmap();
+        }
 
+        private void ResetMonsterAttackState(bool delayVisualReset = false)
+        {
+            ClearBossAttackState();
+            if (!delayVisualReset)
+            {
+                return;
+            }
+
+            monsterAttackVisualResetRoutine = StartCoroutine(DelayedMonsterAttackVisualReset());
+        }
+
+        private void SpawnBossTelegraph(Vector2Int targetPosition)
+        {
+            if (monsterAttackMarkerInstance != null)
+            {
+                return;
+            }
+
+            if (board == null || !board.IsWithinBounds(targetPosition))
+            {
+                return;
+            }
+
+            SpawnMonsterAttackMarker(targetPosition);
+            RefreshDamageHeatmap();
+        }
+
+        private void RemoveBossTelegraph()
+        {
             if (monsterAttackVisualResetRoutine != null)
             {
                 StopCoroutine(monsterAttackVisualResetRoutine);
                 monsterAttackVisualResetRoutine = null;
             }
 
-            if (delayVisualReset)
-            {
-                monsterAttackVisualResetRoutine = StartCoroutine(DelayedMonsterAttackVisualReset());
-            }
-            else
-            {
-                DestroyMonsterAttackMarker();
-                ClearMonsterEnrageIndicator();
-            }
-            UpdateWorriedState();
-            UpdatePlayerAnimationFlags();
+            DestroyMonsterAttackMarker();
+            ClearMonsterEnrageIndicator();
+            RefreshDamageHeatmap();
         }
 
         // CODEX RAGE SCALE FINAL
         private void TickMonsterAttackMarker()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
+            if (!bossState.IsAngry && !bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
                 return;
             }
 
-            bossState.TurnsUntilAttack = Mathf.Max(0, bossState.TurnsUntilAttack - 1);
-            CurrentBossState = bossState;
-            UpdateMonsterAttackTelegraph();
-            if (bossState.TurnsUntilAttack == 1 && !hasTriggeredMonsterWindup)
+            if (!IsAggressorAlive(bossState))
             {
-                TriggerMonsterAttackWindup();
-                hasTriggeredMonsterWindup = true;
-            }
-            if (bossState.TurnsUntilAttack > 0)
-            {
+                ClearBossAttackState();
                 return;
             }
 
-            var targetPosition = bossState.AttackTarget;
-            ResolveMonsterAttack(targetPosition);
-            ResetMonsterAttackState(true);
+            if ((bossState.IsAngry || bossState.IsEnraged) && bossState.TurnsUntilAttack > 0)
+            {
+                bossState.TurnsUntilAttack--;
+
+                if (bossState.TurnsUntilAttack == GetBossEnrageThresholdTurns() && bossState.IsAngry)
+                {
+                    bossState.IsAngry = false;
+                    bossState.IsEnraged = true;
+                    TriggerMonsterAttackWindup();
+                    hasTriggeredMonsterWindup = true;
+                    SpawnBossTelegraph(bossState.AttackTarget);
+                    UpdateMonsterEnrageVisuals();
+                }
+
+                CurrentBossState = bossState;
+
+                if (!board.IsWithinBounds(CurrentBossState.AttackTarget))
+                {
+                    ClearBossAttackState();
+                    return;
+                }
+
+                UpdateMonsterAttackTelegraph();
+                return;
+            }
+
+            ResolveMonsterAttack(bossState.AttackTarget);
+            ClearBossAttackState();
         }
 
+
+        private void EvaluateMonsterAggro()
+        {
+            TryTriggerMonsterEnrage();
+            RefreshDamageHeatmap();
+        }
+
+        private void UpdateMonsterStates()
+        {
+            if (board == null || monsterStates.Count == 0)
+            {
+                CleanupOrphanedGenericTelegraphs();
+                RefreshDamageHeatmap();
+                return;
+            }
+
+            var updatedStates = new Dictionary<int, MonsterState>(monsterStates.Count);
+            foreach (var kvp in monsterStates)
+            {
+                var pieceId = kvp.Key;
+                var state = kvp.Value;
+                if (!TryFindPieceById(pieceId, out var piece))
+                {
+                    ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                    continue;
+                }
+
+                var previousTile = state.CurrentTile;
+                var currentTile = new Vector2Int(piece.X, piece.Y);
+                var moved = currentTile != state.CurrentTile;
+                state.CurrentTile = currentTile;
+
+                if (moved && (state.IsAngry || state.IsEnraged))
+                {
+                    ClearMonsterTelegraphs(pieceId, previousTile);
+                    state = CreateConfusedState(currentTile, state.CurrentHP);
+                    if (debugMode)
+                    {
+                        Debug.Log($"GenericMonsterState: piece {pieceId} entered Confused after moving to {currentTile.x},{currentTile.y}", this);
+                    }
+
+                    updatedStates[pieceId] = state;
+                    ApplyMonsterVisualState(piece, state);
+                    continue;
+                }
+
+                if (state.IsAngry)
+                {
+                    state.HasCharmResistance = true;
+                }
+
+                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack > 0)
+                {
+                    state.TurnsUntilAttack--;
+                }
+
+                if (state.IsConfused || state.IsTired || state.IsSleeping)
+                {
+                    ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                    state.StateTurnsRemaining--;
+                    if (state.StateTurnsRemaining <= 0)
+                    {
+                        if (state.IsConfused)
+                        {
+                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                            EnterIdleState(ref state);
+                            state.CurrentTile = currentTile;
+                            state.CurrentHP = kvp.Value.CurrentHP;
+                            state.TurnsUntilAttack = 0;
+                            state.StateTurnsRemaining = 0;
+                            state.TargetTile = default;
+                            state.IsAdjacencyTriggered = false;
+                        }
+                        else if (state.IsTired)
+                        {
+                            state.IsIdle = false;
+                            state.IsTired = false;
+                            state.IsSleeping = true;
+                            state.StateTurnsRemaining = GetMonsterSleepDuration();
+                        }
+                        else if (state.IsSleeping)
+                        {
+                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                            EnterIdleState(ref state);
+                            state.CurrentTile = currentTile;
+                            state.CurrentHP = kvp.Value.CurrentHP;
+                            state.TurnsUntilAttack = 0;
+                            state.StateTurnsRemaining = 0;
+                            state.TargetTile = default;
+                            state.IsAdjacencyTriggered = false;
+                        }
+                    }
+                }
+
+                updatedStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
+            }
+
+            monsterStates.Clear();
+            foreach (var kvp in updatedStates)
+            {
+                monsterStates[kvp.Key] = kvp.Value;
+            }
+
+            CleanupOrphanedGenericTelegraphs();
+            RefreshDamageHeatmap();
+        }
+
+        public void ProcessMonsterAttacks()
+        {
+            if (board == null || hasEnded || monsterStates.Count == 0)
+            {
+                RefreshDamageHeatmap();
+                return;
+            }
+
+            var toAttack = new List<int>();
+            foreach (var kvp in monsterStates)
+            {
+                var state = kvp.Value;
+                if (state.IsEnraged && state.TurnsUntilAttack <= 0)
+                {
+                    toAttack.Add(kvp.Key);
+                }
+            }
+
+            if (toAttack.Count == 0)
+            {
+                RefreshDamageHeatmap();
+                return;
+            }
+
+            foreach (var pieceId in toAttack)
+            {
+                if (!monsterStates.TryGetValue(pieceId, out var state))
+                {
+                    continue;
+                }
+
+                var targetTile = state.TargetTile;
+                if (board.IsWithinBounds(targetTile) && board.TryGetPieceAt(targetTile, out var targetPiece))
+                {
+                    if (targetPiece.IsPlayer)
+                    {
+                        ResolvePlayerHit();
+                    }
+                    else
+                    {
+                        board.TryDestroyPieceAt(targetTile, DestructionReason.MonsterAttack);
+                    }
+                }
+
+                ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                state.IsAngry = false;
+                state.IsAdjacencyTriggered = false;
+                state.IsHurt = false;
+                state.IsEnraged = false;
+                state.HasCharmResistance = false;
+                state.IsConfused = false;
+                state.IsSleeping = false;
+                state.IsTired = false;
+                state.TurnsUntilAttack = 0;
+                state.StateTurnsRemaining = 0;
+                state.TargetTile = default;
+                EnterIdleState(ref state);
+                monsterStates[pieceId] = state;
+                if (TryFindPieceById(pieceId, out var attackingPiece))
+                {
+                    ApplyMonsterVisualState(attackingPiece, state);
+                }
+                if (debugMode)
+                {
+                    Debug.Log($"GenericMonsterState: piece {pieceId} attacked target {targetTile.x},{targetTile.y}", this);
+                }
+            }
+
+            RefreshDamageHeatmap();
+        }
+
+        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile, bool triggeredByAdjacency, bool allowTelegraph = true)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            var state = GetOrCreateMonsterState(piece);
+            if (state.IsHurt)
+            {
+                monsterStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
+                return;
+            }
+
+            var hasBlockingState = state.IsEnraged || state.IsConfused || state.IsTired || state.IsSleeping;
+            if (hasBlockingState)
+            {
+                monsterStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
+                return;
+            }
+
+            if (IsHpSurvivalCheckRequired() && !WillMonsterSurviveUntilAttack(piece))
+            {
+                EnterHurtState(piece);
+                return;
+            }
+
+            state.TargetTile = targetTile;
+            state.CurrentTile = new Vector2Int(piece.X, piece.Y);
+            state.IsIdle = false;
+            state.IsAngry = true;
+            state.IsAdjacencyTriggered = triggeredByAdjacency;
+            state.IsHurt = false;
+            state.IsEnraged = false;
+            state.HasCharmResistance = true;
+            state.IsTired = false;
+            state.IsSleeping = false;
+            state.IsConfused = false;
+            state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
+            state.StateTurnsRemaining = 0;
+            monsterStates[pieceId] = state;
+
+            if (allowTelegraph && !IsTelegraphOnlyOnEnrage())
+            {
+                AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                if (triggeredByAdjacency)
+                {
+                    SpawnGenericMonsterTelegraph(state.CurrentTile);
+                }
+            }
+
+            ApplyMonsterVisualState(piece, state);
+
+            if (debugMode)
+            {
+                Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
+            }
+        }
+
+        private MonsterState CreateConfusedState(Vector2Int currentTile, int currentHp)
+        {
+            return new MonsterState
+            {
+                IsIdle = false,
+                IsAngry = false,
+                IsHurt = false,
+                IsEnraged = false,
+                HasCharmResistance = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = true,
+                TurnsUntilAttack = 0,
+                StateTurnsRemaining = GetMonsterConfusedDuration(),
+                TargetTile = default,
+                CurrentTile = currentTile,
+                CurrentHP = currentHp
+            };
+        }
+
+        private int GetMonsterHitPoints(Piece piece)
+        {
+            if (piece == null)
+            {
+                return 0;
+            }
+
+            var state = GetOrCreateMonsterState(piece);
+            return Mathf.Max(0, state.CurrentHP);
+        }
+
+        private int PredictGuaranteedDamageNextTick(Piece piece)
+        {
+            if (piece == null)
+            {
+                return 0;
+            }
+
+            var damage = 0;
+
+            // A) Debuff damage already on monster.
+            damage += piece.GetGuaranteedDebuffDamage();
+
+            // B) Environmental guaranteed damage (e.g., toxic floor).
+            if (board != null && board.IsHazardTile(piece.X, piece.Y))
+            {
+                damage += board.GetHazardDamageAt(piece.X, piece.Y);
+            }
+
+            return damage;
+        }
+
+        private int GetPendingDamageThisTurn(Piece piece)
+        {
+            // Damage is committed immediately in current resolution paths.
+            // Keep hook for future delayed-damage systems.
+            return 0;
+        }
+
+        private int GetScheduledDotDamage(Piece piece)
+        {
+            if (piece == null)
+            {
+                return 0;
+            }
+
+            return piece.GetGuaranteedDebuffDamage();
+        }
+
+        public int GetPredictedEnvironmentDamage(Piece piece)
+        {
+            if (piece == null || board == null)
+            {
+                return 0;
+            }
+
+            if (!board.IsHazardTile(piece.X, piece.Y))
+            {
+                return 0;
+            }
+
+            return board.GetHazardDamageAt(piece.X, piece.Y);
+        }
+
+        private bool WillMonsterSurviveUntilAttack(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            if (!IsHpSurvivalCheckRequired())
+            {
+                return true;
+            }
+
+            var predictedHP = GetMonsterHitPoints(piece);
+            var ticksToPredict = GetMonsterTurnsBeforeAttack();
+            for (var tick = 0; tick < ticksToPredict; tick++)
+            {
+                predictedHP -= PredictGuaranteedDamageNextTick(piece);
+                if (predictedHP <= 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void EnterHurtState(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            var state = GetOrCreateMonsterState(piece);
+            state.IsIdle = false;
+            state.IsAngry = false;
+            state.IsAdjacencyTriggered = false;
+            state.IsHurt = true;
+            state.IsEnraged = false;
+            state.HasCharmResistance = false;
+            state.IsTired = false;
+            state.IsSleeping = false;
+            state.IsConfused = false;
+            state.TurnsUntilAttack = 0;
+            state.StateTurnsRemaining = 0;
+            monsterStates[pieceId] = state;
+            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+            ApplyMonsterVisualState(piece, state);
+        }
+
+        private void EnterIdleState(ref MonsterState state)
+        {
+            // Do not allow Idle transition if monster is in terminal Hurt state
+            if (state.IsHurt)
+                return;
+
+            state.IsIdle = true;
+            state.IsAngry = false;
+            state.IsEnraged = false;
+            state.HasCharmResistance = false;
+            state.IsConfused = false;
+            state.IsTired = false;
+            state.IsSleeping = false;
+        }
+
+        private MonsterState CreateDefaultMonsterState(Vector2Int currentTile)
+        {
+            var defaultMonsterHP = GetMonsterDefaultHitPoints();
+            return new MonsterState
+            {
+                IsIdle = true,
+                IsAngry = false,
+                IsHurt = false,
+                IsEnraged = false,
+                HasCharmResistance = false,
+                IsTired = false,
+                IsSleeping = false,
+                IsConfused = false,
+                CurrentHP = defaultMonsterHP,
+                TurnsUntilAttack = 0,
+                StateTurnsRemaining = 0,
+                CurrentTile = currentTile,
+                TargetTile = default,
+                IsAdjacencyTriggered = false
+            };
+        }
+
+        private bool WillMonsterSurviveFullAttackCycle(Piece piece)
+        {
+            if (!IsHpSurvivalCheckRequired())
+            {
+                return true;
+            }
+
+            var hp = GetMonsterHitPoints(piece);
+            var tickDamage = PredictGuaranteedDamageNextTick(piece);
+            var totalPredicted = tickDamage * GetMonsterTurnsBeforeAttack();
+            return hp - totalPredicted > 0;
+        }
+
+        private bool WillMonsterDieNextTick(Piece piece)
+        {
+            var hp = GetMonsterHitPoints(piece);
+            var tickDamage = PredictGuaranteedDamageNextTick(piece);
+            return hp - tickDamage <= 0;
+        }
+
+        private MonsterState GetOrCreateMonsterState(Piece piece)
+        {
+            var pieceId = piece.GetInstanceID();
+            if (!monsterStates.TryGetValue(pieceId, out var state))
+            {
+                state = CreateDefaultMonsterState(new Vector2Int(piece.X, piece.Y));
+            }
+            else
+            {
+                state.CurrentTile = new Vector2Int(piece.X, piece.Y);
+                if (state.CurrentHP <= 0)
+                {
+                    state.CurrentHP = GetMonsterDefaultHitPoints();
+                }
+            }
+
+            return state;
+        }
+
+        private void ReevaluateMonsterEmotionalState(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            if (!IsHpSurvivalCheckRequired())
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            if (!monsterStates.TryGetValue(pieceId, out var state))
+            {
+                return;
+            }
+
+            if (state.IsHurt)
+            {
+                ApplyMonsterVisualState(piece, state);
+                monsterStates[pieceId] = state;
+                return;
+            }
+
+            var hasBlockingState = state.IsEnraged || state.IsConfused || state.IsTired || state.IsSleeping;
+            if (hasBlockingState)
+            {
+                ApplyMonsterVisualState(piece, state);
+                monsterStates[pieceId] = state;
+                return;
+            }
+
+            var diesNext = WillMonsterDieNextTick(piece);
+            var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
+
+            EnterIdleState(ref state);
+            state.IsAdjacencyTriggered = false;
+
+            if (diesNext)
+            {
+                state.IsHurt = true;
+                state.HasCharmResistance = false;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
+            }
+            else if (survivesFull)
+            {
+                state.IsIdle = false;
+                state.IsAngry = true;
+                state.IsAdjacencyTriggered = false;
+                state.HasCharmResistance = true;
+                state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
+                if (board != null && board.TryGetPlayerPosition(out var playerPosition))
+                {
+                    state.TargetTile = playerPosition;
+                }
+            }
+            else
+            {
+                state.IsHurt = true;
+                state.HasCharmResistance = false;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
+            }
+
+            if (!state.IsAngry && !state.IsHurt)
+            {
+                EnterIdleState(ref state);
+                state.HasCharmResistance = false;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
+            }
+            else if (!state.IsAngry)
+            {
+                state.HasCharmResistance = false;
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+                RemoveGenericMonsterTelegraph(state.CurrentTile);
+            }
+
+            ApplyMonsterVisualState(piece, state);
+            monsterStates[pieceId] = state;
+        }
+
+
+        private void EnsureMonsterAggroConfig()
+        {
+            if (monsterAggroConfig != null)
+            {
+                return;
+            }
+
+            monsterAggroConfig = new MonsterAggroConfig();
+            Debug.LogWarning("MonsterAggroConfig was not assigned in inspector. Using runtime defaults.", this);
+        }
+
+        private MonsterAggroConfig GetMonsterAggroConfig()
+        {
+            EnsureMonsterAggroConfig();
+            return monsterAggroConfig;
+        }
+
+        private int GetMonsterDefaultHitPoints()
+        {
+            return Mathf.Max(1, GetMonsterAggroConfig().defaultMonsterHP);
+        }
+
+        private int GetMonsterTurnsBeforeAttack()
+        {
+            return 2;
+        }
+
+        private int GetBossEnrageThresholdTurns()
+        {
+            var turnsBeforeAttack = GetMonsterTurnsBeforeAttack();
+            var config = GetMonsterAggroConfig();
+            var enrageDuration = Mathf.Max(1, config.enrageDuration);
+            return Mathf.Max(0, turnsBeforeAttack - enrageDuration);
+        }
+
+        private int GetMonsterConfusedDuration()
+        {
+            var config = GetMonsterAggroConfig();
+            return Mathf.Max(1, config.confusedDuration);
+        }
+
+        private int GetMonsterTiredDuration()
+        {
+            var config = GetMonsterAggroConfig();
+            return Mathf.Max(1, config.tiredDuration);
+        }
+
+        private int GetMonsterSleepDuration()
+        {
+            var config = GetMonsterAggroConfig();
+            return Mathf.Max(1, config.sleepDuration);
+        }
+
+        private bool IsAdjacencyMatchForecastRequired()
+        {
+            return GetMonsterAggroConfig().adjacencyRequiresMatchForecast;
+        }
+
+        private bool IsDamageTriggerAllowed()
+        {
+            return GetMonsterAggroConfig().damageTriggerAllowed;
+        }
+
+        private bool IsTelegraphOnlyOnEnrage()
+        {
+            return GetMonsterAggroConfig().telegraphOnlyOnEnrage;
+        }
+
+        private bool IsHpSurvivalCheckRequired()
+        {
+            return GetMonsterAggroConfig().requireHpSurvivalCheck;
+        }
+
+        private void ApplyMonsterVisualState(Piece piece, MonsterState state)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            piece.SetMonsterEnragedVisual(state.IsEnraged || state.IsAngry);
+            piece.SetMonsterOutStateVisual(state.IsHurt);
+        }
+
+        private void ReevaluateAllMonsterEmotionalStates()
+        {
+            if (board == null || monsterStates.Count == 0)
+            {
+                return;
+            }
+
+            var pieceIds = new List<int>(monsterStates.Keys);
+            foreach (var pieceId in pieceIds)
+            {
+                if (TryFindPieceById(pieceId, out var piece))
+                {
+                    ReevaluateMonsterEmotionalState(piece);
+                }
+            }
+        }
+
+        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
+        {
+            foundPiece = null;
+            if (board == null || pieceId == 0)
+            {
+                return false;
+            }
+
+            for (var x = 0; x < board.Width; x++)
+            {
+                for (var y = 0; y < board.Height; y++)
+                {
+                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (piece.GetInstanceID() != pieceId)
+                    {
+                        continue;
+                    }
+
+                    foundPiece = piece;
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         // CODEX RAGE SCALE FINAL
         private void TickRageCooldown()
@@ -1542,38 +3142,7 @@ namespace GameCore
         // CODEX RAGE SCALE FINAL
         private void TryTriggerMonsterEnrage()
         {
-            if (board == null)
-            {
-                return;
-            }
-
-            if (!monstersCanAttack)
-            {
-                return;
-            }
-
-            if (isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
-            {
-                return;
-            }
-
-            if (CurrentBossState.IsPermanentlyEnraged)
-            {
-                return;
-            }
-
-            if (rageCooldownRemaining > 0)
-            {
-                if (debugMode)
-                {
-                    Debug.Log($"RageCooldownRemaining: {rageCooldownRemaining}", this);
-                }
-
-                return;
-            }
-
-            var bossState = CurrentBossState;
-            if (bossState.IsEnraged)
+            if (board == null || !monstersCanAttack || isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
             {
                 return;
             }
@@ -1583,56 +3152,264 @@ namespace GameCore
                 return;
             }
 
-            var candidateFound = false;
-            var bestScore = 0;
-            var bestPosition = default(Vector2Int);
-            var adjacentOffsets = new[]
+            monsterTurnCounter++;
+
+            // Always clear damage buffer so stale IDs never persist across turns.
+            damagedThisTurn.Clear();
+            pendingMinorDamageAggro = false;
+
+            if (adjacencyAggroUsedThisTurn)
             {
-                Vector2Int.up,
-                Vector2Int.down,
-                Vector2Int.left,
-                Vector2Int.right
-            };
-
-            for (var i = 0; i < adjacentOffsets.Length; i++)
-            {
-                var candidatePosition = playerPosition + adjacentOffsets[i];
-                if (!board.TryGetPieceAt(candidatePosition, out _))
-                {
-                    continue;
-                }
-
-                var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
-                if (score <= 0)
-                {
-                    continue;
-                }
-
-                if (!candidateFound || score > bestScore)
-                {
-                    candidateFound = true;
-                    bestScore = score;
-                    bestPosition = candidatePosition;
-                }
-            }
-
-            if (!candidateFound)
-            {
-                if (debugMode)
-                {
-                    Debug.Log("RageRejected_NoMatchableCandidate", this);
-                }
-
                 return;
             }
 
-            if (debugMode)
+            for (var x = 0; x < board.Width; x++)
             {
-                Debug.Log($"RageSelected position={bestPosition.x},{bestPosition.y} score={bestScore}", this);
+                for (var y = 0; y < board.Height; y++)
+                {
+                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var candidate)
+                        || candidate == null
+                        || candidate.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    var candidatePosition = new Vector2Int(candidate.X, candidate.Y);
+                    var manhattanDistance = Mathf.Abs(candidatePosition.x - playerPosition.x) + Mathf.Abs(candidatePosition.y - playerPosition.y);
+                    if (manhattanDistance != 1)
+                    {
+                        continue;
+                    }
+
+                    var pieceId = candidate.GetInstanceID();
+                    var state = GetOrCreateMonsterState(candidate);
+                    if (state.IsHurt || state.IsConfused || state.IsTired || state.IsSleeping)
+                    {
+                        monsterStates[pieceId] = state;
+                        continue;
+                    }
+
+                    if (state.IsAngry)
+                    {
+                        state.IsAngry = false;
+                        state.IsEnraged = true;
+                        state.IsIdle = false;
+                        state.IsAdjacencyTriggered = false;
+                        state.HasCharmResistance = true;
+                        monsterStates[pieceId] = state;
+
+                        if (IsTelegraphOnlyOnEnrage())
+                        {
+                            AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                        }
+
+                        ApplyMonsterVisualState(candidate, state);
+                        adjacencyAggroUsedThisTurn = true;
+                        return;
+                    }
+
+                    if (state.IsEnraged)
+                    {
+                        continue;
+                    }
+
+                    if (IsAdjacencyMatchForecastRequired()
+                        && !board.CanMatchPieceWithinEnergyDepth(candidatePosition, Energy))
+                    {
+                        continue;
+                    }
+
+                    SetGenericMonsterAngry(candidate, playerPosition, true);
+                    adjacencyAggroUsedThisTurn = true;
+                    return;
+                }
+            }
+        }
+
+
+        private void SpawnGenericMonsterTelegraph(Vector2Int position)
+        {
+            if (board == null || !board.IsWithinBounds(position))
+            {
+                return;
             }
 
-            rageCooldownRemaining = Mathf.Max(1, rageCooldownTurns - CurrentBossState.CurrentPhaseIndex);
-            ActivateMonsterAttack(bestPosition);
+            if (genericTelegraphs.ContainsKey(position))
+            {
+                return;
+            }
+
+            var worldPosition = board.GridToWorld(position.x, position.y);
+            GameObject markerObject;
+            if (genericMonsterTelegraphPrefab != null)
+            {
+                markerObject = Instantiate(genericMonsterTelegraphPrefab, worldPosition, Quaternion.identity);
+            }
+            else
+            {
+                markerObject = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                markerObject.name = "GenericAttackTelegraph";
+                markerObject.transform.position = worldPosition;
+                markerObject.transform.localScale = Vector3.one * 0.9f;
+                var renderer = markerObject.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material = new Material(Shader.Find("Unlit/Color"));
+                    renderer.material.color = new Color(1f, 0.2f, 0.2f, 0.75f);
+                }
+            }
+
+            if (markerObject != null)
+            {
+                genericTelegraphs[position] = markerObject;
+            }
+        }
+
+        private void RemoveGenericMonsterTelegraph(Vector2Int position)
+        {
+            if (!genericTelegraphs.TryGetValue(position, out var telegraph))
+            {
+                return;
+            }
+
+            if (telegraph != null)
+            {
+                Destroy(telegraph);
+            }
+
+            genericTelegraphs.Remove(position);
+        }
+
+        private void ClearMonsterTelegraphs(int pieceId, Vector2Int telegraphTile)
+        {
+            AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            RemoveStaleGenericTelegraphForMonster(pieceId, telegraphTile);
+            RemoveGenericMonsterTelegraph(telegraphTile);
+        }
+
+        private void RemoveStaleGenericTelegraphForMonster(int pieceId, Vector2Int telegraphTile)
+        {
+            if (board == null || !genericTelegraphs.ContainsKey(telegraphTile))
+            {
+                return;
+            }
+
+            if (!board.TryGetPieceAt(telegraphTile, out var occupant)
+                || occupant == null
+                || occupant.IsPlayer
+                || occupant.GetInstanceID() != pieceId)
+            {
+                RemoveGenericMonsterTelegraph(telegraphTile);
+            }
+        }
+
+        private void ClearGenericMonsterTelegraphs()
+        {
+            foreach (var telegraph in genericTelegraphs.Values)
+            {
+                if (telegraph != null)
+                {
+                    Destroy(telegraph);
+                }
+            }
+
+            genericTelegraphs.Clear();
+        }
+
+        private void CleanupOrphanedGenericTelegraphs()
+        {
+            if (board == null || genericTelegraphs.Count == 0)
+            {
+                return;
+            }
+
+            var toRemove = new List<Vector2Int>();
+            foreach (var kvp in genericTelegraphs)
+            {
+                var position = kvp.Key;
+                if (!board.IsWithinBounds(position)
+                    || !board.TryGetPieceAt(position, out var occupant)
+                    || occupant == null
+                    || occupant.IsPlayer)
+                {
+                    toRemove.Add(position);
+                    continue;
+                }
+
+                if (!monsterStates.TryGetValue(occupant.GetInstanceID(), out var state)
+                    || state.CurrentTile != position
+                    || !state.IsEnraged)
+                {
+                    toRemove.Add(position);
+                }
+            }
+
+            for (var i = 0; i < toRemove.Count; i++)
+            {
+                RemoveGenericMonsterTelegraph(toRemove[i]);
+            }
+        }
+
+
+
+
+
+        private bool IsAggressorAlive(BossState bossState)
+        {
+            if (bossState.IsPermanentlyEnraged)
+            {
+                return true;
+            }
+
+            return TryResolveAggressorPiece(ref bossState, out _);
+        }
+
+
+
+
+
+
+
+        private bool TryResolveAggressorPiece(ref BossState bossState, out Piece aggressor)
+        {
+            aggressor = null;
+            if (board == null || bossState.AggressorPieceId == 0)
+            {
+                return false;
+            }
+
+            if (board.TryGetPieceAt(bossState.AggressorPosition, out var occupant)
+                && !occupant.IsPlayer
+                && occupant.GetInstanceID() == bossState.AggressorPieceId)
+            {
+                aggressor = occupant;
+                return true;
+            }
+
+            var width = board.Width;
+            var height = board.Height;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var position = new Vector2Int(x, y);
+                    if (!board.TryGetPieceAt(position, out var candidate) || candidate.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (candidate.GetInstanceID() != bossState.AggressorPieceId)
+                    {
+                        continue;
+                    }
+
+                    bossState.AggressorPosition = position;
+                    aggressor = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool CanMonsterReachPlayer(Vector2Int monsterPosition, Vector2Int playerPosition)
@@ -1645,15 +3422,26 @@ namespace GameCore
             return CurrentBoss != null && CurrentBoss.preventInstantKillFromPlayerActions;
         }
 
-        private void ActivateMonsterAttack(Vector2Int targetPosition)
+        private void ActivateMonsterAnger(Vector2Int aggressorPosition, Vector2Int targetPosition)
         {
             var bossState = CurrentBossState;
-            bossState.IsEnraged = true;
+            bossState.IsAngry = true;
+            bossState.IsEnraged = false;
+            bossState.HasCharmResistance = true;
+            if (!board.TryGetPieceAt(aggressorPosition, out var aggressorPiece) || aggressorPiece.IsPlayer)
+            {
+                return;
+            }
+
+            bossState.AggressorPosition = aggressorPosition;
+            bossState.AggressorPieceId = aggressorPiece.GetInstanceID();
             bossState.AttackTarget = targetPosition;
-            bossState.TurnsUntilAttack = Mathf.Max(1, 2 - Mathf.FloorToInt(bossState.CurrentPhaseIndex / 2f));
+            bossState.TurnsUntilAttack = balanceConfig.BossAttackDelayTurns;
             CurrentBossState = bossState;
+            AttackTelegraphSystem.Instance?.SpawnTelegraph(bossState.AggressorPieceId, targetPosition);
+
             hasTriggeredMonsterWindup = false;
-            SpawnMonsterAttackMarker(targetPosition);
+            SpawnBossTelegraph(CurrentBossState.AttackTarget);
             UpdateMonsterAttackTelegraph();
             UpdateMonsterEnrageVisuals();
             UpdateWorriedState();
@@ -1668,45 +3456,36 @@ namespace GameCore
                 return;
             }
 
+            AttackTelegraphSystem.Instance?.RemoveTelegraph(CurrentBossState.AggressorPieceId);
+
             isResolvingMonsterAttack = true;
             try
             {
                 TriggerMonsterAttackExecuteVisuals();
 
-                if (!board.TryGetPieceAt(targetPosition, out var targetPiece)
-                    || monsterEnragePiece == null
-                    || targetPiece != monsterEnragePiece)
+                if (!board.TryGetPieceAt(targetPosition, out var targetPiece))
                 {
-                    if (debugMode)
-                    {
-                        Debug.Log("RageCancelledByMatch", this);
-                    }
-
-                    ResetMonsterAttackState(true);
                     return;
                 }
 
-                TriggerStunnedAnimation();
-                if (TryBlockPlayerDamage(PlayerDamageType.HeavyHit))
+                if (targetPiece.IsPlayer)
                 {
-                    if (debugMode)
-                    {
-                        Debug.Log("RageBlockedByShield", this);
-                    }
-
+                    ResolvePlayerHit();
                     return;
                 }
 
-                ApplyPlayerDamage(GetCurrentMonsterDamage());
-                if (debugMode)
-                {
-                    Debug.Log("RageLethalTriggered", this);
-                }
+                board.TryDestroyPieceAt(targetPosition, DestructionReason.MonsterAttack);
             }
             finally
             {
                 isResolvingMonsterAttack = false;
             }
+        }
+
+        private void ResolvePlayerHit()
+        {
+            TriggerStunnedAnimation();
+            TakeDamage(1);
         }
 
         private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
@@ -1894,6 +3673,15 @@ namespace GameCore
                 var blocked = SpecialPowerActivationResult.Failed(
                     SpecialPowerActivationFailureReason.ActionBlocked,
                     "Monster attack is resolving.");
+                LogSpecialPowerActivationFailure(power, blocked);
+                return blocked;
+            }
+
+            if (forceMoveNextTurn)
+            {
+                var blocked = SpecialPowerActivationResult.Failed(
+                    SpecialPowerActivationFailureReason.ActionBlocked,
+                    "Ice hazard requires movement this turn.");
                 LogSpecialPowerActivationFailure(power, blocked);
                 return blocked;
             }
@@ -2105,6 +3893,7 @@ namespace GameCore
                 || awaitingBossPowerLossConfirm
                 || awaitingBossStatRewardChoice
                 || awaitingBonusBossPowerRewardChoice
+                || awaitingInventoryOverflowDecision
                 || awaitingBonusStageBan
                 || isBonusStageActive;
         }
@@ -2154,6 +3943,12 @@ namespace GameCore
                 return true;
             }
 
+            if (forceMoveNextTurn)
+            {
+                reason = "Ice hazard requires movement this turn.";
+                return true;
+            }
+
             if (IsBossScriptedPhaseActive())
             {
                 reason = "Boss scripted phase is active.";
@@ -2176,6 +3971,32 @@ namespace GameCore
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
         }
+
+        private void ClearPlayerDebuffs()
+        {
+            ClearToxicStacks();
+            wasOnBottomRowLastTurn = false;
+            applyBottomLayerHazardOnNextTurn = false;
+            isSlowedByIce = false;
+            forceMoveNextTurn = false;
+            iceEnergyPenaltyActive = false;
+            pendingIceEnergyCompensation = false;
+            pendingEntangleCompensation = false;
+            if (iceStatusIcon != null)
+            {
+                iceStatusIcon.SetActive(false);
+            }
+
+            isStunned = false;
+            stunnedTurnsRemaining = 0;
+            UpdatePlayerAnimationFlags();
+        }
+
+        private void ClearPlayerDebuffsForBugada()
+        {
+            ClearPlayerDebuffs();
+        }
+
 
         private void ApplyEnergyDrain(int amount)
         {
@@ -2205,7 +4026,29 @@ namespace GameCore
                 return;
             }
 
+            if (piece.IsPlayer)
+            {
+                ClearBossAttackState();
+            }
+            else
+            {
+                AttackTelegraphSystem.Instance?.RemoveTelegraph(piece.GetInstanceID());
+                if (monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
+                {
+                    RemoveGenericMonsterTelegraph(state.CurrentTile);
+                }
+            }
+
             TryDefeatBossFromDestruction(piece, reason);
+
+            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged)
+            {
+                var bossState = CurrentBossState;
+                if (monsterEnragePiece == piece || (bossState.AggressorPieceId != 0 && piece.GetInstanceID() == bossState.AggressorPieceId))
+                {
+                    ClearBossAttackState();
+                }
+            }
 
             if (piece.SpecialType == SpecialType.Tumor)
             {
@@ -2425,12 +4268,24 @@ namespace GameCore
                 return false;
             }
 
+            var minorDamageThreshold = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.minorDamageThreshold) : 1;
+            if (damage <= minorDamageThreshold)
+            {
+                pendingMinorDamageAggro = true;
+            }
+
+            if (board != null && board.TryGetPieceAt(bossState.bossPosition, out var piece) && piece != null && !piece.IsPlayer)
+            {
+                var pieceId = piece.GetInstanceID();
+                damagedThisTurn.Add(pieceId);
+            }
+
             bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
             if (bossState.CurrentHP <= 0)
             {
                 bossState.bossAlive = false;
                 CurrentBossState = bossState;
-                ResetMonsterAttackState();
+                ClearBossAttackState();
                 UpdateUI();
                 return false;
             }
@@ -2483,7 +4338,9 @@ namespace GameCore
             if (shouldEnrage && !bossState.IsPermanentlyEnraged)
             {
                 bossState.IsPermanentlyEnraged = true;
+                bossState.IsAngry = false;
                 bossState.IsEnraged = true;
+                bossState.HasCharmResistance = true;
                 if (CurrentBoss.enragePower != BossPower.None)
                 {
                     unlockedBossPhasePowers.Add(CurrentBoss.enragePower);
@@ -2570,6 +4427,8 @@ namespace GameCore
             }
 
             hasEnded = true;
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
+
             // CODEX: LEVEL_LOOP
             SetEndPanels(true, false);
             // CODEX BOSS PR4
@@ -2594,13 +4453,17 @@ namespace GameCore
                 return;
             }
 
+            EndBossPowerAccess();
             if (bossPowerInventory != null && bossPowerInventory.Count > 0)
             {
-                hasEnded = true;
-                BeginBossPowerLossDiscard();
-                return;
+                DiscardRandomBossPower();
+            }
+            else
+            {
+                playerItemInventory?.Clear();
             }
 
+            ResetPickupRadius();
             CompleteLoseFlow();
         }
 
@@ -2611,6 +4474,8 @@ namespace GameCore
             {
                 hasEnded = true;
             }
+
+            AttackTelegraphSystem.Instance?.ClearAllTelegraphs();
 
             // CODEX: LEVEL_LOOP
             SetEndPanels(false, true);
@@ -2624,14 +4489,51 @@ namespace GameCore
             return Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y);
         }
 
-        private void ResetPlayerHealth()
+        private void ResetPickupRadius()
         {
-            if (maxHP < 1)
+            pickupRadius = GetBossPickupRadius();
+            hasBossPickupRadiusUpgrade = false;
+            hasShopPickupRadiusUpgrade = false;
+        }
+
+        private bool TryApplyPickupRadiusUpgrade(bool fromShop)
+        {
+            if (fromShop)
             {
-                maxHP = 1;
+                if (hasShopPickupRadiusUpgrade)
+                {
+                    return false;
+                }
+
+                hasShopPickupRadiusUpgrade = true;
+            }
+            else
+            {
+                if (hasBossPickupRadiusUpgrade)
+                {
+                    return false;
+                }
+
+                hasBossPickupRadiusUpgrade = true;
             }
 
-            CurrentHP = maxHP;
+            pickupRadius = Mathf.Min(Mathf.Max(1, maxPickupRadius), pickupRadius + 1);
+            return true;
+        }
+
+        public bool TryApplyShopPickupRadiusUpgrade()
+        {
+            return TryApplyPickupRadiusUpgrade(true);
+        }
+
+        private void ResetPlayerHealth()
+        {
+            if (maxHearts < 1)
+            {
+                maxHearts = 1;
+            }
+
+            CurrentHP = maxHearts * 2;
         }
 
         private int GetCurrentMonsterRange()
@@ -2665,9 +4567,65 @@ namespace GameCore
             return Mathf.Max(baseDamage + 1, Mathf.CeilToInt(baseDamage * multiplier) + bonus);
         }
 
-        private void ApplyPlayerDamage(int damage)
+        public void PopulateIncomingDamageHeatmap(DamageHeatmapSystem heatmapSystem)
         {
-            if (damage <= 0 || hasEnded || IsBugadaActive)
+            if (heatmapSystem == null || board == null)
+            {
+                return;
+            }
+
+            foreach (var kvp in monsterStates)
+            {
+                var state = kvp.Value;
+                if (!state.IsEnraged || state.TurnsUntilAttack > 0)
+                {
+                    continue;
+                }
+
+                if (!board.IsWithinBounds(state.CurrentTile) || !board.IsWithinBounds(state.TargetTile))
+                {
+                    continue;
+                }
+
+                if (!TryFindPieceById(kvp.Key, out var piece) || piece == null || piece.IsPlayer)
+                {
+                    continue;
+                }
+
+                heatmapSystem.AddPredictedDirectDamage(state.TargetTile, GetMonsterAttackDamage(piece));
+            }
+
+            if (CurrentBossState.IsEnraged && CurrentBossState.TurnsUntilAttack <= 0 && board.IsWithinBounds(CurrentBossState.AttackTarget))
+            {
+                heatmapSystem.AddPredictedDirectDamage(CurrentBossState.AttackTarget, GetCurrentMonsterDamage());
+            }
+
+            if (currentHazardType == HazardType.Poison
+                && applyBottomLayerHazardOnNextTurn
+                && !hasEnded
+                && CurrentHP > 0
+                && !IsBugadaActive
+                && board.TryGetPlayerPosition(out var playerPosition)
+                && playerPosition.y == 0
+                && board.IsWithinBounds(playerPosition))
+            {
+                heatmapSystem.AddPredictedDirectDamage(playerPosition, 1f);
+            }
+        }
+
+        private float GetMonsterAttackDamage(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return 0f;
+            }
+
+            return 1f;
+        }
+
+        public void TakeDamage(int halfUnits)
+        {
+            if (halfUnits <= 0 || hasEnded || IsBugadaActive)
             {
                 return;
             }
@@ -2678,10 +4636,17 @@ namespace GameCore
                 return;
             }
 
-            var remainingHp = CurrentHP - damage;
+            if (isBubbleActive)
+            {
+                EndBubbleAndStartCooldown();
+                UpdateUI();
+                return;
+            }
+
+            var remainingHp = CurrentHP - halfUnits;
             if (remainingHp <= 0 && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
             {
-                CurrentHP = 1;
+                CurrentHP = Mathf.Min(maxHearts * 2, 2);
                 UpdateUI();
                 return;
             }
@@ -2689,10 +4654,15 @@ namespace GameCore
             CurrentHP = Mathf.Max(0, remainingHp);
             if (CurrentHP <= 0)
             {
-                TriggerLose();
+                GameOverFlow();
             }
 
             UpdateUI();
+        }
+
+        private void GameOverFlow()
+        {
+            TriggerLose();
         }
 
         public void TriggerJetpackDoubleSuccess()
@@ -2717,14 +4687,25 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
+        private void TriggerConfusedPose()
+        {
+            TriggerStunnedAnimation();
+        }
+
         private void TriggerStunnedAnimation()
         {
+            if (IsBugadaActive || isBubbleActive)
+            {
+                return;
+            }
+
             if (!isStunned)
             {
                 isStunned = true;
             }
 
             stunnedTurnsRemaining = Mathf.Max(stunnedTurnsRemaining, 1);
+            ClearBossAttackState();
             UpdatePlayerAnimationFlags();
         }
 
@@ -2738,7 +4719,7 @@ namespace GameCore
         {
             var isBombAdjacent = board != null && board.IsPlayerAdjacentToBomb();
             var isMonsterThreat = false;
-            if (board != null && (CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged) && CurrentBossState.bossAlive)
+            if (board != null && (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged))
             {
                 if (board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -2751,15 +4732,33 @@ namespace GameCore
         private void UpdateMonsterAttackTelegraph()
         {
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged || !bossState.bossAlive || board == null)
+            if ((!bossState.IsAngry && !bossState.IsEnraged) || board == null)
             {
+                DestroyMonsterAttackMarker();
                 return;
             }
 
-            if (monsterAttackMarkerInstance == null)
+            if (!TryResolveAggressorPiece(ref bossState, out _))
             {
-                SpawnMonsterAttackMarker(bossState.AttackTarget);
+                CurrentBossState = bossState;
+                ClearBossAttackState();
+                return;
             }
+
+            CurrentBossState = bossState;
+
+            if (monsterAttackMarkerInstance == null &&
+                (bossState.IsAngry || bossState.IsEnraged))
+            {
+                SpawnBossTelegraph(bossState.AttackTarget);
+            }
+
+#if UNITY_EDITOR
+            if (bossState.IsEnraged && monsterAttackMarkerInstance == null)
+            {
+                Debug.LogWarning("Telegraph missing during enraged state.");
+            }
+#endif
 
             if (monsterAttackTelegraph != null)
             {
@@ -2767,6 +4766,8 @@ namespace GameCore
                 monsterAttackTelegraph.SetWorldPosition(worldPosition);
                 monsterAttackTelegraph.SetTurnsRemaining(bossState.TurnsUntilAttack);
             }
+
+            RefreshDamageHeatmap();
         }
 
         // CODEX RAGE SCALE FINAL
@@ -2779,16 +4780,32 @@ namespace GameCore
             }
 
             var bossState = CurrentBossState;
-            if (!bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
+            if (!bossState.IsAngry && !bossState.IsEnraged && !bossState.IsPermanentlyEnraged)
             {
                 ClearMonsterEnrageIndicator();
                 return;
             }
 
-            if (!board.TryGetPieceAt(bossState.AttackTarget, out var enragedPiece))
+            Piece enragedPiece;
+            if (bossState.IsPermanentlyEnraged)
             {
-                ClearMonsterEnrageIndicator();
-                return;
+                var indicatorPosition = bossState.bossPosition;
+                if (!board.TryGetPieceAt(indicatorPosition, out enragedPiece))
+                {
+                    ClearMonsterEnrageIndicator();
+                    return;
+                }
+            }
+            else
+            {
+                if (!TryResolveAggressorPiece(ref bossState, out enragedPiece))
+                {
+                    CurrentBossState = bossState;
+                    ClearBossAttackState();
+                    return;
+                }
+
+                CurrentBossState = bossState;
             }
 
             if (monsterEnragePiece == null)
@@ -3004,6 +5021,176 @@ namespace GameCore
             }
         }
 
+        private void ConfigureInventoryOverflowButtons()
+        {
+            if (inventoryOverflowReplaceButtons != null)
+            {
+                for (var i = 0; i < inventoryOverflowReplaceButtons.Length; i++)
+                {
+                    var button = inventoryOverflowReplaceButtons[i];
+                    if (button == null)
+                    {
+                        continue;
+                    }
+
+                    var slotIndex = i;
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(() => ResolveInventoryOverflowByReplacing(slotIndex));
+                }
+            }
+
+            if (inventoryOverflowDestroyButton != null)
+            {
+                inventoryOverflowDestroyButton.onClick.RemoveAllListeners();
+                inventoryOverflowDestroyButton.onClick.AddListener(ResolveInventoryOverflowByDestroyingLoot);
+            }
+
+            if (inventoryOverflowCancelButton != null)
+            {
+                inventoryOverflowCancelButton.onClick.RemoveAllListeners();
+                inventoryOverflowCancelButton.onClick.AddListener(CancelInventoryOverflowDecision);
+            }
+
+            HideInventoryOverflowPanel();
+        }
+
+        private void BeginInventoryOverflowDecision(PlayerItemType itemType, Vector2Int pickupPosition)
+        {
+            if (awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            awaitingInventoryOverflowDecision = true;
+            pendingInventoryOverflowItem = itemType;
+            pendingInventoryOverflowPosition = pickupPosition;
+
+            SetBoardInputLock(true);
+            ShowInventoryOverflowPanel();
+            UpdateUI();
+        }
+
+        private void ShowInventoryOverflowPanel()
+        {
+            if (inventoryOverflowPanel == null)
+            {
+                Debug.LogWarning("Inventory overflow UI not configured. Destroying loot by default.", this);
+                ResolveInventoryOverflowByDestroyingLoot();
+                return;
+            }
+
+            inventoryOverflowPanel.SetActive(true);
+
+            if (inventoryOverflowPromptText != null)
+            {
+                inventoryOverflowPromptText.text = "Inventory full! Choose: replace an existing item or destroy the new loot.";
+            }
+
+            if (inventoryOverflowIncomingItemText != null)
+            {
+                inventoryOverflowIncomingItemText.text = $"New loot: {pendingInventoryOverflowItem}";
+            }
+
+            var inventoryCount = playerItemInventory != null ? playerItemInventory.Count : 0;
+            if (inventoryOverflowReplaceButtons != null)
+            {
+                for (var i = 0; i < inventoryOverflowReplaceButtons.Length; i++)
+                {
+                    var button = inventoryOverflowReplaceButtons[i];
+                    if (button == null)
+                    {
+                        continue;
+                    }
+
+                    var canReplace = i < inventoryCount;
+                    button.gameObject.SetActive(canReplace);
+
+                    var label = button.GetComponentInChildren<Text>();
+                    if (label != null)
+                    {
+                        label.text = canReplace
+                            ? $"Replace Slot {i + 1}: {playerItemInventory.Items[i]}"
+                            : $"Replace Slot {i + 1}";
+                    }
+                }
+            }
+        }
+
+        private void HideInventoryOverflowPanel()
+        {
+            if (inventoryOverflowPanel != null)
+            {
+                inventoryOverflowPanel.SetActive(false);
+            }
+        }
+
+        private void ResolveInventoryOverflowByReplacing(int slotIndex)
+        {
+            if (!awaitingInventoryOverflowDecision || playerItemInventory == null)
+            {
+                return;
+            }
+
+            if (!playerItemInventory.TryReplaceItemAt(slotIndex, pendingInventoryOverflowItem))
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision(commitMovement: true, destroyLoot: true);
+        }
+
+        private void ResolveInventoryOverflowByDestroyingLoot()
+        {
+            if (!awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision(commitMovement: true, destroyLoot: true);
+        }
+
+        private void CancelInventoryOverflowDecision()
+        {
+            if (!awaitingInventoryOverflowDecision)
+            {
+                return;
+            }
+
+            CompleteInventoryOverflowDecision(commitMovement: false, destroyLoot: false);
+        }
+
+        private void CompleteInventoryOverflowDecision(bool commitMovement, bool destroyLoot)
+        {
+            if (board != null && destroyLoot)
+            {
+                board.TryDestroyPieceAt(pendingInventoryOverflowPosition, DestructionReason.ItemPickup);
+            }
+
+            if (commitMovement)
+            {
+                pendingLootCommitAction?.Invoke();
+            }
+            else
+            {
+                pendingLootCancelAction?.Invoke();
+            }
+
+            awaitingInventoryOverflowDecision = false;
+            pendingInventoryOverflowItem = default;
+            pendingInventoryOverflowPosition = default;
+            HideInventoryOverflowPanel();
+            SetBoardInputLock(false);
+            ClearPendingLootDecisionState();
+            UpdateBubbleAnimationState();
+            UpdateUI();
+        }
+
+        private void ClearPendingLootDecisionState()
+        {
+            pendingLootCommitAction = null;
+            pendingLootCancelAction = null;
+        }
+
         // CODEX BOSS PR2
         private void ConfigureBossChallengeButtons()
         {
@@ -3091,6 +5278,11 @@ namespace GameCore
             var bossState = CurrentBossState;
             bossState.bossAlive = fightBoss;
             CurrentBossState = bossState;
+
+            if (!fightBoss)
+            {
+                ClearBossAttackState();
+            }
 
             if (fightBoss)
             {
@@ -4028,8 +6220,8 @@ namespace GameCore
 
             if (chooseHeart)
             {
-                maxHP = Mathf.Max(1, maxHP + 1);
-                CurrentHP = Mathf.Min(maxHP, CurrentHP + 1);
+                maxHearts = Mathf.Max(1, maxHearts + 1);
+                CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + 2);
             }
             else
             {
@@ -4054,7 +6246,199 @@ namespace GameCore
                 return;
             }
 
+            if (isBossPowerAccessActive && bossPowerInventory.Count > 0)
+            {
+                var powers = bossPowerInventory.Powers;
+                var builder = new System.Text.StringBuilder();
+                builder.Append("Boss Powers (hold): ");
+                var clampedSelection = Mathf.Clamp(bossPowerSelectedIndex, 0, powers.Count - 1);
+                var visible = Mathf.Clamp(maxBossPowersVisible, 1, bossPowerInventory.MaxSlots);
+                var start = Mathf.Clamp(clampedSelection - (visible / 2), 0, Mathf.Max(0, powers.Count - visible));
+                var end = Mathf.Min(powers.Count, start + visible);
+                for (var i = start; i < end; i++)
+                {
+                    if (i > start)
+                    {
+                        builder.Append(" | ");
+                    }
+
+                    var power = powers[i];
+                    var cooldown = GetBossPowerCooldownRemaining(power);
+                    if (i == clampedSelection)
+                    {
+                        builder.Append('[');
+                    }
+
+                    builder.Append(power);
+                    if (cooldown > 0)
+                    {
+                        builder.Append($" CD:{cooldown}");
+                    }
+                    else
+                    {
+                        builder.Append(" READY");
+                    }
+
+                    if (i == clampedSelection)
+                    {
+                        builder.Append(']');
+                    }
+                }
+
+                if (powers.Count > visible)
+                {
+                    builder.Append("  < >");
+                }
+
+                bossPowersText.text = builder.ToString();
+                return;
+            }
+
             bossPowersText.text = bossPowerInventory.BuildDisplayString();
+        }
+
+
+        private void InitializeBossPowerCooldowns()
+        {
+            bossPowerCooldowns.Clear();
+            if (bossPowerInventory == null)
+            {
+                return;
+            }
+
+            var powers = bossPowerInventory.Powers;
+            for (var i = 0; i < powers.Count; i++)
+            {
+                var power = powers[i];
+                if (power == BossPower.None)
+                {
+                    continue;
+                }
+
+                bossPowerCooldowns[power] = 0;
+            }
+        }
+
+        private void TickBossPowerCooldowns()
+        {
+            if (bossPowerCooldowns.Count == 0)
+            {
+                return;
+            }
+
+            var powers = new List<BossPower>(bossPowerCooldowns.Keys);
+            for (var i = 0; i < powers.Count; i++)
+            {
+                var power = powers[i];
+                var remaining = bossPowerCooldowns[power];
+                if (remaining <= 0)
+                {
+                    continue;
+                }
+
+                bossPowerCooldowns[power] = Mathf.Max(0, remaining - 1);
+            }
+
+            if (isBossPowerAccessActive)
+            {
+                UpdateBossPowerUI();
+            }
+        }
+
+        public bool HasBossPowersForAccess()
+        {
+            return bossPowerInventory != null && bossPowerInventory.Count > 0;
+        }
+
+        public bool IsBossPowerAccessActive => isBossPowerAccessActive;
+
+        public void BeginBossPowerAccess()
+        {
+            if (!HasBossPowersForAccess())
+            {
+                return;
+            }
+
+            isBossPowerAccessActive = true;
+            bossPowerSelectedIndex = Mathf.Clamp(bossPowerSelectedIndex, 0, bossPowerInventory.Count - 1);
+            UpdateBossPowerUI();
+        }
+
+        public void EndBossPowerAccess()
+        {
+            if (!isBossPowerAccessActive)
+            {
+                return;
+            }
+
+            isBossPowerAccessActive = false;
+            UpdateBossPowerUI();
+        }
+
+        public void CycleBossPowerSelection(int direction)
+        {
+            if (!isBossPowerAccessActive || bossPowerInventory == null || bossPowerInventory.Count == 0 || direction == 0)
+            {
+                return;
+            }
+
+            var count = bossPowerInventory.Count;
+            bossPowerSelectedIndex = (bossPowerSelectedIndex + direction) % count;
+            if (bossPowerSelectedIndex < 0)
+            {
+                bossPowerSelectedIndex += count;
+            }
+
+            UpdateBossPowerUI();
+        }
+
+        public int GetBossPowerCooldownRemaining(BossPower power)
+        {
+            if (power == BossPower.None)
+            {
+                return 0;
+            }
+
+            return bossPowerCooldowns.TryGetValue(power, out var remaining) ? remaining : 0;
+        }
+
+        public bool TryUseSelectedBossPower()
+        {
+            if (!isBossPowerAccessActive || bossPowerInventory == null || bossPowerInventory.Count == 0)
+            {
+                return false;
+            }
+
+            var index = Mathf.Clamp(bossPowerSelectedIndex, 0, bossPowerInventory.Count - 1);
+            return TryUseBossPower(bossPowerInventory.Powers[index]);
+        }
+
+        private bool TryUseBossPower(BossPower power)
+        {
+            if (power == BossPower.None || bossPowerInventory == null || !bossPowerInventory.HasPower(power))
+            {
+                return false;
+            }
+
+            if (!CanUseManualAbility())
+            {
+                return false;
+            }
+
+            if (GetBossPowerCooldownRemaining(power) > 0)
+            {
+                return false;
+            }
+
+            var energyCost = Mathf.Max(0, defaultBossPowerEnergyCost);
+            if (energyCost > 0 && !TrySpendEnergy(energyCost))
+            {
+                return false;
+            }
+
+            bossPowerCooldowns[power] = Mathf.Max(0, defaultBossPowerCooldownTurns);
+            UpdateUI();
+            return true;
         }
 
         // CODEX BOSS PR5
@@ -4179,6 +6563,7 @@ namespace GameCore
             if (bossPowerInventory != null)
             {
                 bossPowerInventory.TryRemovePower(pendingBossPowerLossDiscard);
+                bossPowerCooldowns.Remove(pendingBossPowerLossDiscard);
             }
 
             SaveBossPowerInventory();
@@ -4218,6 +6603,7 @@ namespace GameCore
             if (bossPowerInventory != null)
             {
                 bossPowerInventory.TryRemovePower(power);
+                bossPowerCooldowns.Remove(power);
             }
 
             if (bossPowerDiscardPanel != null)
@@ -4254,6 +6640,7 @@ namespace GameCore
             var index = UnityEngine.Random.Range(0, bossPowerInventory.Count);
             var power = bossPowerInventory.Powers[index];
             bossPowerInventory.TryRemovePower(power);
+            bossPowerCooldowns.Remove(power);
             UpdateBossPowerUI();
             SaveBossPowerInventory();
             RegisterBossPowerLostThisRun(power);
@@ -4534,6 +6921,14 @@ namespace GameCore
             }
 
             var added = bossPowerInventory != null && bossPowerInventory.TryAddPower(power);
+            if (added)
+            {
+                bossPowerCooldowns[power] = 0;
+                if (power == BossPower.PickupMagnet)
+                {
+                    TryApplyPickupRadiusUpgrade(false);
+                }
+            }
             if (!added)
             {
                 Debug.LogWarning($"Failed to add boss power {power}; inventory may be full.", this);
@@ -4603,6 +6998,7 @@ namespace GameCore
             }
 
             bossPowerInventory.ReplacePowers(parsed);
+            InitializeBossPowerCooldowns();
         }
     }
 }
