@@ -413,10 +413,10 @@ namespace GameCore
 
         private struct MonsterState
         {
+            public bool IsIdle;
             public bool IsAngry;
             public bool IsAdjacencyTriggered;
             public bool IsHurt;
-            public bool IsCrying;
             public bool IsEnraged;
             public bool IsTired;
             public bool IsSleeping;
@@ -2336,9 +2336,9 @@ namespace GameCore
                 {
                     var shouldSpawnAdjacencyTelegraph = state.IsAdjacencyTriggered;
                     state.IsAngry = false;
+                    state.IsIdle = false;
                     state.IsAdjacencyTriggered = false;
                     state.IsHurt = false;
-                    state.IsCrying = false;
                     state.IsEnraged = true;
                     if (IsTelegraphOnlyOnEnrage())
                     {
@@ -2442,9 +2442,9 @@ namespace GameCore
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
                 state.IsAngry = false;
+                state.IsIdle = false;
                 state.IsAdjacencyTriggered = false;
                 state.IsHurt = false;
-                state.IsCrying = false;
                 state.IsEnraged = false;
                 state.IsConfused = false;
                 state.IsSleeping = false;
@@ -2495,10 +2495,10 @@ namespace GameCore
 
             state.TargetTile = targetTile;
             state.CurrentTile = new Vector2Int(piece.X, piece.Y);
+            state.IsIdle = false;
             state.IsAngry = true;
             state.IsAdjacencyTriggered = triggeredByAdjacency;
             state.IsHurt = false;
-            state.IsCrying = false;
             state.IsEnraged = false;
             state.IsTired = false;
             state.IsSleeping = false;
@@ -2528,9 +2528,9 @@ namespace GameCore
         {
             return new MonsterState
             {
+                IsIdle = false,
                 IsAngry = false,
                 IsHurt = false,
-                IsCrying = false,
                 IsEnraged = false,
                 IsTired = false,
                 IsSleeping = false,
@@ -2614,13 +2614,20 @@ namespace GameCore
                 return false;
             }
 
+            if (monsterAggroConfig != null && !monsterAggroConfig.requireHpSurvivalCheck)
+            {
+                return true;
+            }
+
             if (!IsHpSurvivalCheckRequired())
             {
                 return true;
             }
 
             var predictedHP = GetMonsterHitPoints(piece);
-            var ticksToPredict = 2;
+            var ticksToPredict = monsterAggroConfig != null
+                ? monsterAggroConfig.turnsBeforeAttack
+                : 2;
             for (var tick = 0; tick < ticksToPredict; tick++)
             {
                 predictedHP -= PredictGuaranteedDamageNextTick(piece);
@@ -2642,10 +2649,10 @@ namespace GameCore
 
             var pieceId = piece.GetInstanceID();
             var state = GetOrCreateMonsterState(piece);
+            state.IsIdle = false;
             state.IsAngry = false;
             state.IsAdjacencyTriggered = false;
             state.IsHurt = true;
-            state.IsCrying = true;
             state.IsEnraged = false;
             state.IsTired = false;
             state.IsSleeping = false;
@@ -2738,13 +2745,13 @@ namespace GameCore
             var survivesFull = WillMonsterSurviveFullAttackCycle(piece);
 
             state.IsAngry = false;
+            state.IsIdle = false;
             state.IsAdjacencyTriggered = false;
             state.IsHurt = false;
-            state.IsCrying = false;
 
             if (diesNext)
             {
-                state.IsCrying = true;
+                state.IsHurt = true;
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
             }
@@ -2825,7 +2832,12 @@ namespace GameCore
 
         private bool IsHpSurvivalCheckRequired()
         {
-            return monsterAggroConfig == null || monsterAggroConfig.requireHpSurvivalCheck;
+            if (monsterAggroConfig == null)
+            {
+                return true;
+            }
+
+            return monsterAggroConfig.requireHpSurvivalCheck;
         }
 
         private void ApplyMonsterVisualState(Piece piece, MonsterState state)
@@ -2836,7 +2848,7 @@ namespace GameCore
             }
 
             piece.SetMonsterEnragedVisual(state.IsEnraged || state.IsAngry);
-            piece.SetMonsterOutStateVisual(state.IsCrying || state.IsHurt);
+            piece.SetMonsterOutStateVisual(state.IsHurt);
         }
 
         private void ReevaluateAllMonsterEmotionalStates()
