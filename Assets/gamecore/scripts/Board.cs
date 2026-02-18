@@ -646,7 +646,113 @@ namespace GameCore
                 return false;
             }
 
-            return CanMatchPieceInOneSwap(new Vector2Int(monster.X, monster.Y));
+            return CanMatchPieceWithinEnergyDepth(new Vector2Int(monster.X, monster.Y), 1);
+        }
+
+        public bool CanMatchPieceWithinEnergyDepth(Vector2Int monsterPosition, int availableEnergy)
+        {
+            if (availableEnergy <= 0)
+            {
+                return false;
+            }
+
+            if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
+            {
+                return false;
+            }
+
+            var originalGrid = CloneGridState(monsterPosition);
+            if (!originalGrid.HasMonster)
+            {
+                return false;
+            }
+
+            try
+            {
+                var maxDepth = Mathf.Min(2, availableEnergy);
+                return SearchDepth(originalGrid, monsterPosition, maxDepth, 0);
+            }
+            finally
+            {
+                RestoreGridState(originalGrid);
+            }
+        }
+
+        private bool SearchDepth(SimulationState state, Vector2Int monsterPos, int maxDepth, int currentDepth)
+        {
+            if (currentDepth >= maxDepth)
+            {
+                return false;
+            }
+
+            var legalSwaps = GetAllLegalSwaps(state);
+            for (var i = 0; i < legalSwaps.Count; i++)
+            {
+                var branchState = CloneGridState(state);
+                ApplySwap(branchState, legalSwaps[i]);
+
+                if (!ResolveAllMatchesAndCascades(branchState))
+                {
+                    continue;
+                }
+
+                if (WasMonsterDirectlyMatched(branchState, monsterPos))
+                {
+                    return true;
+                }
+
+                if (SearchDepth(branchState, monsterPos, maxDepth, currentDepth + 1))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool WasMonsterDirectlyMatched(SimulationState state, Vector2Int monsterPos)
+        {
+            return state.LastMatchGroupPositions.Contains(monsterPos)
+                || state.MonsterMatchedDuringResolve;
+        }
+
+        private bool ResolveAllMatchesAndCascades(SimulationState state)
+        {
+            var anyMatch = false;
+            state.MonsterMatchedDuringResolve = false;
+
+            while (true)
+            {
+                var matches = FindMatches(state);
+                if (matches.Count == 0)
+                {
+                    break;
+                }
+
+                anyMatch = true;
+                state.LastMatchGroupPositions.Clear();
+                for (var i = 0; i < matches.Count; i++)
+                {
+                    var position = matches[i];
+                    if (!IsInBounds(position.x, position.y))
+                    {
+                        continue;
+                    }
+
+                    state.LastMatchGroupPositions.Add(position);
+                    if (state.Cells[position.x, position.y].IsTargetMonster)
+                    {
+                        state.MonsterMatchedDuringResolve = true;
+                    }
+
+                    RemovePiece(state, position);
+                }
+
+                ApplyGravity(state);
+                RefillBoardDeterministic(state);
+            }
+
+            return anyMatch;
         }
 
         public bool CanPlayerKillMonsterInTwoTurns(
@@ -797,7 +903,9 @@ namespace GameCore
             {
                 Cells = cells,
                 RandomState = branchSeed,
-                HasMonster = hasMonster
+                HasMonster = hasMonster,
+                MonsterMatchedDuringResolve = false,
+                LastMatchGroupPositions = new HashSet<Vector2Int>()
             };
         }
 
@@ -808,8 +916,25 @@ namespace GameCore
             {
                 Cells = cloneCells,
                 RandomState = source.RandomState,
-                HasMonster = source.HasMonster
+                HasMonster = source.HasMonster,
+                MonsterMatchedDuringResolve = source.MonsterMatchedDuringResolve,
+                LastMatchGroupPositions = new HashSet<Vector2Int>(source.LastMatchGroupPositions)
             };
+        }
+
+        private SimulationState CloneGridState(Vector2Int monsterPosition)
+        {
+            return CreateSimulationState(monsterPosition);
+        }
+
+        private SimulationState CloneGridState(SimulationState source)
+        {
+            return CloneSimulationState(source);
+        }
+
+        private void RestoreGridState(SimulationState state)
+        {
+            _ = state;
         }
 
         private SimPiece CreateSimPiece(Piece piece, int x, int y, bool isTargetMonster)
@@ -908,6 +1033,26 @@ namespace GameCore
             return createsMatch;
         }
 
+        private List<SimSwap> GetAllLegalSwaps(SimulationState state)
+        {
+            var swaps = new List<SimSwap>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    TryAddReachableSwap(state, x, y, x + 1, y, 0, swaps);
+                    TryAddReachableSwap(state, x, y, x, y + 1, 0, swaps);
+                }
+            }
+
+            return swaps;
+        }
+
+        private void ApplySwap(SimulationState state, SimSwap swap)
+        {
+            ApplySimulationSwap(state, swap);
+        }
+
         private void ApplySimulationSwap(SimulationState state, SimSwap swap)
         {
             SwapSimCells(state.Cells, swap.X1, swap.Y1, swap.X2, swap.Y2);
@@ -949,6 +1094,27 @@ namespace GameCore
 
                 ApplySimulationGravity(state);
             }
+        }
+
+        private List<Vector2Int> FindMatches(SimulationState state)
+        {
+            return FindSimulationMatches(state.Cells);
+        }
+
+        private void RemovePiece(SimulationState state, Vector2Int position)
+        {
+            state.Cells[position.x, position.y] = SimPiece.Empty;
+        }
+
+        private void ApplyGravity(SimulationState state)
+        {
+            ApplySimulationGravity(state);
+        }
+
+        private void RefillBoardDeterministic(SimulationState state)
+        {
+            // Refill is part of gravity in simulation path.
+            _ = state;
         }
 
         private List<Vector2Int> FindSimulationMatches(SimPiece[,] cells)
@@ -1105,6 +1271,8 @@ namespace GameCore
             public SimPiece[,] Cells;
             public int RandomState;
             public bool HasMonster;
+            public bool MonsterMatchedDuringResolve;
+            public HashSet<Vector2Int> LastMatchGroupPositions = new HashSet<Vector2Int>();
         }
 
         private readonly struct SimSwap
