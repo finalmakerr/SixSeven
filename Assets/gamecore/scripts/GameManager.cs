@@ -1504,7 +1504,17 @@ namespace GameCore
                 ProcessBossTumorTurn();
             }
 
-            RegenerateEnergyAtPlayerTurnStart();
+            int previousEnergy = energy;
+            int gain = CalculateTurnStartEnergyGain();
+            if (gain > 0)
+            {
+                energy = Mathf.Min(maxEnergy, energy + gain);
+            }
+
+            hasGainedEnergy = energy > previousEnergy;
+            UpdateTiredState();
+            UpdateUI();
+
             HandleStartOfPlayerTurn();
             if (!isPlayerActionPhase)
             {
@@ -1533,43 +1543,28 @@ namespace GameCore
             isPlayerActionPhase = true;
         }
 
-        private void RegenerateEnergyAtPlayerTurnStart()
+        private int CalculateTurnStartEnergyGain()
         {
-            if (maxEnergy <= 0)
-            {
-                energy = 0;
-                hasGainedEnergy = false;
-                return;
-            }
-
-            int previousEnergy = energy;
+            int gain = 1;
             if (iceEnergyPenaltyActive)
             {
                 iceEnergyPenaltyActive = false;
-            }
-            else if (pendingIceEnergyCompensation)
-            {
-                energy = Mathf.Min(maxEnergy, energy + 2);
-                pendingIceEnergyCompensation = false;
-                if (iceStatusIcon != null)
-                {
-                    iceStatusIcon.SetActive(false);
-                }
-                ShowFloatingText("+2 Energy", Color.cyan);
-            }
-            else if (pendingEntangleCompensation)
-            {
-                energy = Mathf.Min(maxEnergy, energy + 2);
-                pendingEntangleCompensation = false;
-            }
-            else
-            {
-                energy = Mathf.Min(maxEnergy, energy + 1);
+                return 0;
             }
 
-            hasGainedEnergy = energy > previousEnergy;
-            UpdateTiredState();
-            UpdateUI();
+            if (pendingIceEnergyCompensation)
+            {
+                pendingIceEnergyCompensation = false;
+                return 2;
+            }
+
+            if (pendingEntangleCompensation)
+            {
+                pendingEntangleCompensation = false;
+                return 2;
+            }
+
+            return gain;
         }
 
 
