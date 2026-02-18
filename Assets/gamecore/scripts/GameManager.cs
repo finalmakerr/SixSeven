@@ -330,11 +330,9 @@ namespace GameCore
         private int pickupRadius;
         private bool hasBossPickupRadiusUpgrade;
         private bool hasShopPickupRadiusUpgrade;
-        private bool isShieldActive;
-        private bool shieldJustActivated;
-        private bool shieldCooldownJustStarted;
-        private int shieldTurnsRemaining;
-        private int shieldCooldownTurnsRemaining;
+        private bool isBubbleActive;
+        private int bubbleTurnsRemaining;
+        private int bubbleCooldownRemaining;
         private bool isMeditating;
         private int meditationTurnsRemaining;
         private int toxicStacks;
@@ -392,6 +390,7 @@ namespace GameCore
         private bool isResolvingMonsterAttack;
         public bool IsPlayerStunned => playerAnimationStateController != null && playerAnimationStateController.IsStunned;
         public bool IsBugadaActive => bugadaTurnsRemaining > 0;
+        public bool IsShielded => isBubbleActive;
         public GameBalanceConfig BalanceConfig => balanceConfig;
 
         // CODEX CHEST PR2
@@ -514,7 +513,7 @@ namespace GameCore
             }
 
             RegisterBoardEvents();
-            UpdateShieldAnimationState();
+            UpdateBubbleAnimationState();
         }
 
         private void OnDisable()
@@ -601,11 +600,9 @@ namespace GameCore
             InitializeSpecialPowerCooldowns();
             InitializeBossPowerCooldowns();
             EndBossPowerAccess();
-            SetShieldActive(false);
-            shieldJustActivated = false;
-            shieldCooldownJustStarted = false;
-            shieldTurnsRemaining = 0;
-            shieldCooldownTurnsRemaining = 0;
+            SetBubbleActive(false);
+            bubbleTurnsRemaining = 0;
+            bubbleCooldownRemaining = 0;
             CancelMeditation();
             ClearTransientEmotionFlags();
             isStunned = false;
@@ -1115,51 +1112,46 @@ namespace GameCore
             UpdateUI();
         }
 
-        public bool TryActivateShield()
+        public bool TryActivateBubble()
         {
             if (!CanUseManualAbility())
             {
                 return false;
             }
 
-            if (isShieldActive)
+            if (bubbleCooldownRemaining > 0)
             {
                 return false;
             }
 
-            if (shieldCooldownTurnsRemaining > 0)
+            if (isBubbleActive)
             {
                 return false;
             }
 
-            if (playerItemInventory == null || !playerItemInventory.HasItem(PlayerItemType.Shield))
+            const int bubbleEnergyCost = 2;
+            if (!HasEnoughEnergy(bubbleEnergyCost))
             {
                 return false;
             }
 
-            const int shieldEnergyCost = 2;
-            if (!HasEnoughEnergy(shieldEnergyCost))
+            if (!TrySpendEnergy(bubbleEnergyCost))
             {
-                return false;
-            }
-
-            if (!playerItemInventory.TryConsumeItem(PlayerItemType.Shield))
-            {
-                return false;
-            }
-
-            if (!TrySpendEnergy(shieldEnergyCost))
-            {
-                playerItemInventory.TryAddItem(PlayerItemType.Shield);
                 return false;
             }
 
             CancelMeditation();
-            SetShieldActive(true);
-            shieldTurnsRemaining = 2;
-            shieldJustActivated = true;
+            SetBubbleActive(true);
+            bubbleTurnsRemaining = 2;
+            bubbleCooldownRemaining = 0;
+            ClearPlayerDebuffs();
             UpdateUI();
             return true;
+        }
+
+        public bool TryActivateShield()
+        {
+            return TryActivateBubble();
         }
 
         public bool TryActivateMeditation()
@@ -1223,35 +1215,33 @@ namespace GameCore
                 return false;
             }
 
-            if (!isShieldActive)
+            if (!isBubbleActive)
             {
                 return false;
             }
 
-            SetShieldActive(false);
-            shieldTurnsRemaining = 0;
-            BeginShieldCooldown();
+            EndBubbleAndStartCooldown();
             UpdateUI();
             return true;
         }
 
         private bool HasShieldVisual()
         {
-            return isShieldActive || (playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.Shield));
+            return isBubbleActive || (playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.Shield));
         }
 
-        private void SetShieldActive(bool active)
+        private void SetBubbleActive(bool active)
         {
-            if (isShieldActive == active)
+            if (isBubbleActive == active)
             {
                 return;
             }
 
-            isShieldActive = active;
-            UpdateShieldAnimationState();
+            isBubbleActive = active;
+            UpdateBubbleAnimationState();
         }
 
-        private void UpdateShieldAnimationState()
+        private void UpdateBubbleAnimationState()
         {
             UpdatePlayerAnimationFlags();
         }
@@ -1414,15 +1404,22 @@ namespace GameCore
                 }
                 else if (!IsBugadaActive)
                 {
-                    toxicStacks += 1;
-                    if (toxicStacks >= balanceConfig.ToxicGraceStacks)
+                    if (isBubbleActive)
                     {
-                        toxicDrainActive = true;
-                        ApplyEnergyDrain(1);
+                        toxicDrainActive = false;
                     }
                     else
                     {
-                        toxicDrainActive = false;
+                        toxicStacks += 1;
+                        if (toxicStacks >= balanceConfig.ToxicGraceStacks)
+                        {
+                            toxicDrainActive = true;
+                            ApplyEnergyDrain(1);
+                        }
+                        else
+                        {
+                            toxicDrainActive = false;
+                        }
                     }
                 }
             }
@@ -1490,7 +1487,7 @@ namespace GameCore
             }
 
             TickBugadaDuration();
-            TickShieldStatus();
+            TickBubbleStatus();
             turnsSurvivedThisLevel += 1;
             EvaluateMiniGoalsProgress();
             UpdateWorriedState();
@@ -1728,6 +1725,11 @@ namespace GameCore
 
         private void ApplyOrRefreshBurn()
         {
+            if (isBubbleActive)
+            {
+                return;
+            }
+
             // Integrate with debuff system:
             // If burn exists -> refresh duration.
             // Else -> apply burn with base duration.
@@ -1737,6 +1739,11 @@ namespace GameCore
 
         private void ApplyIceHazard()
         {
+            if (isBubbleActive)
+            {
+                return;
+            }
+
             isSlowedByIce = true;
             forceMoveNextTurn = true;
             iceEnergyPenaltyActive = true;
@@ -1950,7 +1957,7 @@ namespace GameCore
                 case PlayerItemType.SecondChance:
                     if (TryAddInventoryItem(itemType))
                     {
-                        UpdateShieldAnimationState();
+                        UpdateBubbleAnimationState();
                         UpdateUI();
                         return PickupItemResult.PickedUp;
                     }
@@ -2006,7 +2013,7 @@ namespace GameCore
 
             var missingHp = Mathf.Max(0, ((maxHearts * 2) - CurrentHP + 1) / 2);
             var missingEnergy = Mathf.Max(0, maxEnergy - energy);
-            var shieldCount = GetShieldCount();
+            var shieldCount = GetShieldInventoryCount();
 
             var potionDropChance = missingHp > 0 ? missingHp * 2 : 0;
             if (IsHardcoreEnabled())
@@ -2057,15 +2064,9 @@ namespace GameCore
             return playerItemInventory.Count < playerItemInventory.MaxSlots;
         }
 
-        private int GetShieldCount()
+        private int GetShieldInventoryCount()
         {
-            var inventoryShieldCount = playerItemInventory != null ? playerItemInventory.CountOf(PlayerItemType.Shield) : 0;
-            if (isShieldActive)
-            {
-                inventoryShieldCount += 1;
-            }
-
-            return inventoryShieldCount;
+            return playerItemInventory != null ? playerItemInventory.CountOf(PlayerItemType.Shield) : 0;
         }
 
         // CODEX STAGE 7D: Bugada activation + duration handling.
@@ -2115,43 +2116,28 @@ namespace GameCore
             UpdateUI();
         }
 
-        private void TickShieldStatus()
+        private void TickBubbleStatus()
         {
             var updated = false;
 
-            if (isShieldActive && shieldTurnsRemaining > 0)
+            if (isBubbleActive)
             {
-                if (shieldJustActivated)
+                bubbleTurnsRemaining -= 1;
+                if (bubbleTurnsRemaining <= 0)
                 {
-                    shieldJustActivated = false;
+                    SetBubbleActive(false);
+                    bubbleTurnsRemaining = 0;
+                    bubbleCooldownRemaining = 2;
                 }
-                else
-                {
-                    shieldTurnsRemaining -= 1;
-                    if (shieldTurnsRemaining <= 0)
-                    {
-                        SetShieldActive(false);
-                        BeginShieldCooldown();
-                        updated = true;
-                    }
-                }
+
+                updated = true;
             }
 
-            if (shieldCooldownTurnsRemaining > 0)
+            if (bubbleCooldownRemaining > 0)
             {
-                if (shieldCooldownJustStarted)
-                {
-                    shieldCooldownJustStarted = false;
-                }
-                else
-                {
-                    shieldCooldownTurnsRemaining -= 1;
-                    if (shieldCooldownTurnsRemaining < 0)
-                    {
-                        shieldCooldownTurnsRemaining = 0;
-                    }
-                    updated = true;
-                }
+                bubbleCooldownRemaining -= 1;
+                bubbleCooldownRemaining = Mathf.Max(0, bubbleCooldownRemaining);
+                updated = true;
             }
 
             if (updated)
@@ -2160,10 +2146,11 @@ namespace GameCore
             }
         }
 
-        private void BeginShieldCooldown()
+        private void EndBubbleAndStartCooldown()
         {
-            shieldCooldownTurnsRemaining = 3;
-            shieldCooldownJustStarted = true;
+            SetBubbleActive(false);
+            bubbleTurnsRemaining = 0;
+            bubbleCooldownRemaining = 2;
         }
 
         private void ResetBugadaState()
@@ -3232,7 +3219,7 @@ namespace GameCore
             UpdatePlayerAnimationFlags();
         }
 
-        private void ClearPlayerDebuffsForBugada()
+        private void ClearPlayerDebuffs()
         {
             ClearToxicStacks();
             wasOnBottomRowLastTurn = false;
@@ -3250,6 +3237,11 @@ namespace GameCore
             isStunned = false;
             stunnedTurnsRemaining = 0;
             UpdatePlayerAnimationFlags();
+        }
+
+        private void ClearPlayerDebuffsForBugada()
+        {
+            ClearPlayerDebuffs();
         }
 
 
@@ -3831,11 +3823,9 @@ namespace GameCore
                 return;
             }
 
-            if (isShieldActive)
+            if (isBubbleActive)
             {
-                SetShieldActive(false);
-                shieldTurnsRemaining = 0;
-                BeginShieldCooldown();
+                EndBubbleAndStartCooldown();
                 UpdateUI();
                 return;
             }
@@ -3891,7 +3881,7 @@ namespace GameCore
 
         private void TriggerStunnedAnimation()
         {
-            if (IsBugadaActive)
+            if (IsBugadaActive || isBubbleActive)
             {
                 return;
             }
@@ -4350,7 +4340,7 @@ namespace GameCore
             pendingInventoryOverflowPosition = default;
             HideInventoryOverflowPanel();
             SetBoardInputLock(false);
-            UpdateShieldAnimationState();
+            UpdateBubbleAnimationState();
             UpdateUI();
         }
 
