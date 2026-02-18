@@ -2202,6 +2202,15 @@ namespace GameCore
 
                 var remaining = item.ItemTurnsRemaining - 1;
                 item.UpdateItemTurns(remaining);
+                if (remaining == 1)
+                {
+                    ApplyLootFadeVisual(item, 0.75f);
+                }
+                else
+                {
+                    ApplyLootFadeVisual(item, 1f);
+                }
+
                 if (remaining <= 0)
                 {
                     expiredItems.Add(item);
@@ -2219,6 +2228,24 @@ namespace GameCore
                 StartCoroutine(FadeAndRemoveItem(item));
             }
 
+        }
+
+        private void ApplyLootFadeVisual(Piece piece, float alpha)
+        {
+            if (piece == null)
+            {
+                return;
+            }
+
+            var renderer = piece.GetComponent<SpriteRenderer>();
+            if (renderer == null)
+            {
+                return;
+            }
+
+            var color = renderer.color;
+            color.a = alpha;
+            renderer.color = color;
         }
 
         // CODEX STAGE 7B: fade expired items before removing them.
