@@ -176,9 +176,7 @@ namespace GameCore
         public void SetMonsterHurtVisual(float duration = 0.3f)
         {
             if (isPlayerPiece || isDead || isMatched)
-            {
                 return;
-            }
 
             StopCoroutine(nameof(HurtRoutine));
             StartCoroutine(HurtRoutine(duration));
@@ -431,9 +429,7 @@ namespace GameCore
         private void RefreshVisual()
         {
             if (spriteRenderer == null || isPlayerPiece)
-            {
                 return;
-            }
 
             if (isDead)
             {
@@ -443,7 +439,7 @@ namespace GameCore
             {
                 SetSprite(matchedSprite);
             }
-            else if (isHurt)
+            else if (isHurt) // Hurt temporarily overrides Enrage/OutState
             {
                 SetSprite(hurtSprite);
             }
