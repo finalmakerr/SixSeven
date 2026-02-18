@@ -623,6 +623,44 @@ namespace GameCore
             return CanMatchPieceInOneSwap(new Vector2Int(monster.X, monster.Y));
         }
 
+        public bool CanMatchPieceWithinTwoSwaps(Vector2Int monsterPosition)
+        {
+            if (!TryGetPieceAt(monsterPosition, out var monsterPiece) || !IsMatchable(monsterPiece))
+            {
+                return false;
+            }
+
+            var simulation = CreateSimulationState(monsterPosition);
+            if (!simulation.HasMonster)
+            {
+                return false;
+            }
+
+            var firstSwaps = EnumerateLegalSimulationSwaps(simulation);
+            for (var i = 0; i < firstSwaps.Count; i++)
+            {
+                var firstBranch = CloneSimulationState(simulation);
+                ApplySimulationSwap(firstBranch, firstSwaps[i]);
+                if (ResolveSimulationBoard(firstBranch))
+                {
+                    return true;
+                }
+
+                var secondSwaps = EnumerateLegalSimulationSwaps(firstBranch);
+                for (var j = 0; j < secondSwaps.Count; j++)
+                {
+                    var secondBranch = CloneSimulationState(firstBranch);
+                    ApplySimulationSwap(secondBranch, secondSwaps[j]);
+                    if (ResolveSimulationBoard(secondBranch))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         // CODEX RAGE SCALE FINAL
         public int GetMonsterRageMatchabilityScore(Vector2Int monsterPosition)
         {
@@ -683,6 +721,342 @@ namespace GameCore
             }
 
             return false;
+        }
+
+        private SimulationState CreateSimulationState(Vector2Int monsterPosition)
+        {
+            var cells = new SimPiece[width, height];
+            var hasMonster = false;
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    var piece = pieces[x, y];
+                    cells[x, y] = CreateSimPiece(piece, x, y, x == monsterPosition.x && y == monsterPosition.y);
+                    if (cells[x, y].IsTargetMonster)
+                    {
+                        hasMonster = true;
+                    }
+                }
+            }
+
+            var branchSeed = randomSeed ^ (monsterPosition.x * 48611) ^ (monsterPosition.y * 98473);
+            return new SimulationState
+            {
+                Cells = cells,
+                RandomState = branchSeed,
+                HasMonster = hasMonster
+            };
+        }
+
+        private SimulationState CloneSimulationState(SimulationState source)
+        {
+            var cloneCells = (SimPiece[,])source.Cells.Clone();
+            return new SimulationState
+            {
+                Cells = cloneCells,
+                RandomState = source.RandomState,
+                HasMonster = source.HasMonster
+            };
+        }
+
+        private SimPiece CreateSimPiece(Piece piece, int x, int y, bool isTargetMonster)
+        {
+            if (piece == null)
+            {
+                return SimPiece.Empty;
+            }
+
+            return new SimPiece
+            {
+                Occupied = true,
+                ColorIndex = piece.ColorIndex,
+                IsMatchable = IsMatchable(piece),
+                IsSwappable = IsSwappable(piece),
+                IsTargetMonster = isTargetMonster,
+                IsBossLocked = GameManager.Instance != null
+                    && GameManager.Instance.IsBossLevel
+                    && GameManager.Instance.CurrentBossState.bossAlive
+                    && x == GameManager.Instance.CurrentBossState.bossPosition.x
+                    && y == GameManager.Instance.CurrentBossState.bossPosition.y
+            };
+        }
+
+        private List<SimSwap> EnumerateLegalSimulationSwaps(SimulationState state)
+        {
+            var legalSwaps = new List<SimSwap>();
+            for (var x = 0; x < width; x++)
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    TryAddLegalSimulationSwap(state, x, y, x + 1, y, legalSwaps);
+                    TryAddLegalSimulationSwap(state, x, y, x, y + 1, legalSwaps);
+                }
+            }
+
+            return legalSwaps;
+        }
+
+        private void TryAddLegalSimulationSwap(SimulationState state, int x1, int y1, int x2, int y2, List<SimSwap> legalSwaps)
+        {
+            if (!IsInBounds(x2, y2))
+            {
+                return;
+            }
+
+            var first = state.Cells[x1, y1];
+            var second = state.Cells[x2, y2];
+            if (!first.IsSwappable || !second.IsSwappable || first.ColorIndex == second.ColorIndex)
+            {
+                return;
+            }
+
+            if (first.IsBossLocked || second.IsBossLocked)
+            {
+                return;
+            }
+
+            if (!WouldSimulationSwapCreateMatch(state.Cells, x1, y1, x2, y2))
+            {
+                return;
+            }
+
+            legalSwaps.Add(new SimSwap(x1, y1, x2, y2));
+        }
+
+        private bool WouldSimulationSwapCreateMatch(SimPiece[,] cells, int x1, int y1, int x2, int y2)
+        {
+            SwapSimCells(cells, x1, y1, x2, y2);
+            var createsMatch = HasSimulationMatchAt(cells, x1, y1) || HasSimulationMatchAt(cells, x2, y2);
+            SwapSimCells(cells, x1, y1, x2, y2);
+            return createsMatch;
+        }
+
+        private void ApplySimulationSwap(SimulationState state, SimSwap swap)
+        {
+            SwapSimCells(state.Cells, swap.X1, swap.Y1, swap.X2, swap.Y2);
+        }
+
+        private void SwapSimCells(SimPiece[,] cells, int x1, int y1, int x2, int y2)
+        {
+            var temp = cells[x1, y1];
+            cells[x1, y1] = cells[x2, y2];
+            cells[x2, y2] = temp;
+        }
+
+        private bool ResolveSimulationBoard(SimulationState state)
+        {
+            var cells = state.Cells;
+            while (true)
+            {
+                var toRemove = FindSimulationMatches(cells);
+                if (toRemove.Count == 0)
+                {
+                    return false;
+                }
+
+                for (var i = 0; i < toRemove.Count; i++)
+                {
+                    var position = toRemove[i];
+                    if (!IsInBounds(position.x, position.y))
+                    {
+                        continue;
+                    }
+
+                    if (cells[position.x, position.y].IsTargetMonster)
+                    {
+                        return true;
+                    }
+
+                    cells[position.x, position.y] = SimPiece.Empty;
+                }
+
+                ApplySimulationGravity(state);
+            }
+        }
+
+        private List<Vector2Int> FindSimulationMatches(SimPiece[,] cells)
+        {
+            var uniqueMatches = new HashSet<Vector2Int>();
+            for (var y = 0; y < height; y++)
+            {
+                var x = 0;
+                while (x < width)
+                {
+                    if (!cells[x, y].IsMatchable)
+                    {
+                        x++;
+                        continue;
+                    }
+
+                    var color = cells[x, y].ColorIndex;
+                    var start = x;
+                    x++;
+                    while (x < width && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+                    {
+                        x++;
+                    }
+
+                    if (x - start >= 3)
+                    {
+                        for (var runX = start; runX < x; runX++)
+                        {
+                            uniqueMatches.Add(new Vector2Int(runX, y));
+                        }
+                    }
+                }
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                var y = 0;
+                while (y < height)
+                {
+                    if (!cells[x, y].IsMatchable)
+                    {
+                        y++;
+                        continue;
+                    }
+
+                    var color = cells[x, y].ColorIndex;
+                    var start = y;
+                    y++;
+                    while (y < height && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+                    {
+                        y++;
+                    }
+
+                    if (y - start >= 3)
+                    {
+                        for (var runY = start; runY < y; runY++)
+                        {
+                            uniqueMatches.Add(new Vector2Int(x, runY));
+                        }
+                    }
+                }
+            }
+
+            return new List<Vector2Int>(uniqueMatches);
+        }
+
+        private void ApplySimulationGravity(SimulationState state)
+        {
+            var cells = state.Cells;
+            for (var x = 0; x < width; x++)
+            {
+                var writeY = 0;
+                for (var y = 0; y < height; y++)
+                {
+                    if (!cells[x, y].Occupied)
+                    {
+                        continue;
+                    }
+
+                    if (writeY != y)
+                    {
+                        cells[x, writeY] = cells[x, y];
+                        cells[x, y] = SimPiece.Empty;
+                    }
+
+                    writeY++;
+                }
+
+                for (var spawnY = writeY; spawnY < height; spawnY++)
+                {
+                    cells[x, spawnY] = new SimPiece
+                    {
+                        Occupied = true,
+                        ColorIndex = NextSimulationColorIndex(state),
+                        IsMatchable = true,
+                        IsSwappable = true,
+                        IsTargetMonster = false,
+                        IsBossLocked = false
+                    };
+                }
+            }
+        }
+
+        private int NextSimulationColorIndex(SimulationState state)
+        {
+            unchecked
+            {
+                state.RandomState = (state.RandomState * 1103515245) + 12345;
+            }
+
+            var value = state.RandomState & int.MaxValue;
+            return value % Mathf.Max(1, colorCount);
+        }
+
+        private bool HasSimulationMatchAt(SimPiece[,] cells, int x, int y)
+        {
+            if (!IsInBounds(x, y) || !cells[x, y].IsMatchable)
+            {
+                return false;
+            }
+
+            var color = cells[x, y].ColorIndex;
+            var horizontal = 1;
+            horizontal += CountSimulationDirection(cells, x, y, 1, 0, color);
+            horizontal += CountSimulationDirection(cells, x, y, -1, 0, color);
+            if (horizontal >= 3)
+            {
+                return true;
+            }
+
+            var vertical = 1;
+            vertical += CountSimulationDirection(cells, x, y, 0, 1, color);
+            vertical += CountSimulationDirection(cells, x, y, 0, -1, color);
+            return vertical >= 3;
+        }
+
+        private int CountSimulationDirection(SimPiece[,] cells, int startX, int startY, int stepX, int stepY, int color)
+        {
+            var count = 0;
+            var x = startX + stepX;
+            var y = startY + stepY;
+            while (IsInBounds(x, y) && cells[x, y].IsMatchable && cells[x, y].ColorIndex == color)
+            {
+                count++;
+                x += stepX;
+                y += stepY;
+            }
+
+            return count;
+        }
+
+        private sealed class SimulationState
+        {
+            public SimPiece[,] Cells;
+            public int RandomState;
+            public bool HasMonster;
+        }
+
+        private readonly struct SimSwap
+        {
+            public readonly int X1;
+            public readonly int Y1;
+            public readonly int X2;
+            public readonly int Y2;
+
+            public SimSwap(int x1, int y1, int x2, int y2)
+            {
+                X1 = x1;
+                Y1 = y1;
+                X2 = x2;
+                Y2 = y2;
+            }
+        }
+
+        private struct SimPiece
+        {
+            public bool Occupied;
+            public int ColorIndex;
+            public bool IsMatchable;
+            public bool IsSwappable;
+            public bool IsTargetMonster;
+            public bool IsBossLocked;
+
+            public static SimPiece Empty => default;
         }
 
         // CODEX RAGE SCALE FINAL
