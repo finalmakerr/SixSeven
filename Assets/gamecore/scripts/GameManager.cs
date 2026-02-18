@@ -228,7 +228,7 @@ namespace GameCore
 
         public bool IsMonsterEnraged(int pieceId)
         {
-            return monsterStates.TryGetValue(pieceId, out var state) && (state.IsAngry || state.IsEnraged);
+            return monsterStates.TryGetValue(pieceId, out var state) && state.IsEnraged;
         }
 
         public int GetEffectiveLevel()
@@ -2426,7 +2426,7 @@ namespace GameCore
                     state.HasCharmResistance = true;
                 }
 
-                if (state.IsEnraged && state.TurnsUntilAttack > 0)
+                if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack > 0)
                 {
                     state.TurnsUntilAttack--;
                 }
