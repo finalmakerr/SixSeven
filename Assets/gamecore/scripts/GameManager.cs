@@ -2472,7 +2472,7 @@ namespace GameCore
             }
         }
 
-        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile, bool triggeredByAdjacency)
+        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile, bool triggeredByAdjacency, bool allowTelegraph = true)
         {
             if (piece == null || piece.IsPlayer)
             {
@@ -2516,7 +2516,7 @@ namespace GameCore
             state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
 
-            if (!IsTelegraphOnlyOnEnrage())
+            if (allowTelegraph && !IsTelegraphOnlyOnEnrage())
             {
                 AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
                 if (triggeredByAdjacency)
@@ -2975,6 +2975,7 @@ namespace GameCore
 
             if (IsDamageTriggerAllowed() && damagedThisTurn.Count > 0)
             {
+                var requireHpSurvivalCheck = IsHpSurvivalCheckRequired();
                 var damagedPieces = new List<Piece>(damagedThisTurn.Count);
                 foreach (var pieceId in damagedThisTurn)
                 {
@@ -3013,14 +3014,13 @@ namespace GameCore
                         continue;
                     }
 
-                    if (WillMonsterSurviveUntilAttack(piece))
-                    {
-                        SetGenericMonsterAngry(piece, playerPosition, false);
-                    }
-                    else
+                    if (requireHpSurvivalCheck && !WillMonsterSurviveUntilAttack(piece))
                     {
                         EnterHurtState(piece);
+                        continue;
                     }
+
+                    SetGenericMonsterAngry(piece, playerPosition, false, allowTelegraph: false);
                 }
 
                 // Important: clear buffer after full processing.
