@@ -2330,6 +2330,7 @@ namespace GameCore
                     state.IsHurt = false;
                     state.IsCrying = false;
                     state.IsEnraged = true;
+                    AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
                     if (debugMode)
                     {
                         Debug.Log($"GenericMonsterState: piece {pieceId} transitioned to Enraged", this);
@@ -2479,7 +2480,6 @@ namespace GameCore
             state.IsAngry = true;
             state.TurnsUntilAttack = 2;
             monsterStates[pieceId] = state;
-            AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, targetTile);
             ApplyMonsterVisualState(piece, state);
 
             if (debugMode)
@@ -2537,6 +2537,84 @@ namespace GameCore
             }
 
             return damage;
+        }
+
+        private int GetPendingDamageThisTurn(Piece piece)
+        {
+            // Damage is committed immediately in current resolution paths.
+            // Keep hook for future delayed-damage systems.
+            return 0;
+        }
+
+        private int GetScheduledDotDamage(Piece piece)
+        {
+            if (piece == null)
+            {
+                return 0;
+            }
+
+            return piece.GetGuaranteedDebuffDamage();
+        }
+
+        public int GetPredictedEnvironmentDamage(Piece piece)
+        {
+            if (piece == null || board == null)
+            {
+                return 0;
+            }
+
+            if (!board.IsHazardTile(piece.X, piece.Y))
+            {
+                return 0;
+            }
+
+            return board.GetHazardDamageAt(piece.X, piece.Y);
+        }
+
+        private bool WillMonsterSurviveUntilAttack(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return false;
+            }
+
+            var predictedHP = GetMonsterHitPoints(piece);
+
+            // Include pending damage from current resolution.
+            predictedHP -= GetPendingDamageThisTurn(piece);
+
+            // Include DoT/poison ticks scheduled before next attack phase.
+            predictedHP -= GetScheduledDotDamage(piece);
+
+            // Include environment tick if applicable.
+            predictedHP -= GetPredictedEnvironmentDamage(piece);
+
+            return predictedHP > 0;
+        }
+
+        private void SetMonsterHurt(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            var state = GetOrCreateMonsterState(piece);
+            if (state.IsEnraged)
+            {
+                monsterStates[pieceId] = state;
+                ApplyMonsterVisualState(piece, state);
+                return;
+            }
+
+            state.IsAngry = false;
+            state.IsHurt = true;
+            state.IsCrying = false;
+            state.TurnsUntilAttack = 0;
+            monsterStates[pieceId] = state;
+            AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            ApplyMonsterVisualState(piece, state);
         }
 
         private bool WillMonsterSurviveFullAttackCycle(Piece piece)
@@ -2627,7 +2705,6 @@ namespace GameCore
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
                     state.TargetTile = playerPosition;
-                    AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, playerPosition);
                 }
             }
             else
@@ -2749,14 +2826,50 @@ namespace GameCore
 
             if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && damagedThisTurn.Count > 0)
             {
+                var damagedPieces = new List<Piece>(damagedThisTurn.Count);
                 foreach (var pieceId in damagedThisTurn)
                 {
                     if (TryFindPieceById(pieceId, out var piece))
                     {
-                        SetGenericMonsterAngry(piece, playerPosition);
+                        damagedPieces.Add(piece);
                     }
                 }
 
+                foreach (var piece in damagedPieces)
+                {
+                    if (piece == null || piece.IsPlayer)
+                    {
+                        continue;
+                    }
+
+                    if (!monsterStates.TryGetValue(piece.GetInstanceID(), out var state))
+                    {
+                        state = GetOrCreateMonsterState(piece);
+                    }
+
+                    // Do not override committed attack state.
+                    if (state.IsEnraged)
+                    {
+                        continue;
+                    }
+
+                    // Do not re-apply Angry repeatedly.
+                    if (state.IsAngry)
+                    {
+                        continue;
+                    }
+
+                    if (WillMonsterSurviveUntilAttack(piece))
+                    {
+                        SetGenericMonsterAngry(piece, playerPosition);
+                    }
+                    else
+                    {
+                        SetMonsterHurt(piece);
+                    }
+                }
+
+                // Important: clear buffer after full processing.
                 damagedThisTurn.Clear();
                 pendingMinorDamageAggro = false;
             }
