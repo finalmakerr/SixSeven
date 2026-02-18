@@ -5,6 +5,7 @@ namespace GameCore
     [System.Serializable]
     public class MonsterAggroConfig
     {
+        public int defaultMonsterHP = 3;
         public int enrageDuration = 1; // future-proof if we extend enrage window
         public int turnsBeforeAttack = 2;
         public int confusedDuration = 2;
