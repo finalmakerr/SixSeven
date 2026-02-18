@@ -8,9 +8,9 @@ public class GameBalanceConfig : ScriptableObject
     public int MinRunForLootRoll = 4;
 
     [Header("Loot Drop")]
-    [Range(0, 100)] public int BaseLootDropChance = 100;
-    [Range(0, 100)] public int LootDropReductionPerActiveLoot = 20;
-    [Range(0, 100)] public int MinimumLootDropChance = 10;
+    [Range(0, 100)] public int BaseLootDropChance = 95;
+    [Range(0, 100)] public int LootDropReductionPerActiveLoot = 18;
+    [Range(0, 100)] public int MinimumLootDropChance = 15;
 
     [Header("Hazard")]
     public HazardType DefaultHazardType = HazardType.Poison;
