@@ -31,6 +31,7 @@ namespace GameCore
         private TextMesh itemTurnsText;
         private TileDebuffType currentTileDebuff = TileDebuffType.None;
         private int tileDebuffDuration;
+        private MonsterVisualState monsterVisualState = MonsterVisualState.Idle;
 
         private void Awake()
         {
@@ -71,6 +72,22 @@ namespace GameCore
             {
                 ClearTileDebuff();
             }
+        }
+
+        public int GetGuaranteedDebuffDamage()
+        {
+            return currentTileDebuff == TileDebuffType.Entangled ? 1 : 0;
+        }
+
+        public void SetVisualState(MonsterVisualState state)
+        {
+            if (isPlayerPiece)
+            {
+                return;
+            }
+
+            monsterVisualState = state;
+            ApplySpecialVisual();
         }
 
         private void UpdateTileDebuffVisual()
@@ -310,10 +327,40 @@ namespace GameCore
             {
                 var tint = TumorTier >= 3 ? new Color(0.55f, 0.1f, 0.7f) : TumorTier == 2 ? new Color(0.7f, 0.15f, 0.15f) : new Color(0.85f, 0.3f, 0.3f);
                 spriteRenderer.color = tint;
+                ApplyMonsterVisualTint();
                 return;
             }
 
             spriteRenderer.color = Color.white;
+            ApplyMonsterVisualTint();
+        }
+
+        private void ApplyMonsterVisualTint()
+        {
+            if (spriteRenderer == null)
+            {
+                return;
+            }
+
+            var tint = Color.white;
+            switch (monsterVisualState)
+            {
+                case MonsterVisualState.Cry:
+                    tint = new Color(0.65f, 0.8f, 1f);
+                    break;
+                case MonsterVisualState.Hurt:
+                    tint = new Color(1f, 0.75f, 0.75f);
+                    break;
+                case MonsterVisualState.Angry:
+                    tint = new Color(1f, 0.55f, 0.55f);
+                    break;
+                case MonsterVisualState.Idle:
+                default:
+                    tint = Color.white;
+                    break;
+            }
+
+            spriteRenderer.color *= tint;
         }
 
         // CODEX CHEST PR1
