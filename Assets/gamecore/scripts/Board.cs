@@ -1108,6 +1108,14 @@ namespace GameCore
 
         private void RemovePiece(SimulationState state, Vector2Int position)
         {
+            var cell = state.Cells[position.x, position.y];
+
+            if (cell.IsTargetMonster)
+            {
+                state.MonsterMatchedDuringResolve = true;
+                state.HasMonster = false;
+            }
+
             state.Cells[position.x, position.y] = SimPiece.Empty;
         }
 
