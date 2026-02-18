@@ -362,10 +362,8 @@ namespace GameCore
         private bool hasTriggeredMonsterWindup;
         private bool pendingMinorDamageAggro;
         private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
-        private readonly Dictionary<int, Vector2Int> damagedPiecePositions = new Dictionary<int, Vector2Int>();
         private bool adjacencyAggroUsedThisTurn;
         private int monsterTurnCounter;
-        private readonly HashSet<int> damagedThisTurn = new HashSet<int>();
         private readonly Dictionary<int, MonsterState> monsterStates = new Dictionary<int, MonsterState>();
         // CODEX RAGE SCALE FINAL
         private bool monstersCanAttack;
@@ -614,6 +612,9 @@ namespace GameCore
             rageCooldownRemaining = 0;
             pendingMinorDamageAggro = false;
             damagedThisTurn.Clear();
+            adjacencyAggroUsedThisTurn = false;
+            monsterTurnCounter = 0;
+            monsterStates.Clear();
             HideComboText();
             displayedScore = Score;
             // CODEX: LEVEL_LOOP
@@ -694,6 +695,7 @@ namespace GameCore
             pendingMinorDamageAggro = false;
             damagedThisTurn.Clear();
             adjacencyAggroUsedThisTurn = false;
+            monsterTurnCounter = 0;
             monsterStates.Clear();
             // CODEX BOSS PR4
             UpdateBombDetonationSubscription();
@@ -1488,6 +1490,7 @@ namespace GameCore
             UpdateMonsterEnrageVisuals();
             if (CanEnemiesReactAtTurnEnd())
             {
+                adjacencyAggroUsedThisTurn = false;
                 TickRageCooldown(); // CODEX RAGE SCALE FINAL
                 EvaluateMonsterAggro();
                 UpdateMonsterStates();
@@ -2284,71 +2287,9 @@ namespace GameCore
 
         private void EvaluateMonsterAggro()
         {
-            if (board == null || !monstersCanAttack || isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
-            {
-                return;
-            }
-
-            if (!board.TryGetPlayerPosition(out var playerPosition))
-            {
-                return;
-            }
-
-            monsterTurnCounter++;
-            adjacencyAggroUsedThisTurn = false;
-
-            var adjacencyCandidates = new List<Piece>();
-            var offsets = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-            var highestHp = int.MinValue;
-            for (var i = 0; i < offsets.Length; i++)
-            {
-                var candidatePosition = playerPosition + offsets[i];
-                if (!board.TryGetPieceAt(candidatePosition, out var candidate) || candidate == null || candidate.IsPlayer)
-                {
-                    continue;
-                }
-
-                var candidateHp = GetMonsterHitPoints(candidate);
-                if (candidateHp > highestHp)
-                {
-                    highestHp = candidateHp;
-                    adjacencyCandidates.Clear();
-                    adjacencyCandidates.Add(candidate);
-                }
-                else if (candidateHp == highestHp)
-                {
-                    adjacencyCandidates.Add(candidate);
-                }
-            }
-
-            if (!adjacencyAggroUsedThisTurn && adjacencyCandidates.Count > 0)
-            {
-                var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
-                var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
-                if (board.HasMatchOpportunityForMonster(selected))
-                {
-                    SetMonsterAngry(selected, playerPosition);
-                    adjacencyAggroUsedThisTurn = true;
-                }
-            }
-
-            if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && pendingMinorDamageAggro)
-            {
-                pendingMinorDamageAggro = false;
-                for (var x = 0; x < board.Width; x++)
-                {
-                    for (var y = 0; y < board.Height; y++)
-                    {
-                        if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) || piece == null || piece.IsPlayer)
-                        {
-                            continue;
-                        }
-
-                        SetMonsterAngry(piece, playerPosition);
-                    }
-                }
-            }
+            TryTriggerMonsterEnrage();
         }
+
 
         private bool HasMatchOpportunityForMonster(Piece monster)
         {
@@ -2379,6 +2320,11 @@ namespace GameCore
                 if (moved && (state.IsAngry || state.IsEnraged))
                 {
                     state = CreateConfusedState(currentTile);
+                    if (debugMode)
+                    {
+                        Debug.Log($"GenericMonsterState: piece {pieceId} entered Confused after moving to {currentTile.x},{currentTile.y}", this);
+                    }
+
                     updatedStates[pieceId] = state;
                     continue;
                 }
@@ -2387,6 +2333,10 @@ namespace GameCore
                 {
                     state.IsAngry = false;
                     state.IsEnraged = true;
+                    if (debugMode)
+                    {
+                        Debug.Log($"GenericMonsterState: piece {pieceId} transitioned to Enraged", this);
+                    }
                 }
 
                 if ((state.IsAngry || state.IsEnraged) && state.TurnsUntilAttack > 0)
@@ -2460,10 +2410,14 @@ namespace GameCore
                 state.IsConfused = false;
                 state.StateTurnsRemaining = 1;
                 monsterStates[pieceId] = state;
+                if (debugMode)
+                {
+                    Debug.Log($"GenericMonsterState: piece {pieceId} attacked and entered Tired", this);
+                }
             }
         }
 
-        private void SetMonsterAngry(Piece piece, Vector2Int targetTile)
+        private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile)
         {
             if (piece == null || piece.IsPlayer)
             {
@@ -2489,6 +2443,10 @@ namespace GameCore
                 StateTurnsRemaining = 0,
                 CurrentTile = new Vector2Int(piece.X, piece.Y)
             };
+            if (debugMode)
+            {
+                Debug.Log($"GenericMonsterState: piece {pieceId} entered Angry at {piece.X},{piece.Y} targeting {targetTile.x},{targetTile.y}", this);
+            }
         }
 
         private MonsterState CreateConfusedState(Vector2Int currentTile)
@@ -2560,33 +2518,7 @@ namespace GameCore
         // CODEX RAGE SCALE FINAL
         private void TryTriggerMonsterEnrage()
         {
-            if (board == null)
-            {
-                return;
-            }
-
-            if (!monstersCanAttack)
-            {
-                return;
-            }
-
-            if (isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
-            {
-                return;
-            }
-
-            if (CurrentBossState.IsPermanentlyEnraged)
-            {
-                return;
-            }
-
-            if (monsterAngerConfig != null && monsterAngerConfig.maxAngryPerTurn <= 0)
-            {
-                return;
-            }
-
-            var bossState = CurrentBossState;
-            if (bossState.IsAngry || bossState.IsEnraged)
+            if (board == null || !monstersCanAttack || isPlayerActionPhase || board.IsBusy || isResolvingMonsterAttack)
             {
                 return;
             }
@@ -2596,52 +2528,7 @@ namespace GameCore
                 return;
             }
 
-            foreach (var pieceId in damagedThisTurn)
-            {
-                if (TryFindPieceById(pieceId, out var piece))
-                {
-                    SetGenericMonsterAngry(piece, playerPosition);
-                }
-            }
-
-            damagedThisTurn.Clear();
-
-            var canUseAdjacency = monsterAngerConfig == null || monsterAngerConfig.angerAdjacencyRequired;
-            var adjacencyCandidateFound = false;
-            var bestScore = 0;
-            var bestPosition = default(Vector2Int);
-            var adjacentOffsets = new[]
-            {
-                Vector2Int.up,
-                Vector2Int.down,
-                Vector2Int.left,
-                Vector2Int.right
-            };
-
-            if (canUseAdjacency)
-            {
-                for (var i = 0; i < adjacentOffsets.Length; i++)
-                {
-                    var candidatePosition = playerPosition + adjacentOffsets[i];
-                    if (!board.TryGetPieceAt(candidatePosition, out _))
-                    {
-                        continue;
-                    }
-
-                    var score = board.GetMonsterRageMatchabilityScore(candidatePosition);
-                    if (score <= 0)
-                    {
-                        continue;
-                    }
-
-                    if (!adjacencyCandidateFound || score > bestScore || (score == bestScore && (candidatePosition.y < bestPosition.y || (candidatePosition.y == bestPosition.y && candidatePosition.x < bestPosition.x))))
-                    {
-                        adjacencyCandidateFound = true;
-                        bestScore = score;
-                        bestPosition = candidatePosition;
-                    }
-                }
-            }
+            monsterTurnCounter++;
 
             if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && damagedThisTurn.Count > 0)
             {
@@ -2649,104 +2536,62 @@ namespace GameCore
                 {
                     if (TryFindPieceById(pieceId, out var piece))
                     {
-                        SetMonsterAngry(piece, playerPosition);
+                        SetGenericMonsterAngry(piece, playerPosition);
                     }
                 }
 
                 damagedThisTurn.Clear();
-                damagedPiecePositions.Clear();
-            }
-
-            var damageTriggered = CurrentBossState.IsAngry || CurrentBossState.IsEnraged;
-            var scalingTriggered = monsterAngerConfig != null && GetEffectiveLevel() >= monsterAngerConfig.aggressionScalingByLevel;
-
-            if (!adjacencyCandidateFound && !damageTriggered && !scalingTriggered)
-            {
-                return;
-            }
-
-            if (damageTriggered)
-            {
                 pendingMinorDamageAggro = false;
-                return;
             }
 
-            var aggressorPosition = adjacencyCandidateFound ? bestPosition : FindNearestMonsterPosition(playerPosition);
-            if (!aggressorPosition.HasValue)
-            {
-                pendingMinorDamageAggro = false;
-                return;
-            }
-
-            if (!CanMonsterReachPlayer(aggressorPosition.Value, playerPosition))
-            {
-                pendingMinorDamageAggro = false;
-                return;
-            }
-
-            pendingMinorDamageAggro = false;
-            ActivateMonsterAnger(aggressorPosition.Value, playerPosition);
-        }
-
-        private void SetGenericMonsterAngry(Piece piece, Vector2Int playerPosition)
-        {
-            if (piece == null || piece.IsPlayer)
+            if (adjacencyAggroUsedThisTurn)
             {
                 return;
             }
 
-            var pieceId = piece.GetInstanceID();
-
-            if (monsterStates.TryGetValue(pieceId, out var existing) &&
-                (existing.IsAngry || existing.IsEnraged || existing.IsConfused ||
-                 existing.IsTired || existing.IsSleeping))
+            var adjacencyCandidates = new List<Piece>();
+            var offsets = new[] { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+            var highestHp = int.MinValue;
+            for (var i = 0; i < offsets.Length; i++)
             {
-                return;
-            }
-
-            monsterStates[pieceId] = new MonsterState
-            {
-                IsAngry = true,
-                IsEnraged = false,
-                IsTired = false,
-                IsSleeping = false,
-                IsConfused = false,
-                TargetTile = playerPosition,
-                TurnsUntilAttack = 2,
-                StateTurnsRemaining = 0,
-                CurrentTile = new Vector2Int(piece.X, piece.Y)
-            };
-        }
-
-        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
-        {
-            foundPiece = null;
-
-            if (board == null || pieceId == 0)
-            {
-                return false;
-            }
-
-            for (var x = 0; x < board.Width; x++)
-            {
-                for (var y = 0; y < board.Height; y++)
+                var candidatePosition = playerPosition + offsets[i];
+                if (!board.TryGetPieceAt(candidatePosition, out var candidate) || candidate == null || candidate.IsPlayer)
                 {
-                    if (!board.TryGetPieceAt(new Vector2Int(x, y), out var piece) ||
-                        piece == null || piece.IsPlayer)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (piece.GetInstanceID() == pieceId)
-                    {
-                        foundPiece = piece;
-                        return true;
-                    }
+                var candidateHp = GetMonsterHitPoints(candidate);
+                if (candidateHp > highestHp)
+                {
+                    highestHp = candidateHp;
+                    adjacencyCandidates.Clear();
+                    adjacencyCandidates.Add(candidate);
+                }
+                else if (candidateHp == highestHp)
+                {
+                    adjacencyCandidates.Add(candidate);
                 }
             }
 
-            return false;
+            if (adjacencyCandidates.Count == 0)
+            {
+                return;
+            }
+
+            var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
+            var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
+            if (!HasMatchOpportunityForMonster(selected))
+            {
+                return;
+            }
+
+            SetGenericMonsterAngry(selected, playerPosition);
+            adjacencyAggroUsedThisTurn = true;
         }
+
+
+
+
 
         private bool IsAggressorAlive(BossState bossState)
         {
@@ -2758,76 +2603,11 @@ namespace GameCore
             return TryResolveAggressorPiece(ref bossState, out _);
         }
 
-        private bool TryFindPieceById(int pieceId, out Piece foundPiece)
-        {
-            foundPiece = null;
-            if (board == null || !damagedPiecePositions.TryGetValue(pieceId, out var position))
-            {
-                return false;
-            }
 
-            if (!board.TryGetPieceAt(position, out var piece) || piece == null || piece.GetInstanceID() != pieceId)
-            {
-                return false;
-            }
 
-            foundPiece = piece;
-            return true;
-        }
 
-        private void SetMonsterAngry(Piece piece, Vector2Int playerPosition)
-        {
-            if (piece == null || piece.IsPlayer)
-            {
-                return;
-            }
 
-            var aggressorPosition = new Vector2Int(piece.X, piece.Y);
-            if (!CanMonsterReachPlayer(aggressorPosition, playerPosition))
-            {
-                return;
-            }
 
-            if (CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged)
-            {
-                return;
-            }
-
-            ActivateMonsterAnger(aggressorPosition, playerPosition);
-        }
-
-        private Vector2Int? FindNearestMonsterPosition(Vector2Int playerPosition)
-        {
-            if (board == null)
-            {
-                return null;
-            }
-
-            var bestDistance = int.MaxValue;
-            Vector2Int? bestPosition = null;
-            var width = board.Width;
-            var height = board.Height;
-            for (var x = 0; x < width; x++)
-            {
-                for (var y = 0; y < height; y++)
-                {
-                    var position = new Vector2Int(x, y);
-                    if (!board.TryGetPieceAt(position, out var piece) || piece.IsPlayer)
-                    {
-                        continue;
-                    }
-
-                    var distance = Mathf.Abs(playerPosition.x - x) + Mathf.Abs(playerPosition.y - y);
-                    if (distance < bestDistance)
-                    {
-                        bestDistance = distance;
-                        bestPosition = position;
-                    }
-                }
-            }
-
-            return bestPosition;
-        }
 
         private bool TryResolveAggressorPiece(ref BossState bossState, out Piece aggressor)
         {
@@ -3719,7 +3499,6 @@ namespace GameCore
             {
                 var pieceId = piece.GetInstanceID();
                 damagedThisTurn.Add(pieceId);
-                damagedPiecePositions[pieceId] = bossState.bossPosition;
             }
 
             bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
