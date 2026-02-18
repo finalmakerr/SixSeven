@@ -15,6 +15,9 @@ namespace GameCore
         private readonly Dictionary<Vector2Int, OverlayState> activeOverlays = new Dictionary<Vector2Int, OverlayState>();
         private readonly List<Vector2Int> removalBuffer = new List<Vector2Int>();
 
+        private bool isFadedMode;
+        private bool pulseAnimationEnabled = true;
+
         private sealed class OverlayState
         {
             public GameObject GameObject;
@@ -41,6 +44,17 @@ namespace GameCore
             ClearAll();
         }
 
+
+        public void SetFadedMode(bool faded)
+        {
+            isFadedMode = faded;
+        }
+
+        public void SetPulseAnimationEnabled(bool enabled)
+        {
+            pulseAnimationEnabled = enabled;
+        }
+
         private void Update()
         {
             foreach (var overlay in activeOverlays.Values)
@@ -50,7 +64,11 @@ namespace GameCore
                     continue;
                 }
 
-                overlay.Color = Color.Lerp(overlay.Color, overlay.TargetColor, Time.deltaTime * 12f);
+                var targetColor = overlay.TargetColor;
+                var targetAlpha = isFadedMode ? 0.2f : targetColor.a;
+                targetColor.a = targetAlpha;
+
+                overlay.Color = Color.Lerp(overlay.Color, targetColor, Time.deltaTime * 12f);
                 overlay.PulseStrength = Mathf.Lerp(overlay.PulseStrength, GetPulseStrengthForTier(overlay.TargetTier), Time.deltaTime * 8f);
                 overlay.PulseSpeed = Mathf.Lerp(overlay.PulseSpeed, GetPulseSpeedForTier(overlay.TargetTier), Time.deltaTime * 8f);
                 overlay.Tier = overlay.TargetTier;
@@ -60,8 +78,16 @@ namespace GameCore
                     overlay.Renderer.color = overlay.Color;
                 }
 
-                var pulse = (Mathf.Sin(Time.time * overlay.PulseSpeed) + 1f) * 0.5f;
-                overlay.GameObject.transform.localScale = overlay.BaseScale * (1f + pulse * overlay.PulseStrength);
+                var pulseEnabled = pulseAnimationEnabled && !isFadedMode;
+                if (pulseEnabled)
+                {
+                    var pulse = (Mathf.Sin(Time.time * overlay.PulseSpeed) + 1f) * 0.5f;
+                    overlay.GameObject.transform.localScale = overlay.BaseScale * (1f + pulse * overlay.PulseStrength);
+                }
+                else
+                {
+                    overlay.GameObject.transform.localScale = overlay.BaseScale;
+                }
             }
         }
 

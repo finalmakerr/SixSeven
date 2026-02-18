@@ -8,6 +8,8 @@ namespace GameCore
 {
     public class GameManager : MonoBehaviour
     {
+        private const string HeatmapTutorialKey = "HeatmapTutorialShown";
+
         public event Action OnWin;
         public event Action OnLose;
 
@@ -1563,14 +1565,36 @@ namespace GameCore
 
         private void RefreshDamageHeatmap()
         {
+            if (monsterAngerConfig != null && !monsterAngerConfig.enableDamageHeatmap)
+            {
+                return;
+            }
+
             if (damageHeatmapSystem == null)
             {
                 return;
             }
 
             damageHeatmapSystem.RecalculateHeatmap();
+
+            if (CurrentLevelIndex == 0 &&
+                PlayerPrefs.GetInt(HeatmapTutorialKey, 0) == 0 &&
+                damageHeatmapSystem.CurrentHeatmap != null &&
+                damageHeatmapSystem.CurrentHeatmap.Count > 0)
+            {
+                ShowFloatingText("Tiles glow when monsters will strike next turn.", Color.white);
+                PlayerPrefs.SetInt(HeatmapTutorialKey, 1);
+                PlayerPrefs.Save();
+            }
+
             if (damageHeatmapOverlay != null)
             {
+                var fadeHeatmap = monsterAngerConfig != null &&
+                    monsterAngerConfig.showHeatmapOnlyIfEnergyAvailable &&
+                    Energy <= 0;
+                var pulseEnabled = monsterAngerConfig == null || monsterAngerConfig.enableHeatmapPulseAnimation;
+                damageHeatmapOverlay.SetPulseAnimationEnabled(pulseEnabled);
+                damageHeatmapOverlay.SetFadedMode(fadeHeatmap);
                 damageHeatmapOverlay.Render(damageHeatmapSystem.CurrentHeatmap);
             }
         }
