@@ -148,6 +148,7 @@ namespace GameCore
         [SerializeField] private List<SpecialPowerDefinition> playerSpecialPowers = new List<SpecialPowerDefinition>();
         [Header("Monster Attack")]
         [SerializeField] private int monsterReachDistance = 2;
+        [SerializeField] private int telekinesisCost = 1;
         [SerializeField] private MonsterAngerConfig monsterAngerConfig = new MonsterAngerConfig();
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
@@ -2583,7 +2584,13 @@ namespace GameCore
             var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
             var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
             var monsterPosition = new Vector2Int(selected.X, selected.Y);
-            if (!board.CanMatchPieceWithinTwoSwaps(monsterPosition))
+            if (!board.CanPlayerKillMonsterInTwoTurns(
+                    monsterPosition,
+                    playerPosition,
+                    energy,
+                    maxEnergy,
+                    monsterReachDistance,
+                    telekinesisCost))
             {
                 return;
             }
