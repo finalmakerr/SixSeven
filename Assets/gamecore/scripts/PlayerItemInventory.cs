@@ -28,6 +28,7 @@ namespace GameCore
         public bool TryAddItem(PlayerItemType item)
         {
             maxSlots = Math.Min(InventoryMaxSlots, Math.Max(1, maxSlots));
+            TrimOverflowItems();
             if (items.Count >= maxSlots)
             {
                 return false;
@@ -56,13 +57,23 @@ namespace GameCore
         public bool TryReplaceItemAt(int slotIndex, PlayerItemType item)
         {
             maxSlots = Math.Min(InventoryMaxSlots, Math.Max(1, maxSlots));
+            TrimOverflowItems();
             if (slotIndex < 0 || slotIndex >= items.Count)
             {
                 return false;
             }
 
-            items[slotIndex] = item;
+            items.RemoveAt(slotIndex);
+            items.Insert(slotIndex, item);
             return true;
+        }
+
+        private void TrimOverflowItems()
+        {
+            while (items.Count > maxSlots)
+            {
+                items.RemoveAt(items.Count - 1);
+            }
         }
 
         public bool HasItem(PlayerItemType item)
