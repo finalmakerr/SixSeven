@@ -154,6 +154,8 @@ namespace GameCore
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private GameObject genericMonsterTelegraphPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
+        [SerializeField] private DamageHeatmapSystem damageHeatmapSystem;
+        [SerializeField] private DamageHeatmapOverlay damageHeatmapOverlay;
         [Header("Bugada")]
 
         public static GameManager Instance { get; private set; }
@@ -458,6 +460,24 @@ namespace GameCore
                 playerAnimationStateController = FindObjectOfType<PlayerAnimationStateController>();
             }
 
+            if (damageHeatmapSystem == null)
+            {
+                damageHeatmapSystem = FindObjectOfType<DamageHeatmapSystem>();
+                if (damageHeatmapSystem == null)
+                {
+                    damageHeatmapSystem = gameObject.AddComponent<DamageHeatmapSystem>();
+                }
+            }
+
+            if (damageHeatmapOverlay == null)
+            {
+                damageHeatmapOverlay = FindObjectOfType<DamageHeatmapOverlay>();
+                if (damageHeatmapOverlay == null)
+                {
+                    damageHeatmapOverlay = gameObject.AddComponent<DamageHeatmapOverlay>();
+                }
+            }
+
             if (bossPowerInventory == null)
             {
                 bossPowerInventory = new BossPowerInventory(3);
@@ -639,6 +659,7 @@ namespace GameCore
             UpdateWorriedState();
             UpdateTiredState();
             UpdatePlayerAnimationFlags();
+            RefreshDamageHeatmap();
         }
 
         private void RecalculateMaxResourcesFromBase()
@@ -1531,12 +1552,27 @@ namespace GameCore
             UpdateUI();
 
             HandleStartOfPlayerTurn();
+            RefreshDamageHeatmap();
             if (!isPlayerActionPhase)
             {
                 return;
             }
 
             isPlayerActionPhase = true;
+        }
+
+        private void RefreshDamageHeatmap()
+        {
+            if (damageHeatmapSystem == null)
+            {
+                return;
+            }
+
+            damageHeatmapSystem.RecalculateHeatmap();
+            if (damageHeatmapOverlay != null)
+            {
+                damageHeatmapOverlay.Render(damageHeatmapSystem.CurrentHeatmap);
+            }
         }
 
         private void HandleStartOfPlayerTurn()
@@ -2207,6 +2243,7 @@ namespace GameCore
             UpdateWorriedState();
             UpdatePlayerAnimationFlags();
             UpdateMonsterEnrageVisuals();
+            RefreshDamageHeatmap();
         }
 
         private void ResetMonsterAttackState(bool delayVisualReset = false)
@@ -2233,6 +2270,7 @@ namespace GameCore
             }
 
             SpawnMonsterAttackMarker(targetPosition);
+            RefreshDamageHeatmap();
         }
 
         private void RemoveBossTelegraph()
@@ -2245,6 +2283,7 @@ namespace GameCore
 
             DestroyMonsterAttackMarker();
             ClearMonsterEnrageIndicator();
+            RefreshDamageHeatmap();
         }
 
         // CODEX RAGE SCALE FINAL
@@ -2296,6 +2335,7 @@ namespace GameCore
         private void EvaluateMonsterAggro()
         {
             TryTriggerMonsterEnrage();
+            RefreshDamageHeatmap();
         }
 
         private void UpdateMonsterStates()
@@ -2303,6 +2343,7 @@ namespace GameCore
             if (board == null || monsterStates.Count == 0)
             {
                 CleanupOrphanedGenericTelegraphs();
+                RefreshDamageHeatmap();
                 return;
             }
 
@@ -2414,12 +2455,14 @@ namespace GameCore
             }
 
             CleanupOrphanedGenericTelegraphs();
+            RefreshDamageHeatmap();
         }
 
         public void ProcessMonsterAttacks()
         {
             if (board == null || hasEnded || monsterStates.Count == 0)
             {
+                RefreshDamageHeatmap();
                 return;
             }
 
@@ -2435,6 +2478,7 @@ namespace GameCore
 
             if (toAttack.Count == 0)
             {
+                RefreshDamageHeatmap();
                 return;
             }
 
@@ -2479,6 +2523,8 @@ namespace GameCore
                     Debug.Log($"GenericMonsterState: piece {pieceId} attacked target {targetTile.x},{targetTile.y}", this);
                 }
             }
+
+            RefreshDamageHeatmap();
         }
 
         private void SetGenericMonsterAngry(Piece piece, Vector2Int targetTile, bool triggeredByAdjacency, bool allowTelegraph = true)
@@ -4441,6 +4487,62 @@ namespace GameCore
             return Mathf.Max(baseDamage + 1, Mathf.CeilToInt(baseDamage * multiplier) + bonus);
         }
 
+        public void PopulateIncomingDamageHeatmap(DamageHeatmapSystem heatmapSystem)
+        {
+            if (heatmapSystem == null || board == null)
+            {
+                return;
+            }
+
+            foreach (var kvp in monsterStates)
+            {
+                var state = kvp.Value;
+                if (!state.IsEnraged || state.TurnsUntilAttack > 0)
+                {
+                    continue;
+                }
+
+                if (!board.IsWithinBounds(state.CurrentTile) || !board.IsWithinBounds(state.TargetTile))
+                {
+                    continue;
+                }
+
+                if (!TryFindPieceById(kvp.Key, out var piece) || piece == null || piece.IsPlayer)
+                {
+                    continue;
+                }
+
+                heatmapSystem.AddPredictedDirectDamage(state.TargetTile, GetMonsterAttackDamage(piece));
+            }
+
+            if (CurrentBossState.IsEnraged && CurrentBossState.TurnsUntilAttack <= 0 && board.IsWithinBounds(CurrentBossState.AttackTarget))
+            {
+                heatmapSystem.AddPredictedDirectDamage(CurrentBossState.AttackTarget, GetCurrentMonsterDamage());
+            }
+
+            if (currentHazardType == HazardType.Poison
+                && applyBottomLayerHazardOnNextTurn
+                && !hasEnded
+                && CurrentHP > 0
+                && !IsBugadaActive
+                && board.TryGetPlayerPosition(out var playerPosition)
+                && playerPosition.y == 0
+                && board.IsWithinBounds(playerPosition))
+            {
+                heatmapSystem.AddPredictedDirectDamage(playerPosition, 1f);
+            }
+        }
+
+        private float GetMonsterAttackDamage(Piece piece)
+        {
+            if (piece == null || piece.IsPlayer)
+            {
+                return 0f;
+            }
+
+            return 1f;
+        }
+
         public void TakeDamage(int halfUnits)
         {
             if (halfUnits <= 0 || hasEnded || IsBugadaActive)
@@ -4584,6 +4686,8 @@ namespace GameCore
                 monsterAttackTelegraph.SetWorldPosition(worldPosition);
                 monsterAttackTelegraph.SetTurnsRemaining(bossState.TurnsUntilAttack);
             }
+
+            RefreshDamageHeatmap();
         }
 
         // CODEX RAGE SCALE FINAL
