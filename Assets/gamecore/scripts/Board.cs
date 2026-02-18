@@ -380,6 +380,11 @@ namespace GameCore
                 return false;
             }
 
+            if (GameManager.Instance != null && GameManager.Instance.IsMonsterEnraged(second.GetInstanceID()))
+            {
+                return false;
+            }
+
             if (!IsSwapValid(first, second))
             {
                 return false;
