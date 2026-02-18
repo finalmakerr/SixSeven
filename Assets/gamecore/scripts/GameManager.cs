@@ -473,6 +473,8 @@ namespace GameCore
                 playerSpecialPowers = new List<SpecialPowerDefinition>();
             }
 
+            EnsureMonsterAggroConfig();
+
             baseMaxEnergy = Mathf.Max(1, maxEnergy);
             baseMaxHearts = Mathf.Max(1, maxHearts);
 
@@ -2629,20 +2631,13 @@ namespace GameCore
                 return false;
             }
 
-            if (monsterAggroConfig != null && !monsterAggroConfig.requireHpSurvivalCheck)
-            {
-                return true;
-            }
-
             if (!IsHpSurvivalCheckRequired())
             {
                 return true;
             }
 
             var predictedHP = GetMonsterHitPoints(piece);
-            var ticksToPredict = monsterAggroConfig != null
-                ? monsterAggroConfig.turnsBeforeAttack
-                : 2;
+            var ticksToPredict = GetMonsterTurnsBeforeAttack();
             for (var tick = 0; tick < ticksToPredict; tick++)
             {
                 predictedHP -= PredictGuaranteedDamageNextTick(piece);
@@ -2696,7 +2691,7 @@ namespace GameCore
 
         private MonsterState CreateDefaultMonsterState(Vector2Int currentTile)
         {
-            var defaultMonsterHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3);
+            var defaultMonsterHP = GetMonsterDefaultHitPoints();
             return new MonsterState
             {
                 IsIdle = true,
@@ -2747,7 +2742,7 @@ namespace GameCore
                 state.CurrentTile = new Vector2Int(piece.X, piece.Y);
                 if (state.CurrentHP <= 0)
                 {
-                    state.CurrentHP = Mathf.Max(1, monsterAggroConfig != null ? monsterAggroConfig.defaultMonsterHP : 3);
+                    state.CurrentHP = GetMonsterDefaultHitPoints();
                 }
             }
 
@@ -2834,61 +2829,78 @@ namespace GameCore
         }
 
 
+        private void EnsureMonsterAggroConfig()
+        {
+            if (monsterAggroConfig != null)
+            {
+                return;
+            }
+
+            monsterAggroConfig = new MonsterAggroConfig();
+            Debug.LogWarning("MonsterAggroConfig was not assigned in inspector. Using runtime defaults.", this);
+        }
+
+        private MonsterAggroConfig GetMonsterAggroConfig()
+        {
+            EnsureMonsterAggroConfig();
+            return monsterAggroConfig;
+        }
+
+        private int GetMonsterDefaultHitPoints()
+        {
+            return Mathf.Max(1, GetMonsterAggroConfig().defaultMonsterHP);
+        }
+
         private int GetMonsterTurnsBeforeAttack()
         {
-            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var config = GetMonsterAggroConfig();
             return Mathf.Max(1, config.turnsBeforeAttack);
         }
 
         private int GetBossEnrageThresholdTurns()
         {
             var turnsBeforeAttack = GetMonsterTurnsBeforeAttack();
-            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var config = GetMonsterAggroConfig();
             var enrageDuration = Mathf.Max(1, config.enrageDuration);
             return Mathf.Max(0, turnsBeforeAttack - enrageDuration);
         }
 
         private int GetMonsterConfusedDuration()
         {
-            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var config = GetMonsterAggroConfig();
             return Mathf.Max(1, config.confusedDuration);
         }
 
         private int GetMonsterTiredDuration()
         {
-            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var config = GetMonsterAggroConfig();
             return Mathf.Max(1, config.tiredDuration);
         }
 
         private int GetMonsterSleepDuration()
         {
-            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var config = GetMonsterAggroConfig();
             return Mathf.Max(1, config.sleepDuration);
         }
 
         private bool IsAdjacencyMatchForecastRequired()
         {
-            return monsterAggroConfig == null || monsterAggroConfig.adjacencyRequiresMatchForecast;
+            return GetMonsterAggroConfig().adjacencyRequiresMatchForecast;
         }
 
         private bool IsDamageTriggerAllowed()
         {
-            return monsterAggroConfig == null || monsterAggroConfig.damageTriggerAllowed;
+            return GetMonsterAggroConfig().damageTriggerAllowed;
         }
 
         private bool IsTelegraphOnlyOnEnrage()
         {
-            return monsterAggroConfig == null || monsterAggroConfig.telegraphOnlyOnEnrage;
+            return GetMonsterAggroConfig().telegraphOnlyOnEnrage;
         }
 
         private bool IsHpSurvivalCheckRequired()
         {
-            if (monsterAggroConfig == null)
-            {
-                return true;
-            }
-
-            return monsterAggroConfig.requireHpSurvivalCheck;
+            return GetMonsterAggroConfig().requireHpSurvivalCheck;
         }
 
         private void ApplyMonsterVisualState(Piece piece, MonsterState state)
