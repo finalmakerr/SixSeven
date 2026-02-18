@@ -2313,7 +2313,7 @@ namespace GameCore
                 var state = kvp.Value;
                 if (!TryFindPieceById(pieceId, out var piece))
                 {
-                    RemoveGenericMonsterTelegraph(state.CurrentTile);
+                    ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                     continue;
                 }
 
@@ -2324,7 +2324,7 @@ namespace GameCore
 
                 if (moved && (state.IsAngry || state.IsEnraged))
                 {
-                    RemoveGenericMonsterTelegraph(previousTile);
+                    ClearMonsterTelegraphs(pieceId, previousTile);
                     state = CreateConfusedState(currentTile, state.CurrentHP);
                     if (debugMode)
                     {
@@ -2367,12 +2367,13 @@ namespace GameCore
 
                 if (state.IsConfused || state.IsTired || state.IsSleeping)
                 {
-                    RemoveGenericMonsterTelegraph(state.CurrentTile);
+                    ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                     state.StateTurnsRemaining--;
                     if (state.StateTurnsRemaining <= 0)
                     {
                         if (state.IsConfused)
                         {
+                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                             EnterIdleState(ref state);
                             state.CurrentTile = currentTile;
                             state.CurrentHP = kvp.Value.CurrentHP;
@@ -2390,6 +2391,7 @@ namespace GameCore
                         }
                         else if (state.IsSleeping)
                         {
+                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                             EnterIdleState(ref state);
                             state.CurrentTile = currentTile;
                             state.CurrentHP = kvp.Value.CurrentHP;
@@ -2425,7 +2427,7 @@ namespace GameCore
             foreach (var kvp in monsterStates)
             {
                 var state = kvp.Value;
-                if (state.IsAngry && state.TurnsUntilAttack <= 0)
+                if (state.IsEnraged && state.TurnsUntilAttack <= 0)
                 {
                     toAttack.Add(kvp.Key);
                 }
@@ -2456,8 +2458,7 @@ namespace GameCore
                     }
                 }
 
-                AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
-                RemoveGenericMonsterTelegraph(state.CurrentTile);
+                ClearMonsterTelegraphs(pieceId, state.CurrentTile);
                 state.IsAngry = false;
                 state.IsIdle = false;
                 state.IsAdjacencyTriggered = false;
@@ -2670,8 +2671,7 @@ namespace GameCore
             state.TurnsUntilAttack = 0;
             state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
-            AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
-            RemoveGenericMonsterTelegraph(state.CurrentTile);
+            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
             ApplyMonsterVisualState(piece, state);
         }
 
@@ -3041,10 +3041,11 @@ namespace GameCore
                     SetGenericMonsterAngry(piece, playerPosition, false, allowTelegraph: false);
                 }
 
-                // Important: clear buffer after full processing.
-                damagedThisTurn.Clear();
-                pendingMinorDamageAggro = false;
             }
+
+            // Always clear damage buffer so stale IDs never persist across turns.
+            damagedThisTurn.Clear();
+            pendingMinorDamageAggro = false;
 
             if (adjacencyAggroUsedThisTurn)
             {
@@ -3151,6 +3152,29 @@ namespace GameCore
             }
 
             genericTelegraphs.Remove(position);
+        }
+
+        private void ClearMonsterTelegraphs(int pieceId, Vector2Int telegraphTile)
+        {
+            AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
+            RemoveStaleGenericTelegraphForMonster(pieceId, telegraphTile);
+            RemoveGenericMonsterTelegraph(telegraphTile);
+        }
+
+        private void RemoveStaleGenericTelegraphForMonster(int pieceId, Vector2Int telegraphTile)
+        {
+            if (board == null || !genericTelegraphs.ContainsKey(telegraphTile))
+            {
+                return;
+            }
+
+            if (!board.TryGetPieceAt(telegraphTile, out var occupant)
+                || occupant == null
+                || occupant.IsPlayer
+                || occupant.GetInstanceID() != pieceId)
+            {
+                RemoveGenericMonsterTelegraph(telegraphTile);
+            }
         }
 
         private void ClearGenericMonsterTelegraphs()
