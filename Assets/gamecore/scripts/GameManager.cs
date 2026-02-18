@@ -1504,7 +1504,7 @@ namespace GameCore
                 ProcessBossTumorTurn();
             }
 
-            RegenerateEnergyAtPlayerTurnStart();
+            StartPlayerTurn();
             HandleStartOfPlayerTurn();
             if (!isPlayerActionPhase)
             {
@@ -1533,42 +1533,13 @@ namespace GameCore
             isPlayerActionPhase = true;
         }
 
-        private void RegenerateEnergyAtPlayerTurnStart()
+        private void StartPlayerTurn()
         {
-            if (maxEnergy <= 0)
-            {
-                energy = 0;
-                hasGainedEnergy = false;
-                return;
-            }
-
-            int previousEnergy = energy;
-            if (iceEnergyPenaltyActive)
-            {
-                iceEnergyPenaltyActive = false;
-            }
-            else if (pendingIceEnergyCompensation)
-            {
-                energy = Mathf.Min(maxEnergy, energy + 2);
-                pendingIceEnergyCompensation = false;
-                if (iceStatusIcon != null)
-                {
-                    iceStatusIcon.SetActive(false);
-                }
-                ShowFloatingText("+2 Energy", Color.cyan);
-            }
-            else if (pendingEntangleCompensation)
-            {
-                energy = Mathf.Min(maxEnergy, energy + 2);
-                pendingEntangleCompensation = false;
-            }
-            else
+            if (energy < maxEnergy)
             {
                 energy = Mathf.Min(maxEnergy, energy + 1);
             }
 
-            hasGainedEnergy = energy > previousEnergy;
-            UpdateTiredState();
             UpdateUI();
         }
 
