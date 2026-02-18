@@ -150,6 +150,7 @@ namespace GameCore
         [SerializeField] private int monsterReachDistance = 2;
         [SerializeField] private int telekinesisCost = 1;
         [SerializeField] private MonsterAngerConfig monsterAngerConfig = new MonsterAngerConfig();
+        [SerializeField] private MonsterAggroConfig monsterAggroConfig = new MonsterAggroConfig();
         [SerializeField] private GameObject monsterAttackMarkerPrefab;
         [SerializeField] private float monsterAttackVisualResetDelay = 0.4f;
         [Header("Bugada")]
@@ -2262,7 +2263,7 @@ namespace GameCore
             {
                 bossState.TurnsUntilAttack--;
 
-                if (bossState.TurnsUntilAttack == 1 && bossState.IsAngry)
+                if (bossState.TurnsUntilAttack == GetBossEnrageThresholdTurns() && bossState.IsAngry)
                 {
                     bossState.IsAngry = false;
                     bossState.IsEnraged = true;
@@ -2339,10 +2340,13 @@ namespace GameCore
                     state.IsHurt = false;
                     state.IsCrying = false;
                     state.IsEnraged = true;
-                    AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
-                    if (shouldSpawnAdjacencyTelegraph)
+                    if (IsTelegraphOnlyOnEnrage())
                     {
-                        SpawnGenericMonsterTelegraph(state.CurrentTile);
+                        AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                        if (shouldSpawnAdjacencyTelegraph)
+                        {
+                            SpawnGenericMonsterTelegraph(state.CurrentTile);
+                        }
                     }
                     if (debugMode)
                     {
@@ -2371,7 +2375,7 @@ namespace GameCore
                         {
                             state.IsTired = false;
                             state.IsSleeping = true;
-                            state.StateTurnsRemaining = 1;
+                            state.StateTurnsRemaining = GetMonsterSleepDuration();
                         }
                         else if (state.IsSleeping)
                         {
@@ -2442,7 +2446,11 @@ namespace GameCore
                 state.IsHurt = false;
                 state.IsCrying = false;
                 state.IsEnraged = false;
+                state.IsConfused = false;
+                state.IsSleeping = false;
+                state.IsTired = true;
                 state.TurnsUntilAttack = 0;
+                state.StateTurnsRemaining = GetMonsterTiredDuration();
                 monsterStates[pieceId] = state;
                 if (TryFindPieceById(pieceId, out var attackingPiece))
                 {
@@ -2483,7 +2491,7 @@ namespace GameCore
             state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
 
-            if (monsterAngerConfig != null && monsterAngerConfig.requireHpSurvivalCheck)
+            if (IsHpSurvivalCheckRequired())
             {
                 ReevaluateMonsterEmotionalState(piece);
                 if (debugMode && monsterStates.TryGetValue(pieceId, out var updatedState) && updatedState.IsAngry)
@@ -2496,8 +2504,18 @@ namespace GameCore
 
             state.IsAngry = true;
             state.IsAdjacencyTriggered = triggeredByAdjacency;
-            state.TurnsUntilAttack = 2;
+            state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
             monsterStates[pieceId] = state;
+
+            if (!IsTelegraphOnlyOnEnrage())
+            {
+                AttackTelegraphSystem.Instance?.SpawnTelegraph(pieceId, state.TargetTile);
+                if (triggeredByAdjacency)
+                {
+                    SpawnGenericMonsterTelegraph(state.CurrentTile);
+                }
+            }
+
             ApplyMonsterVisualState(piece, state);
 
             if (debugMode)
@@ -2518,7 +2536,7 @@ namespace GameCore
                 IsSleeping = false,
                 IsConfused = true,
                 TurnsUntilAttack = 0,
-                StateTurnsRemaining = 2,
+                StateTurnsRemaining = GetMonsterConfusedDuration(),
                 TargetTile = default,
                 CurrentTile = currentTile,
                 CurrentHP = currentHp
@@ -2639,14 +2657,14 @@ namespace GameCore
 
         private bool WillMonsterSurviveFullAttackCycle(Piece piece)
         {
-            if (monsterAngerConfig == null || !monsterAngerConfig.requireHpSurvivalCheck)
+            if (!IsHpSurvivalCheckRequired())
             {
                 return true;
             }
 
             var hp = GetMonsterHitPoints(piece);
             var tickDamage = PredictGuaranteedDamageNextTick(piece);
-            var totalPredicted = tickDamage * Mathf.Max(1, monsterAngerConfig.turnsBeforeAttack);
+            var totalPredicted = tickDamage * GetMonsterTurnsBeforeAttack();
             return hp - totalPredicted > 0;
         }
 
@@ -2687,7 +2705,7 @@ namespace GameCore
                 return;
             }
 
-            if (monsterAngerConfig == null || !monsterAngerConfig.requireHpSurvivalCheck)
+            if (!IsHpSurvivalCheckRequired())
             {
                 return;
             }
@@ -2724,7 +2742,7 @@ namespace GameCore
             {
                 state.IsAngry = true;
                 state.IsAdjacencyTriggered = false;
-                state.TurnsUntilAttack = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.turnsBeforeAttack) : 2;
+                state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
                     state.TargetTile = playerPosition;
@@ -2745,6 +2763,59 @@ namespace GameCore
 
             ApplyMonsterVisualState(piece, state);
             monsterStates[pieceId] = state;
+        }
+
+
+        private int GetMonsterTurnsBeforeAttack()
+        {
+            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            return Mathf.Max(1, config.turnsBeforeAttack);
+        }
+
+        private int GetBossEnrageThresholdTurns()
+        {
+            var turnsBeforeAttack = GetMonsterTurnsBeforeAttack();
+            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            var enrageDuration = Mathf.Max(1, config.enrageDuration);
+            return Mathf.Max(0, turnsBeforeAttack - enrageDuration);
+        }
+
+        private int GetMonsterConfusedDuration()
+        {
+            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            return Mathf.Max(1, config.confusedDuration);
+        }
+
+        private int GetMonsterTiredDuration()
+        {
+            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            return Mathf.Max(1, config.tiredDuration);
+        }
+
+        private int GetMonsterSleepDuration()
+        {
+            var config = monsterAggroConfig ?? new MonsterAggroConfig();
+            return Mathf.Max(1, config.sleepDuration);
+        }
+
+        private bool IsAdjacencyMatchForecastRequired()
+        {
+            return monsterAggroConfig == null || monsterAggroConfig.adjacencyRequiresMatchForecast;
+        }
+
+        private bool IsDamageTriggerAllowed()
+        {
+            return monsterAggroConfig == null || monsterAggroConfig.damageTriggerAllowed;
+        }
+
+        private bool IsTelegraphOnlyOnEnrage()
+        {
+            return monsterAggroConfig == null || monsterAggroConfig.telegraphOnlyOnEnrage;
+        }
+
+        private bool IsHpSurvivalCheckRequired()
+        {
+            return monsterAggroConfig == null || monsterAggroConfig.requireHpSurvivalCheck;
         }
 
         private void ApplyMonsterVisualState(Piece piece, MonsterState state)
@@ -2849,7 +2920,7 @@ namespace GameCore
 
             monsterTurnCounter++;
 
-            if ((monsterAngerConfig == null || monsterAngerConfig.allowDamageTrigger) && damagedThisTurn.Count > 0)
+            if (IsDamageTriggerAllowed() && damagedThisTurn.Count > 0)
             {
                 var damagedPieces = new List<Piece>(damagedThisTurn.Count);
                 foreach (var pieceId in damagedThisTurn)
@@ -2936,7 +3007,8 @@ namespace GameCore
             var random = new System.Random(board.RandomSeed ^ (monsterTurnCounter * 397) ^ (playerPosition.x * 31) ^ (playerPosition.y * 17));
             var selected = adjacencyCandidates[random.Next(adjacencyCandidates.Count)];
             var monsterPosition = new Vector2Int(selected.X, selected.Y);
-            if (!board.CanPlayerKillMonsterInTwoTurns(
+            if (IsAdjacencyMatchForecastRequired() &&
+                !board.CanPlayerKillMonsterInTwoTurns(
                     monsterPosition,
                     playerPosition,
                     energy,
