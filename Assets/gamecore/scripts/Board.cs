@@ -670,7 +670,7 @@ namespace GameCore
             try
             {
                 var maxDepth = Mathf.Min(2, availableEnergy);
-                return SearchDepth(originalGrid, monsterPosition, maxDepth, 0);
+                return SearchDepth(originalGrid, maxDepth, 0);
             }
             finally
             {
@@ -678,7 +678,7 @@ namespace GameCore
             }
         }
 
-        private bool SearchDepth(SimulationState state, Vector2Int monsterPos, int maxDepth, int currentDepth)
+        private bool SearchDepth(SimulationState state, int maxDepth, int currentDepth)
         {
             if (currentDepth >= maxDepth)
             {
@@ -696,12 +696,22 @@ namespace GameCore
                     continue;
                 }
 
-                if (WasMonsterDirectlyMatched(branchState, monsterPos))
+                if (WasMonsterDirectlyMatched(branchState))
                 {
                     return true;
                 }
 
-                if (SearchDepth(branchState, monsterPos, maxDepth, currentDepth + 1))
+                if (!branchState.HasMonster)
+                {
+                    return true;
+                }
+
+                if (currentDepth + 1 >= maxDepth)
+                {
+                    continue;
+                }
+
+                if (SearchDepth(branchState, maxDepth, currentDepth + 1))
                 {
                     return true;
                 }
@@ -710,10 +720,9 @@ namespace GameCore
             return false;
         }
 
-        private bool WasMonsterDirectlyMatched(SimulationState state, Vector2Int monsterPos)
+        private bool WasMonsterDirectlyMatched(SimulationState state)
         {
-            return state.LastMatchGroupPositions.Contains(monsterPos)
-                || state.MonsterMatchedDuringResolve;
+            return state.MonsterMatchedDuringResolve;
         }
 
         private bool ResolveAllMatchesAndCascades(SimulationState state)
@@ -730,7 +739,6 @@ namespace GameCore
                 }
 
                 anyMatch = true;
-                state.LastMatchGroupPositions.Clear();
                 for (var i = 0; i < matches.Count; i++)
                 {
                     var position = matches[i];
@@ -739,7 +747,6 @@ namespace GameCore
                         continue;
                     }
 
-                    state.LastMatchGroupPositions.Add(position);
                     if (state.Cells[position.x, position.y].IsTargetMonster)
                     {
                         state.MonsterMatchedDuringResolve = true;
@@ -905,7 +912,6 @@ namespace GameCore
                 RandomState = branchSeed,
                 HasMonster = hasMonster,
                 MonsterMatchedDuringResolve = false,
-                LastMatchGroupPositions = new HashSet<Vector2Int>()
             };
         }
 
@@ -918,7 +924,6 @@ namespace GameCore
                 RandomState = source.RandomState,
                 HasMonster = source.HasMonster,
                 MonsterMatchedDuringResolve = source.MonsterMatchedDuringResolve,
-                LastMatchGroupPositions = new HashSet<Vector2Int>(source.LastMatchGroupPositions)
             };
         }
 
@@ -1272,7 +1277,6 @@ namespace GameCore
             public int RandomState;
             public bool HasMonster;
             public bool MonsterMatchedDuringResolve;
-            public HashSet<Vector2Int> LastMatchGroupPositions = new HashSet<Vector2Int>();
         }
 
         private readonly struct SimSwap
