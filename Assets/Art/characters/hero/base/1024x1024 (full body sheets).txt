@@ -1,0 +1,21 @@
+📁 Art/Characters/Hero/Base/
+
+Contains:
+
+body_idle.png
+
+body_hurt.png
+
+body_angry.png
+
+hands_idle.png
+
+hands_attack.png
+
+Size:
+
+1024x1024 (full body sheets)
+
+Transparent PNG
+
+Pivot centered (0.5, 0.5)

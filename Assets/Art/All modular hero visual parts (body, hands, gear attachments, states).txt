@@ -1,0 +1,5 @@
+1024x1024 for full character base
+
+512x512 for gear parts
+
+Transparent PNG

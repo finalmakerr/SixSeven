@@ -1,0 +1,20 @@
+📁 Art/Tiles/
+
+Purpose:
+Board tiles (7x7 grid elements)
+
+Size:
+
+256x256 standard
+
+Transparent
+
+Centered
+
+No glow baked in
+
+Subfolders:
+
+basic/
+special/
+67_tiles/

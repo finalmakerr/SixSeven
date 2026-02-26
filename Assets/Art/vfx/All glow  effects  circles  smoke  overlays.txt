@@ -1,0 +1,24 @@
+📁 Art/VFX/
+
+Purpose:
+All glow / effects / circles / smoke / overlays.
+
+Size Rules:
+
+512x512 standard
+
+Black removed (transparent)
+
+White/gray base only (for Unity recolor)
+
+Soft edges
+
+No background
+
+Subfolders:
+
+debuffs/
+buffs/
+spell_cast/
+ground_circles/
+particles/

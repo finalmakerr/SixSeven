@@ -1,0 +1,26 @@
+📁 Art/UI/Icons/
+
+Purpose:
+Inventory + UI flat icons.
+
+Size Rules:
+
+256x256 standard
+
+128x128 optional small
+
+Transparent PNG
+
+Centered
+
+No perspective tilt
+
+Clean padding (8–16px margin)
+
+Subfolders:
+
+gear/
+consumables/
+spells/
+currencies/
+status_effects/

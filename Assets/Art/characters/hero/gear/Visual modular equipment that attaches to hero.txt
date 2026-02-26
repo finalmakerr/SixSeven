@@ -1,0 +1,22 @@
+📁 Art/Characters/Hero/Gear/
+
+Purpose:
+Visual modular equipment that attaches to hero.
+
+Size Rules:
+
+512x512 per gear piece
+
+Transparent PNG
+
+Centered properly to hero anchor
+
+Same scale across all tiers
+
+Subfolders:
+
+helmets/
+chest/
+boots/
+weapons/
+capes/

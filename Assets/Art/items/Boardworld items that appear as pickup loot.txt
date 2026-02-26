@@ -1,0 +1,21 @@
+📁 Art/Items/
+
+Purpose:
+Board/world items that appear as pickup loot.
+
+Size:
+
+512x512
+
+Transparent PNG
+
+Slight bottom weight (object grounded)
+
+Clean silhouette
+
+Subfolders example:
+
+consumables/
+gear_drops/
+keys/
+special/
