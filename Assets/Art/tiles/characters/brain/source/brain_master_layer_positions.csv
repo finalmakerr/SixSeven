@@ -1,0 +1,9 @@
+index,layerName,fullPath,kind,visible,x,y,w,h,centerX,centerY,offsetFromDocCenterX,offsetFromDocCenterY,docW,docH
+0,Items,Items,undefined,0,-285,-21,1504,1129,467,543.5,69.5,14.5,795,1058
+1,Modular 2 - arms,Modular 2 - arms,undefined,0,50,0,745,1038,422.5,519,25,-10,795,1058
+2,arm_l_07,Modular 2 - arms/arm_l_07,undefined,0,154,436,136,244,222,558,-175.5,29,795,1058
+3,Modular 1,Modular 1,undefined,0,0,0,1030,1099,515,549.5,117.5,20.5,795,1058
+4,body,Modular 1/body,LayerKind.NORMAL,1,270,573,312,273,426,709.5,28.5,180.5,795,1058
+5,faces,faces,undefined,0,0,0,795,1038,397.5,519,0,-10,795,1058
+6,Layer 15,Layer 15,undefined,0,50,0,745,1038,422.5,519,25,-10,795,1058
+7,sword_l3b grip copy,Modular 1/sword_l3b grip copy,LayerKind.SMARTOBJECT,1,52,219,978,880,541,659,143.5,130,795,1058

@@ -26,4 +26,3 @@ just got hit face / can't move face, Keep everything else the same! no abstract 
 
 
 ------------------------------
-head layout bottom area must be exactly the same
