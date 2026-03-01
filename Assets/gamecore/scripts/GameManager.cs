@@ -29,6 +29,7 @@ namespace GameCore
         [SerializeField] private GameBalanceConfig balanceConfig;
         // CODEX BOSS PR1
         [SerializeField] private BossManager bossManager;
+        [SerializeField] private ShopManager shopManager;
         [SerializeField] private PlayerAnimationStateController playerAnimationStateController;
 
         [Header("UI")]
@@ -187,6 +188,7 @@ namespace GameCore
         public BossState CurrentBossState { get; private set; }
         // CODEX BOSS PR1
         public BossDefinition CurrentBoss => bossManager != null ? bossManager.CurrentBoss : null;
+        public PlayerItemInventory PlayerInventory => playerItemInventory;
         public bool HasMonsterAttackTarget => CurrentBossState.IsAngry || CurrentBossState.IsEnraged || CurrentBossState.IsPermanentlyEnraged;
         public Vector2Int MonsterAttackTarget => CurrentBossState.AttackTarget;
 
@@ -427,6 +429,47 @@ namespace GameCore
 
         // CODEX CHEST PR2
         public int CrownsThisRun => crownsThisRun;
+        public int GetGold() => crownsThisRun;
+
+        public void AddGold(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            crownsThisRun += amount;
+            SaveCrownsIfNeeded();
+            UpdateUI();
+        }
+
+        public bool TrySpendGold(int amount)
+        {
+            if (amount <= 0 || crownsThisRun < amount)
+            {
+                return false;
+            }
+
+            crownsThisRun -= amount;
+            SaveCrownsIfNeeded();
+            UpdateUI();
+            return true;
+        }
+
+        public bool HasOneUpInInventory()
+        {
+            return playerItemInventory != null && playerItemInventory.HasItem(PlayerItemType.SecondChance);
+        }
+
+        public bool TryGrantShopOffer(ShopOffer offer)
+        {
+            if (offer.IsOneUp)
+            {
+                return playerItemInventory != null && playerItemInventory.TryAddItem(PlayerItemType.SecondChance);
+            }
+
+            return playerItemInventory != null && playerItemInventory.TryAddItem(offer.ItemType);
+        }
 
 
         private enum BossShardRewardType
@@ -488,6 +531,11 @@ namespace GameCore
             if (bossManager == null)
             {
                 bossManager = FindObjectOfType<BossManager>();
+            }
+
+            if (shopManager == null)
+            {
+                shopManager = FindObjectOfType<ShopManager>();
             }
 
             if (playerAnimationStateController == null)
@@ -903,6 +951,17 @@ namespace GameCore
         }
 
         public bool LoadNextLevel()
+        {
+            var nextIndex = CurrentLevelIndex + 1;
+            if (shopManager != null && shopManager.TryOpenBeforeBossLevel(nextIndex, ContinueLoadNextLevel))
+            {
+                return true;
+            }
+
+            return ContinueLoadNextLevel();
+        }
+
+        private bool ContinueLoadNextLevel()
         {
             if (levelManager != null)
             {
@@ -4684,6 +4743,13 @@ namespace GameCore
             var remainingHp = CurrentHP - halfUnits;
             if (remainingHp <= 0 && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
             {
+                if (IsBossLevel && shopManager != null && shopManager.TryReviveToShopFromBossDeath())
+                {
+                    CurrentHP = Mathf.Min(maxHearts * 2, 2);
+                    UpdateUI();
+                    return;
+                }
+
                 CurrentHP = Mathf.Min(maxHearts * 2, 2);
                 UpdateUI();
                 return;
@@ -6023,6 +6089,15 @@ namespace GameCore
             }
 
             board.SetExternalInputLock(locked);
+        }
+
+        public void SetShopActive(bool active)
+        {
+            SetBoardInputLock(active);
+            if (board != null)
+            {
+                board.gameObject.SetActive(!active);
+            }
         }
 
         // STAGE 5: Score count-up helper.
