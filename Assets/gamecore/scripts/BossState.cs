@@ -14,7 +14,7 @@ namespace GameCore
         public int CurrentHP;
         public int CurrentPhaseIndex;
         public EnrageState EnrageState;
-        public bool HasCharmResistance;
+        public StatusContainer Statuses;
         public Vector2Int AggressorPosition;
         public int AggressorPieceId;
         public Vector2Int AttackTarget;
