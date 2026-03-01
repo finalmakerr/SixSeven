@@ -50,6 +50,11 @@ namespace SixSeven.Systems
             hpUnits = MaxBaseHp;
         }
 
+        public void SetCurrentHp(int amount)
+        {
+            hpUnits = Mathf.Clamp(amount, 0, MaxBaseHp);
+        }
+
         public void RefillEnergyToMaximum()
         {
             energyUnits = MaxEnergy;
@@ -67,6 +72,11 @@ namespace SixSeven.Systems
             return hpUnits - previous;
         }
 
+        public int ApplyHeal(int amount)
+        {
+            return RestoreHp(amount);
+        }
+
         public int AddShield(int amount)
         {
             if (amount <= 0)
@@ -77,6 +87,18 @@ namespace SixSeven.Systems
             var previous = shieldUnits;
             shieldUnits = Mathf.Clamp(shieldUnits + amount, 0, MaxShieldHp);
             return shieldUnits - previous;
+        }
+
+        public int ApplyShieldDamage(int amount)
+        {
+            if (amount <= 0)
+            {
+                return 0;
+            }
+
+            var absorbed = Mathf.Min(shieldUnits, amount);
+            shieldUnits -= absorbed;
+            return absorbed;
         }
 
         public int GainEnergy(int amount)

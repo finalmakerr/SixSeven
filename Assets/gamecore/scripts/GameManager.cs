@@ -3,11 +3,22 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using SixSeven.Systems;
 
 namespace GameCore
 {
     public class GameManager : MonoBehaviour
     {
+        public enum DamageSource
+        {
+            Player,
+            Monster,
+            Boss,
+            Bomb,
+            Hazard,
+            Spell
+        }
+
         private const string HeatmapTutorialKey = "HeatmapTutorialShown";
 
         public event Action OnWin;
@@ -144,6 +155,7 @@ namespace GameCore
         [Header("Player Health")]
         [SerializeField] private int maxHearts = 1;
         [SerializeField] private int maxHeartsCap = 7; // CODEX STAGE 10C
+        [SerializeField] private PlayerVitalsSystem playerVitalsSystem = new PlayerVitalsSystem();
         private int baseMaxEnergy;
         private int baseMaxHearts;
         [Header("Player Inventory")]
@@ -176,7 +188,7 @@ namespace GameCore
         public int Energy => energy;
         public int MaxHP => maxHearts;
         public int MaxHearts => maxHearts;
-        public int CurrentHP { get; private set; }
+        public int CurrentHP => playerVitalsSystem != null ? playerVitalsSystem.CurrentHp : 0;
         public int PickupRadius => pickupRadius;
         // CODEX: LEVEL_LOOP
         public int MovesLimit { get; private set; }
@@ -1241,10 +1253,43 @@ namespace GameCore
                 return;
             }
 
-            var healHalfUnits = amount * 2;
-            CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + healHalfUnits);
+            ApplyHeal(amount * 2);
             UpdateUI();
         }
+        private PlayerVitalsSystem.DamageResolution ApplyDamage(int amount)
+        {
+            EnsurePlayerVitalsSystem();
+            return playerVitalsSystem.ApplyDamage(amount);
+        }
+
+        private int ApplyHeal(int amount)
+        {
+            EnsurePlayerVitalsSystem();
+            return playerVitalsSystem.ApplyHeal(amount);
+        }
+
+        private int ApplyShieldDamage(int amount)
+        {
+            EnsurePlayerVitalsSystem();
+            return playerVitalsSystem.ApplyShieldDamage(amount);
+        }
+
+        private void SetPlayerCurrentHp(int amount)
+        {
+            EnsurePlayerVitalsSystem();
+            playerVitalsSystem.SetCurrentHp(amount);
+        }
+
+        private void EnsurePlayerVitalsSystem()
+        {
+            if (playerVitalsSystem == null)
+            {
+                playerVitalsSystem = new PlayerVitalsSystem();
+            }
+
+            playerVitalsSystem.SetUnlockedHearts(maxHearts);
+        }
+
 
         public bool TryActivateBubble()
         {
@@ -1860,7 +1905,7 @@ namespace GameCore
                 return;
             }
 
-            TakeDamage(1);
+            TakeDamage(1, DamageSource.Hazard);
             ApplyEnergyDrain(1);
         }
 
@@ -2091,7 +2136,7 @@ namespace GameCore
                 var healAmount = Mathf.Max(0, CurrentBoss.healPerTumorTier) * totalTumorTier;
                 if (healAmount > 0)
                 {
-                    bossState.CurrentHP = Mathf.Clamp(bossState.CurrentHP + healAmount, 0, bossState.MaxHP);
+                    bossState = ApplyBossHeal(bossState, healAmount);
                 }
             }
             else if (CurrentBoss.tumorBehavior == BossTumorBehavior.ShieldFromTumors)
@@ -3591,7 +3636,7 @@ namespace GameCore
         private void ResolvePlayerHit()
         {
             TriggerStunnedAnimation();
-            TakeDamage(1);
+            TakeDamage(1, DamageSource.Monster);
         }
 
         private void SpawnMonsterAttackMarker(Vector2Int targetPosition)
@@ -4325,7 +4370,7 @@ namespace GameCore
                 return;
             }
 
-            var phaseAdvanced = ApplyBossDamageAndPhaseProgress(1, source);
+            var phaseAdvanced = ApplyBossDamage(1, source);
             if (CurrentBossState.bossAlive)
             {
                 if (debugMode)
@@ -4355,7 +4400,7 @@ namespace GameCore
 
 
         // CODEX BOSS PHASE PR1
-        private bool ApplyBossDamageAndPhaseProgress(int damage, string source)
+        private bool ApplyBossDamage(int damage, string source)
         {
             if (damage <= 0)
             {
@@ -4369,10 +4414,10 @@ namespace GameCore
             }
 
             var previousPhase = bossState.CurrentPhaseIndex;
-            if (bossState.TumorShield > 0)
+            var absorbed = Mathf.Min(bossState.TumorShield, damage);
+            if (absorbed > 0)
             {
-                var absorbed = Mathf.Min(bossState.TumorShield, damage);
-                bossState.TumorShield -= absorbed;
+                bossState.TumorShield -= ApplyBossShieldDamage(absorbed);
                 damage -= absorbed;
             }
 
@@ -4395,7 +4440,7 @@ namespace GameCore
                 damagedThisTurn.Add(pieceId);
             }
 
-            bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - damage);
+            bossState = ApplyBossHpDamage(bossState, damage);
             if (bossState.CurrentHP <= 0)
             {
                 bossState.bossAlive = false;
@@ -4414,6 +4459,23 @@ namespace GameCore
             }
 
             return phaseAdvanced;
+        }
+
+        private static BossState ApplyBossHpDamage(BossState bossState, int amount)
+        {
+            bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - amount);
+            return bossState;
+        }
+
+        private static int ApplyBossShieldDamage(int amount)
+        {
+            return Mathf.Max(0, amount);
+        }
+
+        private static BossState ApplyBossHeal(BossState bossState, int amount)
+        {
+            bossState.CurrentHP = Mathf.Clamp(bossState.CurrentHP + amount, 0, bossState.MaxHP);
+            return bossState;
         }
 
         // CODEX BOSS PHASE PR1
@@ -4636,7 +4698,13 @@ namespace GameCore
                 maxHearts = 1;
             }
 
-            CurrentHP = maxHearts * 2;
+            if (playerVitalsSystem == null)
+            {
+                playerVitalsSystem = new PlayerVitalsSystem();
+            }
+
+            playerVitalsSystem.SetUnlockedHearts(maxHearts);
+            playerVitalsSystem.RefillHpToBaseMaximum();
         }
 
         private int GetCurrentMonsterRange()
@@ -4728,6 +4796,11 @@ namespace GameCore
 
         public void TakeDamage(int halfUnits)
         {
+            TakeDamage(halfUnits, DamageSource.Hazard);
+        }
+
+        public void TakeDamage(int halfUnits, DamageSource source)
+        {
             if (halfUnits <= 0 || hasEnded || IsBugadaActive)
             {
                 return;
@@ -4746,22 +4819,20 @@ namespace GameCore
                 return;
             }
 
-            var remainingHp = CurrentHP - halfUnits;
-            if (remainingHp <= 0 && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
+            var damageResult = ApplyDamage(halfUnits);
+            if (damageResult.IsFatal && playerItemInventory != null && playerItemInventory.TryConsumeItem(PlayerItemType.SecondChance))
             {
+                SetPlayerCurrentHp(Mathf.Min(maxHearts * 2, 2));
                 if (IsBossLevel && shopManager != null && shopManager.TryReviveToShopFromBossDeath())
                 {
-                    CurrentHP = Mathf.Min(maxHearts * 2, 2);
                     UpdateUI();
                     return;
                 }
 
-                CurrentHP = Mathf.Min(maxHearts * 2, 2);
                 UpdateUI();
                 return;
             }
 
-            CurrentHP = Mathf.Max(0, remainingHp);
             if (CurrentHP <= 0)
             {
                 GameOverFlow();
@@ -6402,7 +6473,7 @@ namespace GameCore
                     if (clampedHearts > maxHearts)
                     {
                         maxHearts = clampedHearts;
-                        CurrentHP = Mathf.Min(maxHearts * 2, CurrentHP + 2);
+                        ApplyHeal(2);
                     }
                     break;
                 }
