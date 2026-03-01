@@ -24,6 +24,7 @@ namespace GameCore
         [Header("SFX Settings")]
         [SerializeField, Min(1)] private int sfxPoolSize = 8;
         [SerializeField, Range(0f, 1f)] private float sfxVolume = 1f;
+        [SerializeField] private AudioClip shopReplacementUnlockSfx;
         [SerializeField] private List<AudioSource> sfxSources = new List<AudioSource>();
 
         private readonly Dictionary<AudioSource, Coroutine> activeFadeRoutines = new Dictionary<AudioSource, Coroutine>();
@@ -117,6 +118,11 @@ namespace GameCore
             nextSfxIndex = (nextSfxIndex + 1) % sfxSources.Count;
 
             source.PlayOneShot(clip, Mathf.Clamp01(volume) * sfxVolume);
+        }
+
+        public void PlayShopReplacementUnlock()
+        {
+            PlaySFX(shopReplacementUnlockSfx);
         }
 
         public void SetMusicVolume(float value)

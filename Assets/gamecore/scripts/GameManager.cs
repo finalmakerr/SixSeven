@@ -845,6 +845,12 @@ namespace GameCore
             }
         }
 
+        public bool IsBossLevel(int levelIndex)
+        {
+            var levelIndexMod = Mathf.Abs(levelIndex) % 10;
+            return levelIndexMod == 6;
+        }
+
         private void ResolveHazardTypeForLevel()
         {
             int effectiveLevel = GetEffectiveLevel(CurrentLevel);

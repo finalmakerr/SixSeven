@@ -51,10 +51,7 @@ namespace GameCore
                 return false;
             }
 
-            if (activeState.PurchaseCount >= 3)
-            {
-                activeState.ReplacementTriggered = true;
-            }
+            var isBossLevel = gameManager != null && gameManager.IsBossLevel(nextLevelIndex);
             if (!isBossLevel)
             {
                 continueToBoss?.Invoke();
@@ -161,6 +158,7 @@ namespace GameCore
             }
 
             activeState.PurchaseCount += 1;
+            var replacementWasTriggered = activeState.ReplacementTriggered;
             if (useReplacement)
             {
                 activeState.ReplacementConsumed = true;
@@ -173,6 +171,21 @@ namespace GameCore
             if (activeState.PurchaseCount >= 3)
             {
                 activeState.ReplacementTriggered = true;
+            }
+
+            var replacementJustUnlocked = !replacementWasTriggered && activeState.ReplacementTriggered;
+            if (replacementJustUnlocked && !activeState.ReplacementUnlockDialoguePlayed)
+            {
+                activeState.ReplacementUnlockDialoguePlayed = true;
+                var unlockLine = dialogueSystem != null
+                    ? dialogueSystem.SelectReplacementUnlockLine(activeShopkeeper, activeState.ReplacementItem.Category)
+                    : string.Empty;
+                if (!string.IsNullOrWhiteSpace(unlockLine))
+                {
+                    uiController?.ShowTemporaryDialogue(unlockLine);
+                }
+
+                AudioManager.Instance?.PlayShopReplacementUnlock();
             }
 
             if (activeState.PurchaseCount >= maxPurchasesPerShop)
