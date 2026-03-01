@@ -1476,11 +1476,19 @@ namespace GameCore
 
             if (piece.IsMonster && GameManager.Instance != null)
             {
-                var damageAmount = GetMonsterDamageForReason(reason);
-                var died = GameManager.Instance.TryApplyMonsterDamage(piece, damageAmount);
-                if (!died)
+                if (reason == DestructionReason.NormalMatch)
                 {
-                    return false;
+                    // Instant kill for 3+ monster match
+                    GameManager.Instance.ForceKillMonster(piece);
+                }
+                else
+                {
+                    var damageAmount = GetMonsterDamageForReason(reason);
+                    var died = GameManager.Instance.TryApplyMonsterDamage(piece, damageAmount);
+                    if (!died)
+                    {
+                        return false;
+                    }
                 }
             }
 

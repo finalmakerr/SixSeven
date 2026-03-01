@@ -2915,6 +2915,20 @@ namespace GameCore
             return died;
         }
 
+        public void ForceKillMonster(Piece piece)
+        {
+            if (piece == null || !piece.IsMonster)
+                return;
+
+            var pieceId = piece.GetInstanceID();
+
+            if (monsterStates.TryGetValue(pieceId, out var state))
+            {
+                state.CurrentHP = 0;
+                monsterStates[pieceId] = state;
+            }
+        }
+
         private int PredictGuaranteedDamageNextTick(Piece piece)
         {
             if (piece == null)
