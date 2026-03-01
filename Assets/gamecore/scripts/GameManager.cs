@@ -2897,7 +2897,7 @@ namespace GameCore
 
         public bool TryApplyMonsterDamage(Piece piece, int amount)
         {
-            if (piece == null || piece.IsPlayer || !piece.IsMonster)
+            if (piece == null || piece.IsPlayer || !piece.IsMonster || amount <= 0)
             {
                 return false;
             }
