@@ -13,7 +13,6 @@ namespace GameCore
         public Vector2Int TargetTile;
 
         public int TurnsUntilAttack;
-        public int StateTurnsRemaining;
         public Vector2Int CurrentTile;
         public int CurrentHP;
     }

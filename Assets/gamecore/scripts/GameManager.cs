@@ -513,7 +513,6 @@ namespace GameCore
             public StatusContainer Statuses;
             public Vector2Int TargetTile;
             public int TurnsUntilAttack;
-            public int StateTurnsRemaining;
             public Vector2Int CurrentTile;
             public int CurrentHP;
         }
@@ -2652,7 +2651,7 @@ namespace GameCore
 
                 if (state.EnrageState == EnrageState.Angry)
                 {
-                    state.Statuses.Add(StatusType.CharmResistant);
+                    state.Statuses.Add(StatusType.CharmResistant, -1);
                 }
 
                 if (state.EnrageState != EnrageState.Calm && state.TurnsUntilAttack > 0)
@@ -2663,38 +2662,34 @@ namespace GameCore
                 if (state.Statuses.Has(StatusType.Confused) || state.Statuses.Has(StatusType.Tired) || state.Statuses.Has(StatusType.Sleeping))
                 {
                     ClearMonsterTelegraphs(pieceId, state.CurrentTile);
-                    state.StateTurnsRemaining--;
-                    if (state.StateTurnsRemaining <= 0)
+                    var wasConfused = state.Statuses.Has(StatusType.Confused);
+                    var wasTired = state.Statuses.Has(StatusType.Tired);
+                    var wasSleeping = state.Statuses.Has(StatusType.Sleeping);
+                    state.Statuses.Tick();
+                    if (wasConfused && !state.Statuses.Has(StatusType.Confused))
                     {
-                        if (state.Statuses.Has(StatusType.Confused))
-                        {
-                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
-                            EnterIdleState(ref state);
-                            state.CurrentTile = currentTile;
-                            state.CurrentHP = kvp.Value.CurrentHP;
-                            state.TurnsUntilAttack = 0;
-                            state.StateTurnsRemaining = 0;
-                            state.TargetTile = default;
-                            state.IsAdjacencyTriggered = false;
-                        }
-                        else if (state.Statuses.Has(StatusType.Tired))
-                        {
-                            state.IsIdle = false;
-                            state.Statuses.Remove(StatusType.Tired);
-                            state.Statuses.Add(StatusType.Sleeping);
-                            state.StateTurnsRemaining = GetMonsterSleepDuration();
-                        }
-                        else if (state.Statuses.Has(StatusType.Sleeping))
-                        {
-                            ClearMonsterTelegraphs(pieceId, state.CurrentTile);
-                            EnterIdleState(ref state);
-                            state.CurrentTile = currentTile;
-                            state.CurrentHP = kvp.Value.CurrentHP;
-                            state.TurnsUntilAttack = 0;
-                            state.StateTurnsRemaining = 0;
-                            state.TargetTile = default;
-                            state.IsAdjacencyTriggered = false;
-                        }
+                        ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                        EnterIdleState(ref state);
+                        state.CurrentTile = currentTile;
+                        state.CurrentHP = kvp.Value.CurrentHP;
+                        state.TurnsUntilAttack = 0;
+                        state.TargetTile = default;
+                        state.IsAdjacencyTriggered = false;
+                    }
+                    else if (wasTired && !state.Statuses.Has(StatusType.Tired))
+                    {
+                        state.IsIdle = false;
+                        state.Statuses.Add(StatusType.Sleeping, GetMonsterSleepDuration());
+                    }
+                    else if (wasSleeping && !state.Statuses.Has(StatusType.Sleeping))
+                    {
+                        ClearMonsterTelegraphs(pieceId, state.CurrentTile);
+                        EnterIdleState(ref state);
+                        state.CurrentTile = currentTile;
+                        state.CurrentHP = kvp.Value.CurrentHP;
+                        state.TurnsUntilAttack = 0;
+                        state.TargetTile = default;
+                        state.IsAdjacencyTriggered = false;
                     }
                 }
 
@@ -2765,7 +2760,6 @@ namespace GameCore
                 state.Statuses.Remove(StatusType.Sleeping);
                 state.Statuses.Remove(StatusType.Tired);
                 state.TurnsUntilAttack = 0;
-                state.StateTurnsRemaining = 0;
                 state.TargetTile = default;
                 EnterIdleState(ref state);
                 monsterStates[pieceId] = state;
@@ -2818,12 +2812,11 @@ namespace GameCore
             state.EnrageState = EnrageState.Angry;
             state.IsAdjacencyTriggered = triggeredByAdjacency;
             state.Statuses.Remove(StatusType.Hurt);
-            state.Statuses.Add(StatusType.CharmResistant);
+            state.Statuses.Add(StatusType.CharmResistant, -1);
             state.Statuses.Remove(StatusType.Tired);
             state.Statuses.Remove(StatusType.Sleeping);
             state.Statuses.Remove(StatusType.Confused);
             state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
-            state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
 
             if (allowTelegraph && !IsTelegraphOnlyOnEnrage())
@@ -2851,12 +2844,11 @@ namespace GameCore
                 EnrageState = EnrageState.Calm,
                 Statuses = new StatusContainer(),
                 TurnsUntilAttack = 0,
-                StateTurnsRemaining = GetMonsterConfusedDuration(),
                 TargetTile = default,
                 CurrentTile = currentTile,
                 CurrentHP = currentHp
             };
-            state.Statuses.Add(StatusType.Confused);
+            state.Statuses.Add(StatusType.Confused, GetMonsterConfusedDuration());
             return state;
         }
 
@@ -2973,13 +2965,12 @@ namespace GameCore
             state.IsIdle = false;
             state.EnrageState = EnrageState.Calm;
             state.IsAdjacencyTriggered = false;
-            state.Statuses.Add(StatusType.Hurt);
+            state.Statuses.Add(StatusType.Hurt, -1);
             state.Statuses.Remove(StatusType.CharmResistant);
             state.Statuses.Remove(StatusType.Tired);
             state.Statuses.Remove(StatusType.Sleeping);
             state.Statuses.Remove(StatusType.Confused);
             state.TurnsUntilAttack = 0;
-            state.StateTurnsRemaining = 0;
             monsterStates[pieceId] = state;
             ClearMonsterTelegraphs(pieceId, state.CurrentTile);
             ApplyMonsterVisualState(piece, state);
@@ -3009,7 +3000,6 @@ namespace GameCore
                 Statuses = new StatusContainer(),
                 CurrentHP = defaultMonsterHP,
                 TurnsUntilAttack = 0,
-                StateTurnsRemaining = 0,
                 CurrentTile = currentTile,
                 TargetTile = default,
                 IsAdjacencyTriggered = false
@@ -3097,7 +3087,7 @@ namespace GameCore
 
             if (diesNext)
             {
-                state.Statuses.Add(StatusType.Hurt);
+                state.Statuses.Add(StatusType.Hurt, -1);
                 state.Statuses.Remove(StatusType.CharmResistant);
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
@@ -3107,7 +3097,7 @@ namespace GameCore
                 state.IsIdle = false;
                 state.EnrageState = EnrageState.Angry;
                 state.IsAdjacencyTriggered = false;
-                state.Statuses.Add(StatusType.CharmResistant);
+                state.Statuses.Add(StatusType.CharmResistant, -1);
                 state.TurnsUntilAttack = GetMonsterTurnsBeforeAttack();
                 if (board != null && board.TryGetPlayerPosition(out var playerPosition))
                 {
@@ -3116,7 +3106,7 @@ namespace GameCore
             }
             else
             {
-                state.Statuses.Add(StatusType.Hurt);
+                state.Statuses.Add(StatusType.Hurt, -1);
                 state.Statuses.Remove(StatusType.CharmResistant);
                 AttackTelegraphSystem.Instance?.RemoveTelegraph(pieceId);
                 RemoveGenericMonsterTelegraph(state.CurrentTile);
@@ -3342,7 +3332,7 @@ namespace GameCore
                         state.EnrageState = EnrageState.Enraged;
                         state.IsIdle = false;
                         state.IsAdjacencyTriggered = false;
-                        state.Statuses.Add(StatusType.CharmResistant);
+                        state.Statuses.Add(StatusType.CharmResistant, -1);
                         monsterStates[pieceId] = state;
 
                         if (IsTelegraphOnlyOnEnrage())
@@ -3574,7 +3564,7 @@ namespace GameCore
             var bossState = CurrentBossState;
             EnsureBossStatuses(ref bossState);
             bossState.EnrageState = EnrageState.Angry;
-            bossState.Statuses.Add(StatusType.CharmResistant);
+            bossState.Statuses.Add(StatusType.CharmResistant, -1);
             if (!board.TryGetPieceAt(aggressorPosition, out var aggressorPiece) || aggressorPiece.IsPlayer)
             {
                 return;
@@ -4520,7 +4510,7 @@ namespace GameCore
             if (shouldEnrage && bossState.EnrageState != EnrageState.Enraged)
             {
                 bossState.EnrageState = EnrageState.Enraged;
-                bossState.Statuses.Add(StatusType.CharmResistant);
+                bossState.Statuses.Add(StatusType.CharmResistant, -1);
                 if (CurrentBoss.enragePower != BossPower.None)
                 {
                     unlockedBossPhasePowers.Add(CurrentBoss.enragePower);
