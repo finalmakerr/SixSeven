@@ -1,4 +1,5 @@
 using UnityEngine;
+using SixSeven.Core;
 
 namespace GameCore
 {
@@ -12,9 +13,7 @@ namespace GameCore
         public int MaxHP;
         public int CurrentHP;
         public int CurrentPhaseIndex;
-        public bool IsPermanentlyEnraged;
-        public bool IsAngry;
-        public bool IsEnraged;
+        public EnrageState EnrageState;
         public bool HasCharmResistance;
         public Vector2Int AggressorPosition;
         public int AggressorPieceId;
