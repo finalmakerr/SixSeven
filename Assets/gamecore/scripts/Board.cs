@@ -1443,6 +1443,19 @@ namespace GameCore
             return HasMatchAtSimulated(monsterPosition.x, monsterPosition.y, x1, y1, x2, y2);
         }
 
+        private static int GetMonsterDamageForReason(DestructionReason reason)
+        {
+            switch (reason)
+            {
+                case DestructionReason.BombExplosion:
+                    return 2;
+                case DestructionReason.NormalMatch:
+                    return 1;
+                default:
+                    return 1;
+            }
+        }
+
         public bool TryDestroyPieceAt(Vector2Int position, DestructionReason reason)
         {
             if (pieces == null || !IsInBounds(position.x, position.y))
@@ -1459,6 +1472,16 @@ namespace GameCore
             if (ShouldBlockBossInstantKill(piece, reason))
             {
                 return false;
+            }
+
+            if (piece.IsMonster && GameManager.Instance != null)
+            {
+                var damageAmount = GetMonsterDamageForReason(reason);
+                var died = GameManager.Instance.TryApplyMonsterDamage(piece, damageAmount);
+                if (!died)
+                {
+                    return false;
+                }
             }
 
             RemovePiece(piece, reason);
@@ -2541,6 +2564,16 @@ namespace GameCore
                 if (ShouldBlockBossInstantKill(piece, reason))
                 {
                     continue;
+                }
+
+                if (piece.IsMonster && GameManager.Instance != null)
+                {
+                    var damageAmount = GetMonsterDamageForReason(reason);
+                    var died = GameManager.Instance.TryApplyMonsterDamage(piece, damageAmount);
+                    if (!died)
+                    {
+                        continue;
+                    }
                 }
 
                 OnPieceDestroyed?.Invoke(piece, reason); // CODEX CHEST PR2
