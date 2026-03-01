@@ -1,4 +1,5 @@
 using UnityEngine;
+using SixSeven.Core;
 
 namespace GameCore
 {
@@ -6,9 +7,8 @@ namespace GameCore
     public struct MonsterState
     {
         public bool IsIdle;
-        public bool IsAngry;
+        public EnrageState EnrageState;
         public bool IsHurt;
-        public bool IsEnraged;
         public bool IsTired;
         public bool IsSleeping;
         public bool IsConfused;
