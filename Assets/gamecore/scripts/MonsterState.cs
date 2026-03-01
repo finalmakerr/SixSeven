@@ -8,10 +8,7 @@ namespace GameCore
     {
         public bool IsIdle;
         public EnrageState EnrageState;
-        public bool IsHurt;
-        public bool IsTired;
-        public bool IsSleeping;
-        public bool IsConfused;
+        public StatusContainer Statuses;
 
         public Vector2Int TargetTile;
 
