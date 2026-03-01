@@ -51,8 +51,10 @@ namespace GameCore
                 return false;
             }
 
-            var levelIndexMod = Mathf.Abs(nextLevelIndex) % 10;
-            var isBossLevel = levelIndexMod == 6;
+            if (activeState.PurchaseCount >= 3)
+            {
+                activeState.ReplacementTriggered = true;
+            }
             if (!isBossLevel)
             {
                 continueToBoss?.Invoke();
@@ -134,7 +136,7 @@ namespace GameCore
                 }
 
                 offer = activeState.ReplacementItem;
-                price = activeState.PriceSnapshot[3];
+                price = activeState.PriceSnapshot[itemGenerator.BaseSlotCount];
             }
             else
             {
