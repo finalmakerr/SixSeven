@@ -156,6 +156,7 @@ namespace GameCore
         [SerializeField] private int maxHearts = 1;
         [SerializeField] private int maxHeartsCap = 7; // CODEX STAGE 10C
         [SerializeField] private PlayerVitalsSystem playerVitalsSystem = new PlayerVitalsSystem();
+        [SerializeField] private BossVitalsSystem bossVitalsSystem = new BossVitalsSystem();
         private int baseMaxEnergy;
         private int baseMaxHearts;
         [Header("Player Inventory")]
@@ -791,12 +792,13 @@ namespace GameCore
             level.isBossLevel = IsBossLevel;
             // CODEX BOSS PR1
             var initialBossHp = CurrentBoss != null && CurrentBoss.maxHP > 0 ? CurrentBoss.maxHP : 100;
+            InitializeBossVitals(initialBossHp);
             CurrentBossState = new BossState
             {
                 bossPosition = new Vector2Int(gridSize.x / 2, gridSize.y / 2),
                 bossAlive = IsBossLevel,
-                MaxHP = initialBossHp,
-                CurrentHP = initialBossHp,
+                MaxHP = bossVitalsSystem.MaxHp,
+                CurrentHP = bossVitalsSystem.CurrentHp,
                 CurrentPhaseIndex = 0,
                 IsPermanentlyEnraged = false,
                 IsAngry = false,
@@ -806,7 +808,7 @@ namespace GameCore
                 AggressorPieceId = 0,
                 AttackTarget = default,
                 TurnsUntilAttack = 0,
-                TumorShield = 0
+                TumorShield = bossVitalsSystem.ShieldUnits
             };
             currentRunDefinition = LevelRunGeneration.BuildRunDefinition(levelIndex, level, IsBossLevel); // CODEX REPLAYABILITY
             activeMiniGoals.Clear();
@@ -1013,8 +1015,8 @@ namespace GameCore
 
             var bossState = CurrentBossState;
             var maxHp = CurrentBoss != null && CurrentBoss.maxHP > 0 ? CurrentBoss.maxHP : 100;
-            bossState.MaxHP = maxHp;
-            bossState.CurrentHP = maxHp;
+            InitializeBossVitals(maxHp);
+            SyncBossVitalsToState(ref bossState);
             bossState.CurrentPhaseIndex = 0;
             bossState.IsPermanentlyEnraged = false;
             bossState.IsAngry = false;
@@ -1024,7 +1026,6 @@ namespace GameCore
             bossState.AggressorPieceId = 0;
             bossState.AttackTarget = default;
             bossState.TurnsUntilAttack = 0;
-            bossState.TumorShield = 0;
             CurrentBossState = bossState;
             unlockedBossPhasePowers.Clear();
             UpdateUI();
@@ -2136,7 +2137,7 @@ namespace GameCore
                 var healAmount = Mathf.Max(0, CurrentBoss.healPerTumorTier) * totalTumorTier;
                 if (healAmount > 0)
                 {
-                    bossState = ApplyBossHeal(bossState, healAmount);
+                    ApplyBossHeal(healAmount);
                 }
             }
             else if (CurrentBoss.tumorBehavior == BossTumorBehavior.ShieldFromTumors)
@@ -2144,10 +2145,12 @@ namespace GameCore
                 var shieldAmount = Mathf.Max(0, CurrentBoss.shieldPerTumorTier) * totalTumorTier;
                 if (shieldAmount > 0)
                 {
-                    bossState.TumorShield += shieldAmount;
+                    EnsureBossVitalsSystem();
+                    bossVitalsSystem.AddShield(shieldAmount);
                 }
             }
 
+            SyncBossVitalsToState(ref bossState);
             CurrentBossState = bossState;
         }
 
@@ -2162,7 +2165,9 @@ namespace GameCore
             var bossState = CurrentBossState;
             if (bossState.TumorShield > 0)
             {
-                bossState.TumorShield = Mathf.Max(0, bossState.TumorShield - 1);
+                EnsureBossVitalsSystem();
+                bossVitalsSystem.ApplyShieldDamage(1);
+                SyncBossVitalsToState(ref bossState);
                 CurrentBossState = bossState;
             }
         }
@@ -4413,15 +4418,13 @@ namespace GameCore
                 return false;
             }
 
+            EnsureBossVitalsSystem();
             var previousPhase = bossState.CurrentPhaseIndex;
-            var absorbed = Mathf.Min(bossState.TumorShield, damage);
-            if (absorbed > 0)
-            {
-                bossState.TumorShield -= ApplyBossShieldDamage(absorbed);
-                damage -= absorbed;
-            }
+            var damageResolution = bossVitalsSystem.ApplyDamage(damage);
+            var hpDamage = damageResolution.HpLost;
+            SyncBossVitalsToState(ref bossState);
 
-            if (damage <= 0)
+            if (hpDamage <= 0)
             {
                 CurrentBossState = bossState;
                 UpdateUI();
@@ -4429,7 +4432,7 @@ namespace GameCore
             }
 
             var minorDamageThreshold = monsterAngerConfig != null ? Mathf.Max(1, monsterAngerConfig.minorDamageThreshold) : 1;
-            if (damage <= minorDamageThreshold)
+            if (hpDamage <= minorDamageThreshold)
             {
                 pendingMinorDamageAggro = true;
             }
@@ -4440,10 +4443,12 @@ namespace GameCore
                 damagedThisTurn.Add(pieceId);
             }
 
-            bossState = ApplyBossHpDamage(bossState, damage);
-            if (bossState.CurrentHP <= 0)
+            var phaseAdvanced = EvaluateBossPhaseTransitions();
+            bossState = CurrentBossState;
+            bossState.bossAlive = bossVitalsSystem.IsAlive;
+
+            if (!bossVitalsSystem.IsAlive)
             {
-                bossState.bossAlive = false;
                 CurrentBossState = bossState;
                 ClearBossAttackState();
                 UpdateUI();
@@ -4451,7 +4456,6 @@ namespace GameCore
             }
 
             CurrentBossState = bossState;
-            var phaseAdvanced = EvaluateBossPhaseTransitions();
             UpdateUI();
             if (debugMode)
             {
@@ -4461,21 +4465,29 @@ namespace GameCore
             return phaseAdvanced;
         }
 
-        private static BossState ApplyBossHpDamage(BossState bossState, int amount)
+        private void EnsureBossVitalsSystem()
         {
-            bossState.CurrentHP = Mathf.Max(0, bossState.CurrentHP - amount);
-            return bossState;
+            bossVitalsSystem ??= new BossVitalsSystem();
         }
 
-        private static int ApplyBossShieldDamage(int amount)
+        private void InitializeBossVitals(int maxHp)
         {
-            return Mathf.Max(0, amount);
+            EnsureBossVitalsSystem();
+            bossVitalsSystem.Initialize(maxHp);
         }
 
-        private static BossState ApplyBossHeal(BossState bossState, int amount)
+        private void SyncBossVitalsToState(ref BossState bossState)
         {
-            bossState.CurrentHP = Mathf.Clamp(bossState.CurrentHP + amount, 0, bossState.MaxHP);
-            return bossState;
+            EnsureBossVitalsSystem();
+            bossState.MaxHP = bossVitalsSystem.MaxHp;
+            bossState.CurrentHP = bossVitalsSystem.CurrentHp;
+            bossState.TumorShield = bossVitalsSystem.ShieldUnits;
+        }
+
+        private int ApplyBossHeal(int amount)
+        {
+            EnsureBossVitalsSystem();
+            return bossVitalsSystem.ApplyHeal(amount);
         }
 
         // CODEX BOSS PHASE PR1
@@ -4493,8 +4505,9 @@ namespace GameCore
             }
 
             var bossState = CurrentBossState;
-            var hpPercent = bossState.MaxHP > 0
-                ? (bossState.CurrentHP * 100f) / bossState.MaxHP
+            EnsureBossVitalsSystem();
+            var hpPercent = bossVitalsSystem.MaxHp > 0
+                ? (bossVitalsSystem.CurrentHp * 100f) / bossVitalsSystem.MaxHp
                 : 0f;
             var phaseAdvanced = false;
 
