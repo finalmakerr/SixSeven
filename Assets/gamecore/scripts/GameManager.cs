@@ -2874,6 +2874,47 @@ namespace GameCore
             return Mathf.Max(0, state.CurrentHP);
         }
 
+        private bool ApplyMonsterDamage(int pieceId, int amount)
+        {
+            if (!monsterStates.TryGetValue(pieceId, out var state))
+            {
+                return false;
+            }
+
+            if (amount <= 0)
+            {
+                return false;
+            }
+
+            state.CurrentHP = Mathf.Max(0, state.CurrentHP - amount);
+
+            var died = state.CurrentHP <= 0;
+
+            monsterStates[pieceId] = state;
+
+            return died;
+        }
+
+        public bool TryApplyMonsterDamage(Piece piece, int amount)
+        {
+            if (piece == null || piece.IsPlayer || !piece.IsMonster)
+            {
+                return false;
+            }
+
+            var pieceId = piece.GetInstanceID();
+            var state = GetOrCreateMonsterState(piece);
+            monsterStates[pieceId] = state;
+
+            var died = ApplyMonsterDamage(pieceId, amount);
+            if (!died)
+            {
+                EnterHurtState(piece);
+            }
+
+            return died;
+        }
+
         private int PredictGuaranteedDamageNextTick(Piece piece)
         {
             if (piece == null)
@@ -3037,10 +3078,6 @@ namespace GameCore
             {
                 EnsureMonsterStatuses(ref state);
                 state.CurrentTile = new Vector2Int(piece.X, piece.Y);
-                if (state.CurrentHP <= 0)
-                {
-                    state.CurrentHP = GetMonsterDefaultHitPoints();
-                }
             }
 
             return state;
