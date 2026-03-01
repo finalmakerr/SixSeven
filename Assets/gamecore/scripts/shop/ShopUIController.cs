@@ -22,6 +22,8 @@ namespace GameCore
         [SerializeField] private Text dialogueText;
 
         private ShopRuntimeState state;
+        private string persistentDialogue = string.Empty;
+        private int temporaryDialogueToken;
 
         public event Action<int> PurchaseRequested;
         public event Action ContinueRequested;
@@ -55,9 +57,10 @@ namespace GameCore
         {
             state = runtimeState;
             SetVisible(true);
+            persistentDialogue = dialogue ?? string.Empty;
             if (dialogueText != null)
             {
-                dialogueText.text = dialogue;
+                dialogueText.text = persistentDialogue;
             }
 
             Refresh();
@@ -65,7 +68,20 @@ namespace GameCore
 
         public void Hide()
         {
+            temporaryDialogueToken++;
             SetVisible(false);
+        }
+
+        public void ShowTemporaryDialogue(string text, float duration = 2.5f)
+        {
+            if (dialogueText == null)
+            {
+                return;
+            }
+
+            var token = ++temporaryDialogueToken;
+            dialogueText.text = text ?? string.Empty;
+            StartCoroutine(RestoreDialogueAfterDelay(token, Mathf.Max(0f, duration)));
         }
 
         public void Refresh()
@@ -148,6 +164,21 @@ namespace GameCore
             {
                 gameObject.SetActive(visible);
             }
+        }
+
+        private System.Collections.IEnumerator RestoreDialogueAfterDelay(int token, float duration)
+        {
+            if (duration > 0f)
+            {
+                yield return new WaitForSeconds(duration);
+            }
+
+            if (token != temporaryDialogueToken || dialogueText == null)
+            {
+                yield break;
+            }
+
+            dialogueText.text = persistentDialogue;
         }
     }
 }

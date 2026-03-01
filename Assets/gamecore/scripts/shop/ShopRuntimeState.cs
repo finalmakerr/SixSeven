@@ -13,6 +13,7 @@ namespace GameCore
         [SerializeField] private List<bool> purchasedFlags = new List<bool>(3);
         [SerializeField] private bool replacementTriggered;
         [SerializeField] private bool replacementConsumed;
+        [SerializeField] private bool replacementUnlockDialoguePlayed;
         [SerializeField] private List<int> priceSnapshot = new List<int>(4);
 
         public string ActiveShopkeeperId
@@ -41,6 +42,12 @@ namespace GameCore
             set => replacementConsumed = value;
         }
 
+        public bool ReplacementUnlockDialoguePlayed
+        {
+            get => replacementUnlockDialoguePlayed;
+            set => replacementUnlockDialoguePlayed = value;
+        }
+
         public List<int> PriceSnapshot => priceSnapshot;
         public int PurchaseCount { get; set; }
 
@@ -65,6 +72,7 @@ namespace GameCore
                 replacementItem = replacementItem,
                 replacementTriggered = replacementTriggered,
                 replacementConsumed = replacementConsumed,
+                replacementUnlockDialoguePlayed = replacementUnlockDialoguePlayed,
                 PurchaseCount = PurchaseCount
             };
 
