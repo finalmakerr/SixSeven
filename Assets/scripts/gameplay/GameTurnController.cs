@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using GameCore;
 
 public enum TileType
 {
@@ -221,7 +222,7 @@ public class GameTurnController : MonoBehaviour
             if (player.position == attackTile)
             {
                 int damage = 1;
-                player.HP = Mathf.Max(0, player.HP - damage);
+                DamageSystem.Instance.QueueDamage(player.GetInstanceID(), damage, DamageType.Boss);
                 OnPlayerDamaged?.Invoke(damage);
             }
 
@@ -255,7 +256,7 @@ public class GameTurnController : MonoBehaviour
         {
             int damage = 1;
 
-            player.HP = Mathf.Max(0, player.HP - damage);
+            DamageSystem.Instance.QueueDamage(player.GetInstanceID(), damage, DamageType.Boss);
             OnPlayerDamaged?.Invoke(damage);
 
             boss.energy = Mathf.Max(0, boss.energy - 1);
@@ -283,7 +284,7 @@ public class GameTurnController : MonoBehaviour
                 {
                     int damage = 1;
 
-                    player.HP = Mathf.Max(0, player.HP - damage);
+                    DamageSystem.Instance.QueueDamage(player.GetInstanceID(), damage, DamageType.Boss);
                     OnPlayerDamaged?.Invoke(damage);
 
                     boss.energy = Mathf.Max(0, boss.energy - 1);

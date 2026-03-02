@@ -526,6 +526,12 @@ namespace GameCore
             }
 
             Instance = this;
+
+            if (GetComponent<DamageSystem>() == null)
+            {
+                gameObject.AddComponent<DamageSystem>();
+            }
+
             if (balanceConfig == null)
             {
                 Debug.LogError("GameBalanceConfig is not assigned in GameManager.");
@@ -2906,13 +2912,47 @@ namespace GameCore
             var state = GetOrCreateMonsterState(piece);
             monsterStates[pieceId] = state;
 
-            var died = ApplyMonsterDamage(pieceId, amount);
+            DamageSystem.Instance.QueueDamage(piece.GetInstanceID(), amount, DamageType.Direct);
+            var died = monsterStates.TryGetValue(pieceId, out state) && state.CurrentHP <= 0;
             if (!died)
             {
                 EnterHurtState(piece);
             }
 
             return died;
+        }
+
+        public bool TryApplyDamageToPlayer(int targetId, int amount)
+        {
+            if (player != null && player.GetInstanceID() == targetId)
+            {
+                TakeDamage(amount, DamageSource.Unknown);
+                return true;
+            }
+
+            return false;
+        }
+
+        public bool TryApplyDamageToMonster(int targetId, int amount)
+        {
+            if (monsterStates.TryGetValue(targetId, out var state))
+            {
+                ApplyMonsterDamage(targetId, amount);
+                return true;
+            }
+
+            return false;
+        }
+
+        public bool TryApplyDamageToBoss(int targetId, int amount)
+        {
+            if (bossVitalsSystem != null && bossVitalsSystem.GetInstanceID() == targetId)
+            {
+                ApplyBossDamage(amount, "DamageSystem");
+                return true;
+            }
+
+            return false;
         }
 
         public void ForceKillMonster(Piece piece)
@@ -4407,7 +4447,14 @@ namespace GameCore
                 return;
             }
 
-            var phaseAdvanced = ApplyBossDamage(1, source);
+            EnsureBossVitalsSystem();
+            var previousPhase = bossState.CurrentPhaseIndex;
+            DamageSystem.Instance.QueueDamage(
+                bossVitalsSystem.GetInstanceID(),
+                1,
+                DamageType.Boss
+            );
+            var phaseAdvanced = CurrentBossState.CurrentPhaseIndex != previousPhase;
             if (CurrentBossState.bossAlive)
             {
                 if (debugMode)
