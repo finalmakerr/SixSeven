@@ -17,7 +17,8 @@ namespace GameCore
             Boss,
             Bomb,
             Hazard,
-            Spell
+            Spell,
+            Unknown
         }
 
         private const string HeatmapTutorialKey = "HeatmapTutorialShown";
@@ -526,6 +527,12 @@ namespace GameCore
             }
 
             Instance = this;
+
+            if (GetComponent<DamageSystem>() == null)
+            {
+                gameObject.AddComponent<DamageSystem>();
+            }
+
             if (balanceConfig == null)
             {
                 Debug.LogError("GameBalanceConfig is not assigned in GameManager.");
@@ -2906,7 +2913,14 @@ namespace GameCore
             var state = GetOrCreateMonsterState(piece);
             monsterStates[pieceId] = state;
 
-            var died = ApplyMonsterDamage(pieceId, amount);
+            DamageSystem.Instance.QueueDamage(pieceId, amount, DamageType.Direct);
+
+            var died = false;
+            if (monsterStates.TryGetValue(pieceId, out state))
+            {
+                died = state.CurrentHP <= 0;
+            }
+
             if (!died)
             {
                 EnterHurtState(piece);
@@ -4407,7 +4421,10 @@ namespace GameCore
                 return;
             }
 
-            var phaseAdvanced = ApplyBossDamage(1, source);
+            var previousPhase = bossState.CurrentPhaseIndex;
+            EnsureBossVitalsSystem();
+            DamageSystem.Instance.QueueDamage(bossVitalsSystem.GetInstanceID(), 1, DamageType.Boss);
+            var phaseAdvanced = CurrentBossState.CurrentPhaseIndex > previousPhase;
             if (CurrentBossState.bossAlive)
             {
                 if (debugMode)
@@ -4495,6 +4512,40 @@ namespace GameCore
             }
 
             return phaseAdvanced;
+        }
+
+        public bool TryApplyDamageToPlayer(int targetId, int amount)
+        {
+            if (player != null && player.GetInstanceID() == targetId)
+            {
+                TakeDamage(amount, DamageSource.Unknown);
+                return true;
+            }
+
+            return false;
+        }
+
+        public bool TryApplyDamageToMonster(int targetId, int amount)
+        {
+            if (monsterStates.TryGetValue(targetId, out var state))
+            {
+                // IMPORTANT: call reducer directly
+                ApplyMonsterDamage(targetId, amount);
+                return true;
+            }
+
+            return false;
+        }
+
+        public bool TryApplyDamageToBoss(int targetId, int amount)
+        {
+            if (bossVitalsSystem != null && bossVitalsSystem.GetInstanceID() == targetId)
+            {
+                ApplyBossDamage(amount, "DamageSystem");
+                return true;
+            }
+
+            return false;
         }
 
         private void EnsureBossVitalsSystem()
